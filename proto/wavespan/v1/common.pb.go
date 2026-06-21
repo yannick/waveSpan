@@ -183,6 +183,112 @@ func (ReadSource) EnumDescriptor() ([]byte, []int) {
 	return file_wavespan_v1_common_proto_rawDescGZIP(), []int{2}
 }
 
+// RecordKind distinguishes the data model a stored record belongs to.
+type RecordKind int32
+
+const (
+	RecordKind_RECORD_KIND_UNSPECIFIED RecordKind = 0
+	RecordKind_RECORD_KIND_KV          RecordKind = 1
+	RecordKind_RECORD_KIND_GRAPH_NODE  RecordKind = 2
+	RecordKind_RECORD_KIND_GRAPH_EDGE  RecordKind = 3
+	RecordKind_RECORD_KIND_VECTOR      RecordKind = 4
+)
+
+// Enum value maps for RecordKind.
+var (
+	RecordKind_name = map[int32]string{
+		0: "RECORD_KIND_UNSPECIFIED",
+		1: "RECORD_KIND_KV",
+		2: "RECORD_KIND_GRAPH_NODE",
+		3: "RECORD_KIND_GRAPH_EDGE",
+		4: "RECORD_KIND_VECTOR",
+	}
+	RecordKind_value = map[string]int32{
+		"RECORD_KIND_UNSPECIFIED": 0,
+		"RECORD_KIND_KV":          1,
+		"RECORD_KIND_GRAPH_NODE":  2,
+		"RECORD_KIND_GRAPH_EDGE":  3,
+		"RECORD_KIND_VECTOR":      4,
+	}
+)
+
+func (x RecordKind) Enum() *RecordKind {
+	p := new(RecordKind)
+	*p = x
+	return p
+}
+
+func (x RecordKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RecordKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_wavespan_v1_common_proto_enumTypes[3].Descriptor()
+}
+
+func (RecordKind) Type() protoreflect.EnumType {
+	return &file_wavespan_v1_common_proto_enumTypes[3]
+}
+
+func (x RecordKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RecordKind.Descriptor instead.
+func (RecordKind) EnumDescriptor() ([]byte, []int) {
+	return file_wavespan_v1_common_proto_rawDescGZIP(), []int{3}
+}
+
+// MutationKind is the operation a mutation-log entry records.
+type MutationKind int32
+
+const (
+	MutationKind_MUTATION_KIND_UNSPECIFIED MutationKind = 0
+	MutationKind_MUTATION_KIND_PUT         MutationKind = 1
+	MutationKind_MUTATION_KIND_DELETE      MutationKind = 2
+)
+
+// Enum value maps for MutationKind.
+var (
+	MutationKind_name = map[int32]string{
+		0: "MUTATION_KIND_UNSPECIFIED",
+		1: "MUTATION_KIND_PUT",
+		2: "MUTATION_KIND_DELETE",
+	}
+	MutationKind_value = map[string]int32{
+		"MUTATION_KIND_UNSPECIFIED": 0,
+		"MUTATION_KIND_PUT":         1,
+		"MUTATION_KIND_DELETE":      2,
+	}
+)
+
+func (x MutationKind) Enum() *MutationKind {
+	p := new(MutationKind)
+	*p = x
+	return p
+}
+
+func (x MutationKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MutationKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_wavespan_v1_common_proto_enumTypes[4].Descriptor()
+}
+
+func (MutationKind) Type() protoreflect.EnumType {
+	return &file_wavespan_v1_common_proto_enumTypes[4]
+}
+
+func (x MutationKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MutationKind.Descriptor instead.
+func (MutationKind) EnumDescriptor() ([]byte, []int) {
+	return file_wavespan_v1_common_proto_rawDescGZIP(), []int{4}
+}
+
 // Version is the per-mutation hybrid-logical-clock version stamped by the writing
 // coordinator. See design/22_versioning_and_hlc.md and design/03_kv_store.md
 // "Conflict handling" for the deterministic tie-break order.
@@ -420,6 +526,492 @@ func (x *ResponseMeta) GetWarnings() []string {
 	return nil
 }
 
+// ExternalPointer references a value stored outside wavesdb (object storage). Reserved
+// for a future offload path; v1 always stores values inline (design/02 "Value size policy").
+type ExternalPointer struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Uri           string                 `protobuf:"bytes,1,opt,name=uri,proto3" json:"uri,omitempty"`
+	Size          uint64                 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	Checksum      []byte                 `protobuf:"bytes,3,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExternalPointer) Reset() {
+	*x = ExternalPointer{}
+	mi := &file_wavespan_v1_common_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExternalPointer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExternalPointer) ProtoMessage() {}
+
+func (x *ExternalPointer) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_common_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExternalPointer.ProtoReflect.Descriptor instead.
+func (*ExternalPointer) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_common_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ExternalPointer) GetUri() string {
+	if x != nil {
+		return x.Uri
+	}
+	return ""
+}
+
+func (x *ExternalPointer) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *ExternalPointer) GetChecksum() []byte {
+	if x != nil {
+		return x.Checksum
+	}
+	return nil
+}
+
+// ValueBody carries a record value either inline or as an external pointer. v1 uses
+// `inline` exclusively; the oneof keeps the wire format ready for object-storage offload.
+type ValueBody struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Body:
+	//
+	//	*ValueBody_Inline
+	//	*ValueBody_External
+	Body          isValueBody_Body `protobuf_oneof:"body"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ValueBody) Reset() {
+	*x = ValueBody{}
+	mi := &file_wavespan_v1_common_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValueBody) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValueBody) ProtoMessage() {}
+
+func (x *ValueBody) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_common_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValueBody.ProtoReflect.Descriptor instead.
+func (*ValueBody) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_common_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ValueBody) GetBody() isValueBody_Body {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *ValueBody) GetInline() []byte {
+	if x != nil {
+		if x, ok := x.Body.(*ValueBody_Inline); ok {
+			return x.Inline
+		}
+	}
+	return nil
+}
+
+func (x *ValueBody) GetExternal() *ExternalPointer {
+	if x != nil {
+		if x, ok := x.Body.(*ValueBody_External); ok {
+			return x.External
+		}
+	}
+	return nil
+}
+
+type isValueBody_Body interface {
+	isValueBody_Body()
+}
+
+type ValueBody_Inline struct {
+	Inline []byte `protobuf:"bytes,1,opt,name=inline,proto3,oneof"`
+}
+
+type ValueBody_External struct {
+	External *ExternalPointer `protobuf:"bytes,2,opt,name=external,proto3,oneof"`
+}
+
+func (*ValueBody_Inline) isValueBody_Body() {}
+
+func (*ValueBody_External) isValueBody_Body() {}
+
+// StoredRecord is the versioned envelope for every replicated record (design/02_storage_wavesdb.md
+// "Local record format"). It is the authoritative on-disk form in the data column families.
+type StoredRecord struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	LogicalKey       []byte                 `protobuf:"bytes,1,opt,name=logical_key,json=logicalKey,proto3" json:"logical_key,omitempty"`
+	Value            *ValueBody             `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Version          *Version               `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	ExpiresAtUnixMs  *int64                 `protobuf:"varint,4,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3,oneof" json:"expires_at_unix_ms,omitempty"`
+	Tombstone        bool                   `protobuf:"varint,5,opt,name=tombstone,proto3" json:"tombstone,omitempty"`
+	Kind             RecordKind             `protobuf:"varint,6,opt,name=kind,proto3,enum=wavespan.v1.RecordKind" json:"kind,omitempty"`
+	Namespace        string                 `protobuf:"bytes,7,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	OriginClusterId  string                 `protobuf:"bytes,8,opt,name=origin_cluster_id,json=originClusterId,proto3" json:"origin_cluster_id,omitempty"`
+	OriginMemberId   string                 `protobuf:"bytes,9,opt,name=origin_member_id,json=originMemberId,proto3" json:"origin_member_id,omitempty"`
+	LocalApplyUnixMs int64                  `protobuf:"varint,10,opt,name=local_apply_unix_ms,json=localApplyUnixMs,proto3" json:"local_apply_unix_ms,omitempty"`
+	ConflictState    ConflictState          `protobuf:"varint,11,opt,name=conflict_state,json=conflictState,proto3,enum=wavespan.v1.ConflictState" json:"conflict_state,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *StoredRecord) Reset() {
+	*x = StoredRecord{}
+	mi := &file_wavespan_v1_common_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StoredRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StoredRecord) ProtoMessage() {}
+
+func (x *StoredRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_common_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StoredRecord.ProtoReflect.Descriptor instead.
+func (*StoredRecord) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_common_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *StoredRecord) GetLogicalKey() []byte {
+	if x != nil {
+		return x.LogicalKey
+	}
+	return nil
+}
+
+func (x *StoredRecord) GetValue() *ValueBody {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *StoredRecord) GetVersion() *Version {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+func (x *StoredRecord) GetExpiresAtUnixMs() int64 {
+	if x != nil && x.ExpiresAtUnixMs != nil {
+		return *x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+func (x *StoredRecord) GetTombstone() bool {
+	if x != nil {
+		return x.Tombstone
+	}
+	return false
+}
+
+func (x *StoredRecord) GetKind() RecordKind {
+	if x != nil {
+		return x.Kind
+	}
+	return RecordKind_RECORD_KIND_UNSPECIFIED
+}
+
+func (x *StoredRecord) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *StoredRecord) GetOriginClusterId() string {
+	if x != nil {
+		return x.OriginClusterId
+	}
+	return ""
+}
+
+func (x *StoredRecord) GetOriginMemberId() string {
+	if x != nil {
+		return x.OriginMemberId
+	}
+	return ""
+}
+
+func (x *StoredRecord) GetLocalApplyUnixMs() int64 {
+	if x != nil {
+		return x.LocalApplyUnixMs
+	}
+	return 0
+}
+
+func (x *StoredRecord) GetConflictState() ConflictState {
+	if x != nil {
+		return x.ConflictState
+	}
+	return ConflictState_CONFLICT_STATE_UNSPECIFIED
+}
+
+// LatestPointer is the fast-read summary of the current winner for a key, plus any
+// concurrent siblings (design/02 "Latest pointer"). It is derived state, rebuildable
+// from the versioned records and the mutation log.
+type LatestPointer struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Winner          *Version               `protobuf:"bytes,1,opt,name=winner,proto3" json:"winner,omitempty"`
+	SiblingVersions []*Version             `protobuf:"bytes,2,rep,name=sibling_versions,json=siblingVersions,proto3" json:"sibling_versions,omitempty"`
+	ExpiresAtUnixMs *int64                 `protobuf:"varint,3,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3,oneof" json:"expires_at_unix_ms,omitempty"`
+	Tombstone       bool                   `protobuf:"varint,4,opt,name=tombstone,proto3" json:"tombstone,omitempty"`
+	LocalGeneration uint64                 `protobuf:"varint,5,opt,name=local_generation,json=localGeneration,proto3" json:"local_generation,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *LatestPointer) Reset() {
+	*x = LatestPointer{}
+	mi := &file_wavespan_v1_common_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LatestPointer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LatestPointer) ProtoMessage() {}
+
+func (x *LatestPointer) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_common_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LatestPointer.ProtoReflect.Descriptor instead.
+func (*LatestPointer) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_common_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *LatestPointer) GetWinner() *Version {
+	if x != nil {
+		return x.Winner
+	}
+	return nil
+}
+
+func (x *LatestPointer) GetSiblingVersions() []*Version {
+	if x != nil {
+		return x.SiblingVersions
+	}
+	return nil
+}
+
+func (x *LatestPointer) GetExpiresAtUnixMs() int64 {
+	if x != nil && x.ExpiresAtUnixMs != nil {
+		return *x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+func (x *LatestPointer) GetTombstone() bool {
+	if x != nil {
+		return x.Tombstone
+	}
+	return false
+}
+
+func (x *LatestPointer) GetLocalGeneration() uint64 {
+	if x != nil {
+		return x.LocalGeneration
+	}
+	return 0
+}
+
+// MutationEnvelope is the mutation-log entry appended on every local write and applied
+// remote mutation (design/02 "Mutation log"). It drives repair, subscriptions, global
+// replication, index maintenance, and crash recovery.
+type MutationEnvelope struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	MutationId      string                 `protobuf:"bytes,1,opt,name=mutation_id,json=mutationId,proto3" json:"mutation_id,omitempty"`
+	Kind            MutationKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=wavespan.v1.MutationKind" json:"kind,omitempty"`
+	LogicalKey      []byte                 `protobuf:"bytes,3,opt,name=logical_key,json=logicalKey,proto3" json:"logical_key,omitempty"`
+	Value           *ValueBody             `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
+	Version         *Version               `protobuf:"bytes,5,opt,name=version,proto3" json:"version,omitempty"`
+	ExpiresAtUnixMs *int64                 `protobuf:"varint,6,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3,oneof" json:"expires_at_unix_ms,omitempty"`
+	Tombstone       bool                   `protobuf:"varint,7,opt,name=tombstone,proto3" json:"tombstone,omitempty"`
+	Namespace       string                 `protobuf:"bytes,8,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	OriginClusterId string                 `protobuf:"bytes,9,opt,name=origin_cluster_id,json=originClusterId,proto3" json:"origin_cluster_id,omitempty"`
+	OriginMemberId  string                 `protobuf:"bytes,10,opt,name=origin_member_id,json=originMemberId,proto3" json:"origin_member_id,omitempty"`
+	OriginSequence  uint64                 `protobuf:"varint,11,opt,name=origin_sequence,json=originSequence,proto3" json:"origin_sequence,omitempty"`
+	CausalParents   []string               `protobuf:"bytes,12,rep,name=causal_parents,json=causalParents,proto3" json:"causal_parents,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *MutationEnvelope) Reset() {
+	*x = MutationEnvelope{}
+	mi := &file_wavespan_v1_common_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MutationEnvelope) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MutationEnvelope) ProtoMessage() {}
+
+func (x *MutationEnvelope) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_common_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MutationEnvelope.ProtoReflect.Descriptor instead.
+func (*MutationEnvelope) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_common_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *MutationEnvelope) GetMutationId() string {
+	if x != nil {
+		return x.MutationId
+	}
+	return ""
+}
+
+func (x *MutationEnvelope) GetKind() MutationKind {
+	if x != nil {
+		return x.Kind
+	}
+	return MutationKind_MUTATION_KIND_UNSPECIFIED
+}
+
+func (x *MutationEnvelope) GetLogicalKey() []byte {
+	if x != nil {
+		return x.LogicalKey
+	}
+	return nil
+}
+
+func (x *MutationEnvelope) GetValue() *ValueBody {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *MutationEnvelope) GetVersion() *Version {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+func (x *MutationEnvelope) GetExpiresAtUnixMs() int64 {
+	if x != nil && x.ExpiresAtUnixMs != nil {
+		return *x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+func (x *MutationEnvelope) GetTombstone() bool {
+	if x != nil {
+		return x.Tombstone
+	}
+	return false
+}
+
+func (x *MutationEnvelope) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *MutationEnvelope) GetOriginClusterId() string {
+	if x != nil {
+		return x.OriginClusterId
+	}
+	return ""
+}
+
+func (x *MutationEnvelope) GetOriginMemberId() string {
+	if x != nil {
+		return x.OriginMemberId
+	}
+	return ""
+}
+
+func (x *MutationEnvelope) GetOriginSequence() uint64 {
+	if x != nil {
+		return x.OriginSequence
+	}
+	return 0
+}
+
+func (x *MutationEnvelope) GetCausalParents() []string {
+	if x != nil {
+		return x.CausalParents
+	}
+	return nil
+}
+
 var File_wavespan_v1_common_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_common_proto_rawDesc = "" +
@@ -445,7 +1037,54 @@ const file_wavespan_v1_common_proto_rawDesc = "" +
 	"\fcompleteness\x18\x06 \x01(\x0e2\x19.wavespan.v1.CompletenessR\fcompleteness\x12-\n" +
 	"\x13observed_at_unix_ms\x18\a \x01(\x03R\x10observedAtUnixMs\x12\x1a\n" +
 	"\bwarnings\x18\b \x03(\tR\bwarningsB\x13\n" +
-	"\x11_observed_version*x\n" +
+	"\x11_observed_version\"S\n" +
+	"\x0fExternalPointer\x12\x10\n" +
+	"\x03uri\x18\x01 \x01(\tR\x03uri\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x04R\x04size\x12\x1a\n" +
+	"\bchecksum\x18\x03 \x01(\fR\bchecksum\"i\n" +
+	"\tValueBody\x12\x18\n" +
+	"\x06inline\x18\x01 \x01(\fH\x00R\x06inline\x12:\n" +
+	"\bexternal\x18\x02 \x01(\v2\x1c.wavespan.v1.ExternalPointerH\x00R\bexternalB\x06\n" +
+	"\x04body\"\x87\x04\n" +
+	"\fStoredRecord\x12\x1f\n" +
+	"\vlogical_key\x18\x01 \x01(\fR\n" +
+	"logicalKey\x12,\n" +
+	"\x05value\x18\x02 \x01(\v2\x16.wavespan.v1.ValueBodyR\x05value\x12.\n" +
+	"\aversion\x18\x03 \x01(\v2\x14.wavespan.v1.VersionR\aversion\x120\n" +
+	"\x12expires_at_unix_ms\x18\x04 \x01(\x03H\x00R\x0fexpiresAtUnixMs\x88\x01\x01\x12\x1c\n" +
+	"\ttombstone\x18\x05 \x01(\bR\ttombstone\x12+\n" +
+	"\x04kind\x18\x06 \x01(\x0e2\x17.wavespan.v1.RecordKindR\x04kind\x12\x1c\n" +
+	"\tnamespace\x18\a \x01(\tR\tnamespace\x12*\n" +
+	"\x11origin_cluster_id\x18\b \x01(\tR\x0foriginClusterId\x12(\n" +
+	"\x10origin_member_id\x18\t \x01(\tR\x0eoriginMemberId\x12-\n" +
+	"\x13local_apply_unix_ms\x18\n" +
+	" \x01(\x03R\x10localApplyUnixMs\x12A\n" +
+	"\x0econflict_state\x18\v \x01(\x0e2\x1a.wavespan.v1.ConflictStateR\rconflictStateB\x15\n" +
+	"\x13_expires_at_unix_ms\"\x90\x02\n" +
+	"\rLatestPointer\x12,\n" +
+	"\x06winner\x18\x01 \x01(\v2\x14.wavespan.v1.VersionR\x06winner\x12?\n" +
+	"\x10sibling_versions\x18\x02 \x03(\v2\x14.wavespan.v1.VersionR\x0fsiblingVersions\x120\n" +
+	"\x12expires_at_unix_ms\x18\x03 \x01(\x03H\x00R\x0fexpiresAtUnixMs\x88\x01\x01\x12\x1c\n" +
+	"\ttombstone\x18\x04 \x01(\bR\ttombstone\x12)\n" +
+	"\x10local_generation\x18\x05 \x01(\x04R\x0flocalGenerationB\x15\n" +
+	"\x13_expires_at_unix_ms\"\x8c\x04\n" +
+	"\x10MutationEnvelope\x12\x1f\n" +
+	"\vmutation_id\x18\x01 \x01(\tR\n" +
+	"mutationId\x12-\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x19.wavespan.v1.MutationKindR\x04kind\x12\x1f\n" +
+	"\vlogical_key\x18\x03 \x01(\fR\n" +
+	"logicalKey\x12,\n" +
+	"\x05value\x18\x04 \x01(\v2\x16.wavespan.v1.ValueBodyR\x05value\x12.\n" +
+	"\aversion\x18\x05 \x01(\v2\x14.wavespan.v1.VersionR\aversion\x120\n" +
+	"\x12expires_at_unix_ms\x18\x06 \x01(\x03H\x00R\x0fexpiresAtUnixMs\x88\x01\x01\x12\x1c\n" +
+	"\ttombstone\x18\a \x01(\bR\ttombstone\x12\x1c\n" +
+	"\tnamespace\x18\b \x01(\tR\tnamespace\x12*\n" +
+	"\x11origin_cluster_id\x18\t \x01(\tR\x0foriginClusterId\x12(\n" +
+	"\x10origin_member_id\x18\n" +
+	" \x01(\tR\x0eoriginMemberId\x12'\n" +
+	"\x0forigin_sequence\x18\v \x01(\x04R\x0eoriginSequence\x12%\n" +
+	"\x0ecausal_parents\x18\f \x03(\tR\rcausalParentsB\x15\n" +
+	"\x13_expires_at_unix_ms*x\n" +
 	"\rConflictState\x12\x1e\n" +
 	"\x1aCONFLICT_STATE_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rCONFLICT_NONE\x10\x01\x12\x15\n" +
@@ -463,7 +1102,18 @@ const file_wavespan_v1_common_proto_rawDesc = "" +
 	"\x13LOCAL_DYNAMIC_CACHE\x10\x02\x12\x1a\n" +
 	"\x16FETCHED_CLOSEST_HOLDER\x10\x03\x12\x10\n" +
 	"\fROUTED_RANGE\x10\x04\x12\x11\n" +
-	"\rGLOBAL_REMOTE\x10\x05B\xa3\x01\n" +
+	"\rGLOBAL_REMOTE\x10\x05*\x8d\x01\n" +
+	"\n" +
+	"RecordKind\x12\x1b\n" +
+	"\x17RECORD_KIND_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eRECORD_KIND_KV\x10\x01\x12\x1a\n" +
+	"\x16RECORD_KIND_GRAPH_NODE\x10\x02\x12\x1a\n" +
+	"\x16RECORD_KIND_GRAPH_EDGE\x10\x03\x12\x16\n" +
+	"\x12RECORD_KIND_VECTOR\x10\x04*^\n" +
+	"\fMutationKind\x12\x1d\n" +
+	"\x19MUTATION_KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11MUTATION_KIND_PUT\x10\x01\x12\x18\n" +
+	"\x14MUTATION_KIND_DELETE\x10\x02B\xa3\x01\n" +
 	"\x0fcom.wavespan.v1B\vCommonProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -478,26 +1128,43 @@ func file_wavespan_v1_common_proto_rawDescGZIP() []byte {
 	return file_wavespan_v1_common_proto_rawDescData
 }
 
-var file_wavespan_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_wavespan_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_wavespan_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_wavespan_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_wavespan_v1_common_proto_goTypes = []any{
-	(ConflictState)(0),   // 0: wavespan.v1.ConflictState
-	(Completeness)(0),    // 1: wavespan.v1.Completeness
-	(ReadSource)(0),      // 2: wavespan.v1.ReadSource
-	(*Version)(nil),      // 3: wavespan.v1.Version
-	(*MutationId)(nil),   // 4: wavespan.v1.MutationId
-	(*ResponseMeta)(nil), // 5: wavespan.v1.ResponseMeta
+	(ConflictState)(0),       // 0: wavespan.v1.ConflictState
+	(Completeness)(0),        // 1: wavespan.v1.Completeness
+	(ReadSource)(0),          // 2: wavespan.v1.ReadSource
+	(RecordKind)(0),          // 3: wavespan.v1.RecordKind
+	(MutationKind)(0),        // 4: wavespan.v1.MutationKind
+	(*Version)(nil),          // 5: wavespan.v1.Version
+	(*MutationId)(nil),       // 6: wavespan.v1.MutationId
+	(*ResponseMeta)(nil),     // 7: wavespan.v1.ResponseMeta
+	(*ExternalPointer)(nil),  // 8: wavespan.v1.ExternalPointer
+	(*ValueBody)(nil),        // 9: wavespan.v1.ValueBody
+	(*StoredRecord)(nil),     // 10: wavespan.v1.StoredRecord
+	(*LatestPointer)(nil),    // 11: wavespan.v1.LatestPointer
+	(*MutationEnvelope)(nil), // 12: wavespan.v1.MutationEnvelope
 }
 var file_wavespan_v1_common_proto_depIdxs = []int32{
-	2, // 0: wavespan.v1.ResponseMeta.source:type_name -> wavespan.v1.ReadSource
-	3, // 1: wavespan.v1.ResponseMeta.observed_version:type_name -> wavespan.v1.Version
-	0, // 2: wavespan.v1.ResponseMeta.conflict_state:type_name -> wavespan.v1.ConflictState
-	1, // 3: wavespan.v1.ResponseMeta.completeness:type_name -> wavespan.v1.Completeness
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	2,  // 0: wavespan.v1.ResponseMeta.source:type_name -> wavespan.v1.ReadSource
+	5,  // 1: wavespan.v1.ResponseMeta.observed_version:type_name -> wavespan.v1.Version
+	0,  // 2: wavespan.v1.ResponseMeta.conflict_state:type_name -> wavespan.v1.ConflictState
+	1,  // 3: wavespan.v1.ResponseMeta.completeness:type_name -> wavespan.v1.Completeness
+	8,  // 4: wavespan.v1.ValueBody.external:type_name -> wavespan.v1.ExternalPointer
+	9,  // 5: wavespan.v1.StoredRecord.value:type_name -> wavespan.v1.ValueBody
+	5,  // 6: wavespan.v1.StoredRecord.version:type_name -> wavespan.v1.Version
+	3,  // 7: wavespan.v1.StoredRecord.kind:type_name -> wavespan.v1.RecordKind
+	0,  // 8: wavespan.v1.StoredRecord.conflict_state:type_name -> wavespan.v1.ConflictState
+	5,  // 9: wavespan.v1.LatestPointer.winner:type_name -> wavespan.v1.Version
+	5,  // 10: wavespan.v1.LatestPointer.sibling_versions:type_name -> wavespan.v1.Version
+	4,  // 11: wavespan.v1.MutationEnvelope.kind:type_name -> wavespan.v1.MutationKind
+	9,  // 12: wavespan.v1.MutationEnvelope.value:type_name -> wavespan.v1.ValueBody
+	5,  // 13: wavespan.v1.MutationEnvelope.version:type_name -> wavespan.v1.Version
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_common_proto_init() }
@@ -506,13 +1173,20 @@ func file_wavespan_v1_common_proto_init() {
 		return
 	}
 	file_wavespan_v1_common_proto_msgTypes[2].OneofWrappers = []any{}
+	file_wavespan_v1_common_proto_msgTypes[4].OneofWrappers = []any{
+		(*ValueBody_Inline)(nil),
+		(*ValueBody_External)(nil),
+	}
+	file_wavespan_v1_common_proto_msgTypes[5].OneofWrappers = []any{}
+	file_wavespan_v1_common_proto_msgTypes[6].OneofWrappers = []any{}
+	file_wavespan_v1_common_proto_msgTypes[7].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_common_proto_rawDesc), len(file_wavespan_v1_common_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   3,
+			NumEnums:      5,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

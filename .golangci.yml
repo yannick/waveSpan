@@ -24,3 +24,8 @@ linters:
       # generated code
       - path: '\.pb\.go$'
         linters: [revive, staticcheck, misspell]
+      # store implementations satisfy the fully-documented LocalStore interface;
+      # per-method comments on the impls would be redundant.
+      - path: 'internal/storage/.*_store\.go'
+        text: 'exported method .* should have comment'
+        linters: [revive]
