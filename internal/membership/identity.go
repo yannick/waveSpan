@@ -27,10 +27,12 @@ type Member struct {
 }
 
 // MemberFromConfig builds the local Member from config and the durable storage UUID (M1).
-// Advertised hosts default to the memberId (resolvable as the docker service name) when no
-// explicit host is configured.
+// The advertised host must be DNS-resolvable by peers: in docker it is the service name
+// (== memberId); in Kubernetes it is the pod DNS name. It defaults to memberId and can be
+// overridden with WAVESPAN_ADVERTISE_HOST. nodeName is the *physical* node (for same-node
+// placement), not an address, so it is not used for advertising.
 func MemberFromConfig(cfg *config.Config, storageUUID string) Member {
-	host := cfg.NodeName
+	host := cfg.AdvertiseHost
 	if host == "" {
 		host = cfg.MemberID
 	}

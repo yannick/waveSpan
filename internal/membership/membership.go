@@ -78,6 +78,9 @@ func (s *Service) Live() []MemberView { return s.roster.Live() }
 // LatencyEdges returns the local latency-graph edges.
 func (s *Service) LatencyEdges() []latencygraph.Edge { return s.graph.Edges() }
 
+// Graph returns the latency graph for placement scoring (M3).
+func (s *Service) Graph() *latencygraph.Graph { return s.graph }
+
 // seedFor derives a stable RNG seed from the member id so peer selection is reproducible.
 func seedFor(id string) int64 {
 	h := fnv.New64a()

@@ -23,16 +23,17 @@ const (
 
 // Config is the full node configuration.
 type Config struct {
-	ClusterID   string            `yaml:"clusterId"`
-	MemberID    string            `yaml:"memberId"`
-	NodeName    string            `yaml:"nodeName"`
-	Topology    TopologyConfig    `yaml:"topology"`
-	Storage     StorageConfig     `yaml:"storage"`
-	Membership  MembershipConfig  `yaml:"membership"`
-	Replication ReplicationConfig `yaml:"replication"`
-	Admin       AdminConfig       `yaml:"admin"`
-	Ports       PortsConfig       `yaml:"ports"`
-	Security    SecurityConfig    `yaml:"security"`
+	ClusterID     string            `yaml:"clusterId"`
+	MemberID      string            `yaml:"memberId"`
+	NodeName      string            `yaml:"nodeName"`
+	AdvertiseHost string            `yaml:"advertiseHost"`
+	Topology      TopologyConfig    `yaml:"topology"`
+	Storage       StorageConfig     `yaml:"storage"`
+	Membership    MembershipConfig  `yaml:"membership"`
+	Replication   ReplicationConfig `yaml:"replication"`
+	Admin         AdminConfig       `yaml:"admin"`
+	Ports         PortsConfig       `yaml:"ports"`
+	Security      SecurityConfig    `yaml:"security"`
 }
 
 // TopologyConfig holds the static topology labels (hints; the latency graph is authoritative,
@@ -132,6 +133,9 @@ func (c *Config) applyEnv(get func(string) (string, bool)) {
 	}
 	if v, ok := get("WAVESPAN_NODE_NAME"); ok {
 		c.NodeName = v
+	}
+	if v, ok := get("WAVESPAN_ADVERTISE_HOST"); ok {
+		c.AdvertiseHost = v
 	}
 	if v, ok := get("WAVESPAN_ZONE"); ok {
 		c.Topology.Zone = v

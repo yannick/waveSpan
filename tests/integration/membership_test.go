@@ -61,7 +61,9 @@ func waitFor(t *testing.T, what string, timeout time.Duration, cond func() bool)
 }
 
 func TestThreeNodeClusterFormsAndDetectsKill(t *testing.T) {
-	compose(t, "up", "-d", "--build")
+	// Build the image first (outside the cluster lifecycle) so a cold build does not eat the
+	// test budget; `make test-integration` runs `docker compose build` beforehand.
+	compose(t, "up", "-d")
 	t.Cleanup(func() { compose(t, "down", "-v") })
 
 	ports := map[string]string{"node1": "7901", "node2": "7902", "node3": "7903"}
