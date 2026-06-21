@@ -25,11 +25,29 @@ const (
 type Config struct {
 	ClusterID   string            `yaml:"clusterId"`
 	MemberID    string            `yaml:"memberId"`
+	NodeName    string            `yaml:"nodeName"`
+	Topology    TopologyConfig    `yaml:"topology"`
 	Storage     StorageConfig     `yaml:"storage"`
 	Membership  MembershipConfig  `yaml:"membership"`
 	Replication ReplicationConfig `yaml:"replication"`
 	Admin       AdminConfig       `yaml:"admin"`
+	Ports       PortsConfig       `yaml:"ports"`
 	Security    SecurityConfig    `yaml:"security"`
+}
+
+// TopologyConfig holds the static topology labels (hints; the latency graph is authoritative,
+// design/04 "Topology penalty").
+type TopologyConfig struct {
+	Zone   string `yaml:"zone"`
+	Region string `yaml:"region"`
+	Geo    string `yaml:"geo"`
+}
+
+// PortsConfig holds the advertised gossip and data ports (design/04 "Member identity",
+// design/09 ports). The advertised host defaults to memberId in docker (service DNS).
+type PortsConfig struct {
+	Gossip int `yaml:"gossip"`
+	Data   int `yaml:"data"`
 }
 
 // StorageConfig configures the local wavesdb engine.
@@ -64,6 +82,8 @@ const (
 	defaultEngine      = "wavesdb"
 	defaultAdminListen = ":7900"
 	defaultStoragePath = "/var/lib/wavespan"
+	defaultGossipPort  = 7700
+	defaultDataPort    = 7800
 )
 
 // Load reads the YAML file at path (optional; empty path skips file load), applies
@@ -110,6 +130,18 @@ func (c *Config) applyEnv(get func(string) (string, bool)) {
 	if v, ok := get("WAVESPAN_RUNTIME"); ok {
 		c.Membership.Runtime = Runtime(v)
 	}
+	if v, ok := get("WAVESPAN_NODE_NAME"); ok {
+		c.NodeName = v
+	}
+	if v, ok := get("WAVESPAN_ZONE"); ok {
+		c.Topology.Zone = v
+	}
+	if v, ok := get("WAVESPAN_REGION"); ok {
+		c.Topology.Region = v
+	}
+	if v, ok := get("WAVESPAN_GEO"); ok {
+		c.Topology.Geo = v
+	}
 	if v, ok := get("WAVESPAN_SEEDS"); ok {
 		c.Membership.Seeds = splitSeeds(v)
 	}
@@ -133,6 +165,12 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Admin.Listen == "" {
 		c.Admin.Listen = defaultAdminListen
+	}
+	if c.Ports.Gossip == 0 {
+		c.Ports.Gossip = defaultGossipPort
+	}
+	if c.Ports.Data == 0 {
+		c.Ports.Data = defaultDataPort
 	}
 }
 
