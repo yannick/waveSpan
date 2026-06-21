@@ -24,6 +24,7 @@ import (
 	local "github.com/cwire/wavespan/internal/replication/local"
 	"github.com/cwire/wavespan/internal/storage"
 	"github.com/cwire/wavespan/internal/version"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func main() {
@@ -74,10 +75,46 @@ func run() error {
 	receiver := local.NewReceiver(rstore, cfg.MemberID, idem)
 	replicaSrv := local.NewReplicaServer(receiver)
 	policy := placement.Policy{
-		TargetNearbyReplicas: 3, MinAckNearbyReplicas: 1, RequireDistinctNodes: true,
-		Geo: placement.PreferLocalGeo, AllowSpilloverForDurability: true, ComplianceGeo: self.Geo,
+		TargetNearbyReplicas: cfg.Replication.TargetNearbyReplicas,
+		MinAckNearbyReplicas: cfg.Replication.MinAckNearbyReplicas,
+		RequireDistinctNodes: true,
+		Geo:                  placement.PreferLocalGeo, AllowSpilloverForDurability: true, ComplianceGeo: self.Geo,
 	}
-	coord := kv.NewCoordinator(rstore, self, svc, svc.Graph(), local.NewConnectReplicator(http.DefaultClient), policy, idem, 2*time.Second)
+	replicator := local.NewConnectReplicator(http.DefaultClient)
+
+	// Target-N fanout + repair engine (M4): converge to the target durable-holder count and
+	// restore replicas under spot churn.
+	holders := local.NewHolderDirectory(cfg.MemberID)
+	fanout := local.NewFanout(self, svc, svc.Graph(), replicator, holders, policy, 2*time.Second)
+	isAlive := func(id string) bool {
+		for _, m := range svc.Members() {
+			if m.Member.MemberID == id {
+				return m.State == membership.StateAlive
+			}
+		}
+		return false
+	}
+	churnHigh := func() bool {
+		ms := svc.Members()
+		bad := 0
+		for _, m := range ms {
+			if m.State != membership.StateAlive {
+				bad++
+			}
+		}
+		return len(ms) > 0 && float64(bad)/float64(len(ms)) > 0.5
+	}
+	repair := local.NewRepairEngine(self, svc, svc.Graph(), replicator, holders, rstore, policy,
+		local.RepairConfig{IsAlive: isAlive, ChurnHigh: churnHigh, WriteTimeout: 2 * time.Second})
+	fanout.SetRepair(repair)
+
+	// M4 metrics: under-replication estimate (spot-churn alert signal) + repair queue depth.
+	underReplicated := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_under_replicated_keys_estimate", Help: "keys below target durable-holder count"})
+	repairQueueDepth := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_repair_queue_depth", Help: "pending repair items"})
+	metrics.Registry.MustRegister(underReplicated, repairQueueDepth)
+	targetHolders := policy.TargetNearbyReplicas + 1
+
+	coord := kv.NewCoordinator(rstore, self, svc, svc.Graph(), replicator, policy, idem, holders, fanout, 2*time.Second)
 	kvSvc := kv.NewService(coord, kv.NewReader(rstore, self), self)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -124,6 +161,48 @@ func run() error {
 	go func() {
 		ready.Set(true)
 		svc.Run(ctx)
+	}()
+	// Background target-N fanout and repair workers (M4).
+	go fanout.Run(ctx)
+	go repair.Run(ctx, 200*time.Millisecond)
+	go func() {
+		t := time.NewTicker(time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				underReplicated.Set(float64(holders.UnderReplicatedEstimate(targetHolders, isAlive)))
+				repairQueueDepth.Set(float64(repair.QueueDepth()))
+			}
+		}
+	}()
+	// Reconcile loop: feed newly dead/unreachable members to the repair engine so their keys
+	// are re-replicated; reset tracking when a member returns.
+	go func() {
+		processed := map[string]bool{}
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				for _, m := range svc.Members() {
+					id := m.Member.MemberID
+					switch m.State {
+					case membership.StateUnreachable, membership.StateDead:
+						if !processed[id] {
+							processed[id] = true
+							repair.OnMemberDead(id)
+						}
+					case membership.StateAlive:
+						delete(processed, id)
+					}
+				}
+			}
+		}
 	}()
 
 	select {
