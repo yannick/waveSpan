@@ -226,6 +226,356 @@ func (x *StoreReplicaResponse) GetConflictState() ConflictState {
 	return ConflictState_CONFLICT_STATE_UNSPECIFIED
 }
 
+type SubscriptionOffer struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SourceMemberId string                 `protobuf:"bytes,1,opt,name=source_member_id,json=sourceMemberId,proto3" json:"source_member_id,omitempty"`
+	SourceDataAddr string                 `protobuf:"bytes,2,opt,name=source_data_addr,json=sourceDataAddr,proto3" json:"source_data_addr,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SubscriptionOffer) Reset() {
+	*x = SubscriptionOffer{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionOffer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionOffer) ProtoMessage() {}
+
+func (x *SubscriptionOffer) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionOffer.ProtoReflect.Descriptor instead.
+func (*SubscriptionOffer) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SubscriptionOffer) GetSourceMemberId() string {
+	if x != nil {
+		return x.SourceMemberId
+	}
+	return ""
+}
+
+func (x *SubscriptionOffer) GetSourceDataAddr() string {
+	if x != nil {
+		return x.SourceDataAddr
+	}
+	return ""
+}
+
+type FetchReplicaRequest struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Namespace             string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Key                   []byte                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	MinVersion            *Version               `protobuf:"bytes,3,opt,name=min_version,json=minVersion,proto3,oneof" json:"min_version,omitempty"`
+	WantSubscriptionOffer bool                   `protobuf:"varint,4,opt,name=want_subscription_offer,json=wantSubscriptionOffer,proto3" json:"want_subscription_offer,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *FetchReplicaRequest) Reset() {
+	*x = FetchReplicaRequest{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchReplicaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchReplicaRequest) ProtoMessage() {}
+
+func (x *FetchReplicaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchReplicaRequest.ProtoReflect.Descriptor instead.
+func (*FetchReplicaRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *FetchReplicaRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *FetchReplicaRequest) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *FetchReplicaRequest) GetMinVersion() *Version {
+	if x != nil {
+		return x.MinVersion
+	}
+	return nil
+}
+
+func (x *FetchReplicaRequest) GetWantSubscriptionOffer() bool {
+	if x != nil {
+		return x.WantSubscriptionOffer
+	}
+	return false
+}
+
+type FetchReplicaResponse struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	Found                    bool                   `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`
+	Record                   *StoredRecord          `protobuf:"bytes,2,opt,name=record,proto3" json:"record,omitempty"`
+	AlternateHolderMemberIds []string               `protobuf:"bytes,3,rep,name=alternate_holder_member_ids,json=alternateHolderMemberIds,proto3" json:"alternate_holder_member_ids,omitempty"`
+	SubscriptionOffer        *SubscriptionOffer     `protobuf:"bytes,4,opt,name=subscription_offer,json=subscriptionOffer,proto3,oneof" json:"subscription_offer,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *FetchReplicaResponse) Reset() {
+	*x = FetchReplicaResponse{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchReplicaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchReplicaResponse) ProtoMessage() {}
+
+func (x *FetchReplicaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchReplicaResponse.ProtoReflect.Descriptor instead.
+func (*FetchReplicaResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *FetchReplicaResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *FetchReplicaResponse) GetRecord() *StoredRecord {
+	if x != nil {
+		return x.Record
+	}
+	return nil
+}
+
+func (x *FetchReplicaResponse) GetAlternateHolderMemberIds() []string {
+	if x != nil {
+		return x.AlternateHolderMemberIds
+	}
+	return nil
+}
+
+func (x *FetchReplicaResponse) GetSubscriptionOffer() *SubscriptionOffer {
+	if x != nil {
+		return x.SubscriptionOffer
+	}
+	return nil
+}
+
+type SubscribeKeyRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Namespace          string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Key                []byte                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	FromVersion        *Version               `protobuf:"bytes,3,opt,name=from_version,json=fromVersion,proto3" json:"from_version,omitempty"`
+	SubscriberMemberId string                 `protobuf:"bytes,4,opt,name=subscriber_member_id,json=subscriberMemberId,proto3" json:"subscriber_member_id,omitempty"`
+	RequestedLeaseMs   int64                  `protobuf:"varint,5,opt,name=requested_lease_ms,json=requestedLeaseMs,proto3" json:"requested_lease_ms,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *SubscribeKeyRequest) Reset() {
+	*x = SubscribeKeyRequest{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscribeKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscribeKeyRequest) ProtoMessage() {}
+
+func (x *SubscribeKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscribeKeyRequest.ProtoReflect.Descriptor instead.
+func (*SubscribeKeyRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SubscribeKeyRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *SubscribeKeyRequest) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *SubscribeKeyRequest) GetFromVersion() *Version {
+	if x != nil {
+		return x.FromVersion
+	}
+	return nil
+}
+
+func (x *SubscribeKeyRequest) GetSubscriberMemberId() string {
+	if x != nil {
+		return x.SubscriberMemberId
+	}
+	return ""
+}
+
+func (x *SubscribeKeyRequest) GetRequestedLeaseMs() int64 {
+	if x != nil {
+		return x.RequestedLeaseMs
+	}
+	return 0
+}
+
+// CacheUpdate is a server-streamed update pushed to a key subscriber. snapshot_required tells the
+// subscriber to re-fetch (resync) rather than apply an incremental update.
+type CacheUpdate struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	SubscriptionId   string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
+	Namespace        string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Key              []byte                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	Record           *StoredRecord          `protobuf:"bytes,4,opt,name=record,proto3" json:"record,omitempty"`
+	StreamSequence   uint64                 `protobuf:"varint,5,opt,name=stream_sequence,json=streamSequence,proto3" json:"stream_sequence,omitempty"`
+	SnapshotRequired bool                   `protobuf:"varint,6,opt,name=snapshot_required,json=snapshotRequired,proto3" json:"snapshot_required,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *CacheUpdate) Reset() {
+	*x = CacheUpdate{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CacheUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CacheUpdate) ProtoMessage() {}
+
+func (x *CacheUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CacheUpdate.ProtoReflect.Descriptor instead.
+func (*CacheUpdate) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CacheUpdate) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
+func (x *CacheUpdate) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *CacheUpdate) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *CacheUpdate) GetRecord() *StoredRecord {
+	if x != nil {
+		return x.Record
+	}
+	return nil
+}
+
+func (x *CacheUpdate) GetStreamSequence() uint64 {
+	if x != nil {
+		return x.StreamSequence
+	}
+	return 0
+}
+
+func (x *CacheUpdate) GetSnapshotRequired() bool {
+	if x != nil {
+		return x.SnapshotRequired
+	}
+	return false
+}
+
 var File_wavespan_v1_replication_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_replication_proto_rawDesc = "" +
@@ -243,13 +593,44 @@ const file_wavespan_v1_replication_proto_rawDesc = "" +
 	"\adurable\x18\x01 \x01(\bR\adurable\x12\x1b\n" +
 	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12=\n" +
 	"\x0fapplied_version\x18\x03 \x01(\v2\x14.wavespan.v1.VersionR\x0eappliedVersion\x12A\n" +
-	"\x0econflict_state\x18\x04 \x01(\x0e2\x1a.wavespan.v1.ConflictStateR\rconflictState*p\n" +
+	"\x0econflict_state\x18\x04 \x01(\x0e2\x1a.wavespan.v1.ConflictStateR\rconflictState\"g\n" +
+	"\x11SubscriptionOffer\x12(\n" +
+	"\x10source_member_id\x18\x01 \x01(\tR\x0esourceMemberId\x12(\n" +
+	"\x10source_data_addr\x18\x02 \x01(\tR\x0esourceDataAddr\"\xc9\x01\n" +
+	"\x13FetchReplicaRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\fR\x03key\x12:\n" +
+	"\vmin_version\x18\x03 \x01(\v2\x14.wavespan.v1.VersionH\x00R\n" +
+	"minVersion\x88\x01\x01\x126\n" +
+	"\x17want_subscription_offer\x18\x04 \x01(\bR\x15wantSubscriptionOfferB\x0e\n" +
+	"\f_min_version\"\x89\x02\n" +
+	"\x14FetchReplicaResponse\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x121\n" +
+	"\x06record\x18\x02 \x01(\v2\x19.wavespan.v1.StoredRecordR\x06record\x12=\n" +
+	"\x1balternate_holder_member_ids\x18\x03 \x03(\tR\x18alternateHolderMemberIds\x12R\n" +
+	"\x12subscription_offer\x18\x04 \x01(\v2\x1e.wavespan.v1.SubscriptionOfferH\x00R\x11subscriptionOffer\x88\x01\x01B\x15\n" +
+	"\x13_subscription_offer\"\xde\x01\n" +
+	"\x13SubscribeKeyRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\fR\x03key\x127\n" +
+	"\ffrom_version\x18\x03 \x01(\v2\x14.wavespan.v1.VersionR\vfromVersion\x120\n" +
+	"\x14subscriber_member_id\x18\x04 \x01(\tR\x12subscriberMemberId\x12,\n" +
+	"\x12requested_lease_ms\x18\x05 \x01(\x03R\x10requestedLeaseMs\"\xef\x01\n" +
+	"\vCacheUpdate\x12'\n" +
+	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x10\n" +
+	"\x03key\x18\x03 \x01(\fR\x03key\x121\n" +
+	"\x06record\x18\x04 \x01(\v2\x19.wavespan.v1.StoredRecordR\x06record\x12'\n" +
+	"\x0fstream_sequence\x18\x05 \x01(\x04R\x0estreamSequence\x12+\n" +
+	"\x11snapshot_required\x18\x06 \x01(\bR\x10snapshotRequired*p\n" +
 	"\fReplicaClass\x12\x1d\n" +
 	"\x19REPLICA_CLASS_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cREPLICA_CLASS_NEARBY_DURABLE\x10\x01\x12\x1f\n" +
-	"\x1bREPLICA_CLASS_DYNAMIC_CACHE\x10\x022i\n" +
+	"\x1bREPLICA_CLASS_DYNAMIC_CACHE\x10\x022\x8c\x02\n" +
 	"\x12ReplicationService\x12S\n" +
-	"\fStoreReplica\x12 .wavespan.v1.StoreReplicaRequest\x1a!.wavespan.v1.StoreReplicaResponseB\xa8\x01\n" +
+	"\fStoreReplica\x12 .wavespan.v1.StoreReplicaRequest\x1a!.wavespan.v1.StoreReplicaResponse\x12S\n" +
+	"\fFetchReplica\x12 .wavespan.v1.FetchReplicaRequest\x1a!.wavespan.v1.FetchReplicaResponse\x12L\n" +
+	"\fSubscribeKey\x12 .wavespan.v1.SubscribeKeyRequest\x1a\x18.wavespan.v1.CacheUpdate0\x01B\xa8\x01\n" +
 	"\x0fcom.wavespan.v1B\x10ReplicationProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -265,27 +646,41 @@ func file_wavespan_v1_replication_proto_rawDescGZIP() []byte {
 }
 
 var file_wavespan_v1_replication_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wavespan_v1_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_wavespan_v1_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_wavespan_v1_replication_proto_goTypes = []any{
 	(ReplicaClass)(0),            // 0: wavespan.v1.ReplicaClass
 	(*StoreReplicaRequest)(nil),  // 1: wavespan.v1.StoreReplicaRequest
 	(*StoreReplicaResponse)(nil), // 2: wavespan.v1.StoreReplicaResponse
-	(*StoredRecord)(nil),         // 3: wavespan.v1.StoredRecord
-	(*Version)(nil),              // 4: wavespan.v1.Version
-	(ConflictState)(0),           // 5: wavespan.v1.ConflictState
+	(*SubscriptionOffer)(nil),    // 3: wavespan.v1.SubscriptionOffer
+	(*FetchReplicaRequest)(nil),  // 4: wavespan.v1.FetchReplicaRequest
+	(*FetchReplicaResponse)(nil), // 5: wavespan.v1.FetchReplicaResponse
+	(*SubscribeKeyRequest)(nil),  // 6: wavespan.v1.SubscribeKeyRequest
+	(*CacheUpdate)(nil),          // 7: wavespan.v1.CacheUpdate
+	(*StoredRecord)(nil),         // 8: wavespan.v1.StoredRecord
+	(*Version)(nil),              // 9: wavespan.v1.Version
+	(ConflictState)(0),           // 10: wavespan.v1.ConflictState
 }
 var file_wavespan_v1_replication_proto_depIdxs = []int32{
-	3, // 0: wavespan.v1.StoreReplicaRequest.record:type_name -> wavespan.v1.StoredRecord
-	0, // 1: wavespan.v1.StoreReplicaRequest.replica_class:type_name -> wavespan.v1.ReplicaClass
-	4, // 2: wavespan.v1.StoreReplicaResponse.applied_version:type_name -> wavespan.v1.Version
-	5, // 3: wavespan.v1.StoreReplicaResponse.conflict_state:type_name -> wavespan.v1.ConflictState
-	1, // 4: wavespan.v1.ReplicationService.StoreReplica:input_type -> wavespan.v1.StoreReplicaRequest
-	2, // 5: wavespan.v1.ReplicationService.StoreReplica:output_type -> wavespan.v1.StoreReplicaResponse
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	8,  // 0: wavespan.v1.StoreReplicaRequest.record:type_name -> wavespan.v1.StoredRecord
+	0,  // 1: wavespan.v1.StoreReplicaRequest.replica_class:type_name -> wavespan.v1.ReplicaClass
+	9,  // 2: wavespan.v1.StoreReplicaResponse.applied_version:type_name -> wavespan.v1.Version
+	10, // 3: wavespan.v1.StoreReplicaResponse.conflict_state:type_name -> wavespan.v1.ConflictState
+	9,  // 4: wavespan.v1.FetchReplicaRequest.min_version:type_name -> wavespan.v1.Version
+	8,  // 5: wavespan.v1.FetchReplicaResponse.record:type_name -> wavespan.v1.StoredRecord
+	3,  // 6: wavespan.v1.FetchReplicaResponse.subscription_offer:type_name -> wavespan.v1.SubscriptionOffer
+	9,  // 7: wavespan.v1.SubscribeKeyRequest.from_version:type_name -> wavespan.v1.Version
+	8,  // 8: wavespan.v1.CacheUpdate.record:type_name -> wavespan.v1.StoredRecord
+	1,  // 9: wavespan.v1.ReplicationService.StoreReplica:input_type -> wavespan.v1.StoreReplicaRequest
+	4,  // 10: wavespan.v1.ReplicationService.FetchReplica:input_type -> wavespan.v1.FetchReplicaRequest
+	6,  // 11: wavespan.v1.ReplicationService.SubscribeKey:input_type -> wavespan.v1.SubscribeKeyRequest
+	2,  // 12: wavespan.v1.ReplicationService.StoreReplica:output_type -> wavespan.v1.StoreReplicaResponse
+	5,  // 13: wavespan.v1.ReplicationService.FetchReplica:output_type -> wavespan.v1.FetchReplicaResponse
+	7,  // 14: wavespan.v1.ReplicationService.SubscribeKey:output_type -> wavespan.v1.CacheUpdate
+	12, // [12:15] is the sub-list for method output_type
+	9,  // [9:12] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_replication_proto_init() }
@@ -294,13 +689,15 @@ func file_wavespan_v1_replication_proto_init() {
 		return
 	}
 	file_wavespan_v1_common_proto_init()
+	file_wavespan_v1_replication_proto_msgTypes[3].OneofWrappers = []any{}
+	file_wavespan_v1_replication_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_replication_proto_rawDesc), len(file_wavespan_v1_replication_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   2,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

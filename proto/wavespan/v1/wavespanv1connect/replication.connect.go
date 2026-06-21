@@ -36,11 +36,19 @@ const (
 	// ReplicationServiceStoreReplicaProcedure is the fully-qualified name of the ReplicationService's
 	// StoreReplica RPC.
 	ReplicationServiceStoreReplicaProcedure = "/wavespan.v1.ReplicationService/StoreReplica"
+	// ReplicationServiceFetchReplicaProcedure is the fully-qualified name of the ReplicationService's
+	// FetchReplica RPC.
+	ReplicationServiceFetchReplicaProcedure = "/wavespan.v1.ReplicationService/FetchReplica"
+	// ReplicationServiceSubscribeKeyProcedure is the fully-qualified name of the ReplicationService's
+	// SubscribeKey RPC.
+	ReplicationServiceSubscribeKeyProcedure = "/wavespan.v1.ReplicationService/SubscribeKey"
 )
 
 // ReplicationServiceClient is a client for the wavespan.v1.ReplicationService service.
 type ReplicationServiceClient interface {
 	StoreReplica(context.Context, *connect.Request[v1.StoreReplicaRequest]) (*connect.Response[v1.StoreReplicaResponse], error)
+	FetchReplica(context.Context, *connect.Request[v1.FetchReplicaRequest]) (*connect.Response[v1.FetchReplicaResponse], error)
+	SubscribeKey(context.Context, *connect.Request[v1.SubscribeKeyRequest]) (*connect.ServerStreamForClient[v1.CacheUpdate], error)
 }
 
 // NewReplicationServiceClient constructs a client for the wavespan.v1.ReplicationService service.
@@ -60,12 +68,26 @@ func NewReplicationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(replicationServiceMethods.ByName("StoreReplica")),
 			connect.WithClientOptions(opts...),
 		),
+		fetchReplica: connect.NewClient[v1.FetchReplicaRequest, v1.FetchReplicaResponse](
+			httpClient,
+			baseURL+ReplicationServiceFetchReplicaProcedure,
+			connect.WithSchema(replicationServiceMethods.ByName("FetchReplica")),
+			connect.WithClientOptions(opts...),
+		),
+		subscribeKey: connect.NewClient[v1.SubscribeKeyRequest, v1.CacheUpdate](
+			httpClient,
+			baseURL+ReplicationServiceSubscribeKeyProcedure,
+			connect.WithSchema(replicationServiceMethods.ByName("SubscribeKey")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // replicationServiceClient implements ReplicationServiceClient.
 type replicationServiceClient struct {
 	storeReplica *connect.Client[v1.StoreReplicaRequest, v1.StoreReplicaResponse]
+	fetchReplica *connect.Client[v1.FetchReplicaRequest, v1.FetchReplicaResponse]
+	subscribeKey *connect.Client[v1.SubscribeKeyRequest, v1.CacheUpdate]
 }
 
 // StoreReplica calls wavespan.v1.ReplicationService.StoreReplica.
@@ -73,9 +95,21 @@ func (c *replicationServiceClient) StoreReplica(ctx context.Context, req *connec
 	return c.storeReplica.CallUnary(ctx, req)
 }
 
+// FetchReplica calls wavespan.v1.ReplicationService.FetchReplica.
+func (c *replicationServiceClient) FetchReplica(ctx context.Context, req *connect.Request[v1.FetchReplicaRequest]) (*connect.Response[v1.FetchReplicaResponse], error) {
+	return c.fetchReplica.CallUnary(ctx, req)
+}
+
+// SubscribeKey calls wavespan.v1.ReplicationService.SubscribeKey.
+func (c *replicationServiceClient) SubscribeKey(ctx context.Context, req *connect.Request[v1.SubscribeKeyRequest]) (*connect.ServerStreamForClient[v1.CacheUpdate], error) {
+	return c.subscribeKey.CallServerStream(ctx, req)
+}
+
 // ReplicationServiceHandler is an implementation of the wavespan.v1.ReplicationService service.
 type ReplicationServiceHandler interface {
 	StoreReplica(context.Context, *connect.Request[v1.StoreReplicaRequest]) (*connect.Response[v1.StoreReplicaResponse], error)
+	FetchReplica(context.Context, *connect.Request[v1.FetchReplicaRequest]) (*connect.Response[v1.FetchReplicaResponse], error)
+	SubscribeKey(context.Context, *connect.Request[v1.SubscribeKeyRequest], *connect.ServerStream[v1.CacheUpdate]) error
 }
 
 // NewReplicationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -91,10 +125,26 @@ func NewReplicationServiceHandler(svc ReplicationServiceHandler, opts ...connect
 		connect.WithSchema(replicationServiceMethods.ByName("StoreReplica")),
 		connect.WithHandlerOptions(opts...),
 	)
+	replicationServiceFetchReplicaHandler := connect.NewUnaryHandler(
+		ReplicationServiceFetchReplicaProcedure,
+		svc.FetchReplica,
+		connect.WithSchema(replicationServiceMethods.ByName("FetchReplica")),
+		connect.WithHandlerOptions(opts...),
+	)
+	replicationServiceSubscribeKeyHandler := connect.NewServerStreamHandler(
+		ReplicationServiceSubscribeKeyProcedure,
+		svc.SubscribeKey,
+		connect.WithSchema(replicationServiceMethods.ByName("SubscribeKey")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.ReplicationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ReplicationServiceStoreReplicaProcedure:
 			replicationServiceStoreReplicaHandler.ServeHTTP(w, r)
+		case ReplicationServiceFetchReplicaProcedure:
+			replicationServiceFetchReplicaHandler.ServeHTTP(w, r)
+		case ReplicationServiceSubscribeKeyProcedure:
+			replicationServiceSubscribeKeyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -106,4 +156,12 @@ type UnimplementedReplicationServiceHandler struct{}
 
 func (UnimplementedReplicationServiceHandler) StoreReplica(context.Context, *connect.Request[v1.StoreReplicaRequest]) (*connect.Response[v1.StoreReplicaResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ReplicationService.StoreReplica is not implemented"))
+}
+
+func (UnimplementedReplicationServiceHandler) FetchReplica(context.Context, *connect.Request[v1.FetchReplicaRequest]) (*connect.Response[v1.FetchReplicaResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ReplicationService.FetchReplica is not implemented"))
+}
+
+func (UnimplementedReplicationServiceHandler) SubscribeKey(context.Context, *connect.Request[v1.SubscribeKeyRequest], *connect.ServerStream[v1.CacheUpdate]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ReplicationService.SubscribeKey is not implemented"))
 }

@@ -8,12 +8,20 @@ import (
 	"github.com/cwire/wavespan/internal/latencygraph"
 )
 
-// GossipMessage is the payload exchanged on a gossip round: the sender's identity and its
-// membership delta (piggybacked metadata, design/04 "Gossip protocol"). Holder summaries ride
-// here too once M4 populates them.
+// HolderSummaryWire is a gossiped compact holder advertisement (design/04 "Holder summaries"):
+// a bloom filter over the keys a member holds. The cache directory provides/consumes these.
+type HolderSummaryWire struct {
+	MemberID          string
+	Bloom             []byte
+	GeneratedAtUnixMs int64
+}
+
+// GossipMessage is the payload exchanged on a gossip round: the sender's identity, its membership
+// delta, and its holder summary (piggybacked metadata, design/04 "Gossip protocol").
 type GossipMessage struct {
-	From    Member
-	Members []MemberView
+	From      Member
+	Members   []MemberView
+	Summaries []HolderSummaryWire
 }
 
 // Transport carries gossip between nodes. The in-memory transport drives deterministic tests;
@@ -43,6 +51,25 @@ type Gossip struct {
 	cfg       GossipConfig
 	rng       *rand.Rand
 	now       func() time.Time
+
+	provideSummary func() HolderSummaryWire
+	consumeSummary func(HolderSummaryWire)
+}
+
+// SetHolderHooks installs the holder-summary provider (this node's summary, gossiped outbound)
+// and consumer (peers' summaries, fed to the holder directory). Either may be nil.
+func (g *Gossip) SetHolderHooks(provide func() HolderSummaryWire, consume func(HolderSummaryWire)) {
+	g.provideSummary = provide
+	g.consumeSummary = consume
+}
+
+func (g *Gossip) consumeSummaries(ss []HolderSummaryWire) {
+	if g.consumeSummary == nil {
+		return
+	}
+	for _, s := range ss {
+		g.consumeSummary(s)
+	}
 }
 
 // NewGossip wires a gossip driver. A nil clock uses time.Now; rngSeed makes peer selection
@@ -66,6 +93,7 @@ func (g *Gossip) HandleGossip(in *GossipMessage) *GossipMessage {
 	for _, mv := range in.Members {
 		g.roster.ApplyGossip(mv, now)
 	}
+	g.consumeSummaries(in.Summaries)
 	return g.outgoing()
 }
 
@@ -122,11 +150,16 @@ func (g *Gossip) merge(reply *GossipMessage) {
 	for _, mv := range reply.Members {
 		g.roster.ApplyGossip(mv, now)
 	}
+	g.consumeSummaries(reply.Summaries)
 }
 
-// outgoing builds the local gossip delta.
+// outgoing builds the local gossip delta plus this node's holder summary.
 func (g *Gossip) outgoing() *GossipMessage {
-	return &GossipMessage{From: g.roster.Self(), Members: g.roster.Members()}
+	msg := &GossipMessage{From: g.roster.Self(), Members: g.roster.Members()}
+	if g.provideSummary != nil {
+		msg.Summaries = []HolderSummaryWire{g.provideSummary()}
+	}
+	return msg
 }
 
 // selectPeer picks a random non-self member worth probing (alive, suspect, or unreachable — to

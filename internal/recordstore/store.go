@@ -158,6 +158,35 @@ func (s *Store) GetRecord(namespace string, key []byte) (*wavespanv1.StoredRecor
 	return rec, true, nil
 }
 
+// Forget physically removes a key's local records and latest pointer without writing a tombstone
+// (used to evict a dynamic cache replica — derived, disposable state; design/05 "Cache eviction").
+// It does not append a mutation-log entry: forgetting is a local-only drop, not a replicated delete.
+func (s *Store) Forget(namespace string, key []byte) error {
+	ops := []storage.StoreOp{{CF: storage.CFKVMeta, Key: latestKey(namespace, key), Delete: true}}
+	it, err := s.local.Scan(storage.CFKVData, dataKeyPrefix(namespace, key), prefixEnd(dataKeyPrefix(namespace, key)), 0)
+	if err != nil {
+		return err
+	}
+	for it.Valid() {
+		ops = append(ops, storage.StoreOp{CF: storage.CFKVData, Key: append([]byte(nil), it.Key()...), Delete: true})
+		it.Next()
+	}
+	_ = it.Close()
+	return s.local.Batch(ops)
+}
+
+// prefixEnd returns the smallest key greater than every key with the given prefix.
+func prefixEnd(prefix []byte) []byte {
+	end := append([]byte(nil), prefix...)
+	for i := len(end) - 1; i >= 0; i-- {
+		if end[i] != 0xff {
+			end[i]++
+			return end[:i+1]
+		}
+	}
+	return nil // prefix is all 0xff: unbounded
+}
+
 // GetOutcome is the result of a local read.
 type GetOutcome struct {
 	Found        bool

@@ -76,9 +76,9 @@ func (s *Service) Delete(ctx context.Context, req *connect.Request[wavespanv1.De
 	}), nil
 }
 
-// Get serves a local-first read.
-func (s *Service) Get(_ context.Context, req *connect.Request[wavespanv1.GetRequest]) (*connect.Response[wavespanv1.GetResult], error) {
-	res, err := s.reader.Get(req.Msg.GetNamespace(), req.Msg.GetKey(), req.Msg.GetHideExpiredOnRead())
+// Get serves a local-first read (with a closest-holder cache fetch on a miss, M5).
+func (s *Service) Get(ctx context.Context, req *connect.Request[wavespanv1.GetRequest]) (*connect.Response[wavespanv1.GetResult], error) {
+	res, err := s.reader.Get(ctx, req.Msg.GetNamespace(), req.Msg.GetKey(), req.Msg.GetHideExpiredOnRead())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

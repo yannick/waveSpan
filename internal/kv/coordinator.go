@@ -38,6 +38,7 @@ type Coordinator struct {
 	idem         *local.Idempotency
 	holders      *local.HolderDirectory
 	fanout       *local.Fanout
+	onStored     func(namespace string, key []byte)
 	writeTimeout time.Duration
 }
 
@@ -58,6 +59,10 @@ func (c *Coordinator) recordHolder(namespace string, key []byte, member string, 
 		c.holders.RecordHolder(namespace, key, member, v)
 	}
 }
+
+// SetOnStored installs a callback invoked after the origin durable write, so the node advertises
+// itself as a holder.
+func (c *Coordinator) SetOnStored(fn func(namespace string, key []byte)) { c.onStored = fn }
 
 // PutOutcome is the result of a coordinated write.
 type PutOutcome struct {
@@ -95,6 +100,9 @@ func (c *Coordinator) write(ctx context.Context, namespace string, key, value []
 		return PutOutcome{}, err
 	}
 	c.recordHolder(namespace, key, c.self.MemberID, v) // origin is a durable holder
+	if c.onStored != nil && !tombstone {
+		c.onStored(namespace, key)
+	}
 
 	cands, err := placement.Select(c.self, c.cluster.Members(), c.graph, c.policy)
 	if err != nil {
