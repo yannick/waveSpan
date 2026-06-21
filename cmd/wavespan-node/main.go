@@ -132,6 +132,7 @@ func run() error {
 	coord := kv.NewCoordinator(rstore, self, svc, svc.Graph(), replicator, policy, idem, holders, fanout, 2*time.Second)
 	coord.SetOnStored(cacheDir.AddHeldKey) // advertise keys we originate
 	cacheStore := cache.NewStore(rstore, nowMs)
+	evictor := cache.NewEvictor(cacheStore, 10*time.Minute, nowMs)
 	fetcher := cache.NewFetcher(self, cacheDir, svc, svc.Graph(), http.DefaultClient)
 	reader := kv.NewReader(rstore, self).WithCache(fetcher, cacheStore)
 	kvSvc := kv.NewService(coord, reader, self)
@@ -181,9 +182,10 @@ func run() error {
 		ready.Set(true)
 		svc.Run(ctx)
 	}()
-	// Background target-N fanout and repair workers (M4).
+	// Background target-N fanout and repair workers (M4) + dynamic-cache evictor (M5).
 	go fanout.Run(ctx)
 	go repair.Run(ctx, 200*time.Millisecond)
+	go evictor.Run(ctx, time.Minute)
 	go func() {
 		t := time.NewTicker(time.Second)
 		defer t.Stop()

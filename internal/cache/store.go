@@ -60,3 +60,44 @@ func (s *Store) Promote(namespace string, key []byte) {
 	defer s.mu.Unlock()
 	delete(s.cached, cacheKeyID(namespace, key))
 }
+
+// cacheEntry is a cache replica's identity for eviction.
+type cacheEntry struct {
+	namespace string
+	key       []byte
+}
+
+// idleBefore returns the cache replicas last accessed before cutoffMs.
+func (s *Store) idleBefore(cutoffMs int64) []cacheEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []cacheEntry
+	for id, last := range s.cached {
+		if last < cutoffMs {
+			ns, key := splitCacheKeyID(id)
+			out = append(out, cacheEntry{namespace: ns, key: key})
+		}
+	}
+	return out
+}
+
+// Evict physically drops a dynamic cache replica from local storage and the cache index. It never
+// touches durable replicas (those are not in the cache index).
+func (s *Store) Evict(namespace string, key []byte) error {
+	if err := s.rec.Forget(namespace, key); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	delete(s.cached, cacheKeyID(namespace, key))
+	s.mu.Unlock()
+	return nil
+}
+
+func splitCacheKeyID(id string) (namespace string, key []byte) {
+	for i := 0; i < len(id); i++ {
+		if id[i] == 0 {
+			return id[:i], []byte(id[i+1:])
+		}
+	}
+	return id, nil
+}
