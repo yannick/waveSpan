@@ -162,15 +162,9 @@ func (sn *wavesdbSnapshot) Get(cf ColumnFamily, key []byte) ([]byte, bool, error
 	return v, true, nil
 }
 
-// Scan returns a snapshot-consistent iterator.
-//
-// KNOWN ISSUE (wavesdb): Txn.NewIterator reads the base data at effectiveReadSeq()+1 (the
-// +1 exists to surface a read-write txn's own buffered writes). For a read-only snapshot
-// this can surface a single concurrent write committed at exactly readSeq+1 — point reads
-// via Get (effectiveReadSeq(), no +1) are unaffected. The bounded fix is in the engine:
-// only apply +1 when the txn has buffered writes. Until then, snapshot scans are consistent
-// as-of the snapshot give-or-take that one immediate-next write. Reported to the wavesdb
-// owner; tracked for the M5/M6 coverage-certificate work.
+// Scan returns a snapshot-consistent iterator. Writes committed after the snapshot are not
+// observed (wavesdb commit 1ca7892 fixed a snapshot-iterator off-by-one that previously
+// leaked the immediate-next write into read-only snapshot scans).
 func (sn *wavesdbSnapshot) Scan(cf ColumnFamily, start, end []byte, limit int) (Iterator, error) {
 	h, err := sn.store.handle(cf)
 	if err != nil {

@@ -114,38 +114,21 @@ func runConformance(t *testing.T, newStore storeFactory) {
 		}
 		defer func() { _ = snap.Close() }()
 
-		// Point reads through the snapshot are strictly isolated on both stores: a write
-		// after the snapshot is invisible to snap.Get.
-		if err := s.Put(CFKVData, []byte("barrier"), []byte("x")); err != nil {
+		// a write after the snapshot must not be visible through it, via Get or Scan
+		if err := s.Put(CFKVData, []byte("b"), []byte("2")); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.Put(CFKVData, []byte("z"), []byte("2")); err != nil {
-			t.Fatal(err)
-		}
-		if _, found, _ := snap.Get(CFKVData, []byte("z")); found {
+		if _, found, _ := snap.Get(CFKVData, []byte("b")); found {
 			t.Fatal("snapshot Get observed a write that happened after it")
 		}
-		if _, found, _ := snap.Get(CFKVData, []byte("barrier")); found {
-			t.Fatal("snapshot Get observed a write that happened after it")
-		}
-
-		// Snapshot scans must not surface writes made well after the snapshot. ("barrier"
-		// consumes the immediate next sequence; see KNOWN ISSUE in wavesdb_store.go about
-		// the engine's snapshot-iterator off-by-one, which can surface exactly that one
-		// write — so we assert on "z", which lands beyond it.)
 		got := collectSnap(t, snap, CFKVData, nil, nil, 0)
-		for _, k := range got {
-			if k == "z" {
-				t.Fatalf("snapshot scan surfaced a post-snapshot write: %v", got)
-			}
-		}
-		if len(got) == 0 || got[0] != "a" {
-			t.Fatalf("snapshot scan missing pre-snapshot data: %v", got)
+		if want := []string{"a"}; !eqKeys(got, want) {
+			t.Fatalf("snapshot scan = %v want %v (post-snapshot write leaked)", got, want)
 		}
 
-		// the live store sees everything
-		if _, found, _ := s.Get(CFKVData, []byte("z")); !found {
-			t.Fatal("live store missing z")
+		// the live store does see it
+		if _, found, _ := s.Get(CFKVData, []byte("b")); !found {
+			t.Fatal("live store missing b")
 		}
 	})
 }
