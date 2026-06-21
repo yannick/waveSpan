@@ -1,0 +1,17 @@
+# Minimal single-node dev config. `wavespan-node --config config/dev.yaml` accepts this.
+# Multi-node docker/Apple-container clusters override clusterId/memberId/seeds via WAVESPAN_* env.
+clusterId: dev
+memberId: node1
+storage:
+  path: /var/lib/wavespan
+  engine: wavesdb
+membership:
+  runtime: docker
+  seeds:
+    - "node1:7700"
+replication:
+  policyRef: local-cache-default
+admin:
+  listen: ":7900"
+security:
+  insecureDevMode: true

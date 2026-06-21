@@ -1,0 +1,62 @@
+# Portable / CI 3-node dev cluster (design/10_docker_dev.md). This is the Linux/Docker path;
+# the primary local path is Apple `container` (design/24, container/up.sh). Scaffolded at M0 —
+# nodes only serve /healthz until membership lands at M2.
+#
+# Build context is the repo PARENT so the sibling `wavesdb` module is visible.
+name: wavespan-dev
+
+x-node: &node
+  build:
+    context: ../..
+    dockerfile: waveSpan/docker/Dockerfile
+  image: wavespan/node:dev
+  environment:
+    WAVESPAN_RUNTIME: docker
+    WAVESPAN_CLUSTER_ID: dev
+    WAVESPAN_SEEDS: node1:7700,node2:7700,node3:7700
+    WAVESPAN_REGION: dev-region
+    WAVESPAN_GEO: dev
+  restart: unless-stopped
+
+services:
+  node1:
+    <<: *node
+    environment:
+      WAVESPAN_RUNTIME: docker
+      WAVESPAN_CLUSTER_ID: dev
+      WAVESPAN_SEEDS: node1:7700,node2:7700,node3:7700
+      WAVESPAN_MEMBER_ID: node1
+      WAVESPAN_NODE_NAME: compose-node-1
+      WAVESPAN_ZONE: zone-a
+      WAVESPAN_REGION: dev-region
+      WAVESPAN_GEO: dev
+    volumes: ["node1-data:/var/lib/wavespan"]
+  node2:
+    <<: *node
+    environment:
+      WAVESPAN_RUNTIME: docker
+      WAVESPAN_CLUSTER_ID: dev
+      WAVESPAN_SEEDS: node1:7700,node2:7700,node3:7700
+      WAVESPAN_MEMBER_ID: node2
+      WAVESPAN_NODE_NAME: compose-node-2
+      WAVESPAN_ZONE: zone-a
+      WAVESPAN_REGION: dev-region
+      WAVESPAN_GEO: dev
+    volumes: ["node2-data:/var/lib/wavespan"]
+  node3:
+    <<: *node
+    environment:
+      WAVESPAN_RUNTIME: docker
+      WAVESPAN_CLUSTER_ID: dev
+      WAVESPAN_SEEDS: node1:7700,node2:7700,node3:7700
+      WAVESPAN_MEMBER_ID: node3
+      WAVESPAN_NODE_NAME: compose-node-3
+      WAVESPAN_ZONE: zone-b
+      WAVESPAN_REGION: dev-region
+      WAVESPAN_GEO: dev
+    volumes: ["node3-data:/var/lib/wavespan"]
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:

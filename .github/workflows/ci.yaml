@@ -1,0 +1,79 @@
+# WaveSpan CI. Linux runners only; CI never uses Apple `container` (design/24). The same
+# docker/Dockerfile that `make image` builds locally is built here multi-arch with buildx.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The data node depends on the sibling `wavesdb` module via `replace wavesdb => ../wavesdb`,
+# so CI checks out both repos as siblings. Set WAVESDB_REPO to the wavesdb remote.
+env:
+  WAVESDB_REPO: cwire/wavesdb
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout wavespan
+        uses: actions/checkout@v4
+        with:
+          path: waveSpan
+
+      - name: Checkout wavesdb (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WAVESDB_REPO }}
+          path: wavesdb
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: waveSpan/go.sum
+
+      - name: Install buf + codegen plugins
+        run: |
+          go install github.com/bufbuild/buf/cmd/buf@latest
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Proto gate (regenerate, fail on drift)
+        working-directory: waveSpan
+        run: make proto-check
+
+      - name: Lint
+        working-directory: waveSpan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$(go env GOPATH)/bin"
+          make lint
+
+      - name: Build
+        working-directory: waveSpan
+        run: make build
+
+      - name: Test
+        working-directory: waveSpan
+        run: make test
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout wavespan
+        uses: actions/checkout@v4
+        with:
+          path: waveSpan
+      - name: Checkout wavesdb (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WAVESDB_REPO }}
+          path: wavesdb
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the same Dockerfile, multi-arch (no Apple container)
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            -f waveSpan/docker/Dockerfile \
+            -t wavespan/node:ci \
+            .

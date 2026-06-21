@@ -1,0 +1,26 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - revive
+  exclusions:
+    paths:
+      - 'proto/.*\.pb\.go$'
+      - 'proto/.*connect/.*\.go$'
+    rules:
+      # `version` is an intentional, clear domain package name.
+      - path: 'internal/version/'
+        text: 'conflict with Go standard library'
+        linters: [revive]
+      # generated code
+      - path: '\.pb\.go$'
+        linters: [revive, staticcheck, misspell]
