@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cwire/wavespan/internal/cache"
 	"github.com/cwire/wavespan/internal/config"
 	"github.com/cwire/wavespan/internal/kv"
 	"github.com/cwire/wavespan/internal/membership"
@@ -73,7 +74,21 @@ func run() error {
 	rstore := recordstore.NewStore(store, cfg.ClusterID, cfg.MemberID, version.NewClock(nil, 500), version.NewSequencer(0))
 	idem := local.NewIdempotency(0)
 	receiver := local.NewReceiver(rstore, cfg.MemberID, idem)
-	replicaSrv := local.NewReplicaServer(receiver)
+	replicaSrv := local.NewReplicaServer(receiver, rstore, cfg.MemberID, self.DataAddr, nil)
+
+	// Dynamic cache (M5): gossiped holder directory + closest-holder fetch + cache store.
+	nowMs := func() int64 { return time.Now().UnixMilli() }
+	cacheDir := cache.NewDirectory(cfg.MemberID, nowMs)
+	svc.SetHolderHooks(
+		func() membership.HolderSummaryWire {
+			s := cacheDir.OwnSummary()
+			return membership.HolderSummaryWire{MemberID: s.MemberID, Bloom: s.Bloom, GeneratedAtUnixMs: s.GeneratedAtUnixMs}
+		},
+		func(s membership.HolderSummaryWire) {
+			cacheDir.ApplyPeerSummary(cache.HolderSummaryWire{MemberID: s.MemberID, Bloom: s.Bloom, GeneratedAtUnixMs: s.GeneratedAtUnixMs})
+		},
+	)
+	receiver.SetOnStored(cacheDir.AddHeldKey) // advertise replicas we durably store
 	policy := placement.Policy{
 		TargetNearbyReplicas: cfg.Replication.TargetNearbyReplicas,
 		MinAckNearbyReplicas: cfg.Replication.MinAckNearbyReplicas,
@@ -115,7 +130,11 @@ func run() error {
 	targetHolders := policy.TargetNearbyReplicas + 1
 
 	coord := kv.NewCoordinator(rstore, self, svc, svc.Graph(), replicator, policy, idem, holders, fanout, 2*time.Second)
-	kvSvc := kv.NewService(coord, kv.NewReader(rstore, self), self)
+	coord.SetOnStored(cacheDir.AddHeldKey) // advertise keys we originate
+	cacheStore := cache.NewStore(rstore, nowMs)
+	fetcher := cache.NewFetcher(self, cacheDir, svc, svc.Graph(), http.DefaultClient)
+	reader := kv.NewReader(rstore, self).WithCache(fetcher, cacheStore)
+	kvSvc := kv.NewService(coord, reader, self)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

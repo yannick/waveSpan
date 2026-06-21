@@ -78,8 +78,30 @@ func memberStateFromProto(p *wavespanv1.MemberState) MemberView {
 	}
 }
 
+func summariesToProto(ss []HolderSummaryWire) []*wavespanv1.HolderSummary {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]*wavespanv1.HolderSummary, 0, len(ss))
+	for _, s := range ss {
+		out = append(out, &wavespanv1.HolderSummary{MemberId: s.MemberID, BloomFilter: s.Bloom, GeneratedAtUnixMs: s.GeneratedAtUnixMs})
+	}
+	return out
+}
+
+func summariesFromProto(ps []*wavespanv1.HolderSummary) []HolderSummaryWire {
+	if len(ps) == 0 {
+		return nil
+	}
+	out := make([]HolderSummaryWire, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, HolderSummaryWire{MemberID: p.GetMemberId(), Bloom: p.GetBloomFilter(), GeneratedAtUnixMs: p.GetGeneratedAtUnixMs()})
+	}
+	return out
+}
+
 func msgToReq(m *GossipMessage) *wavespanv1.GossipExchangeRequest {
-	req := &wavespanv1.GossipExchangeRequest{From: memberToProto(m.From)}
+	req := &wavespanv1.GossipExchangeRequest{From: memberToProto(m.From), HolderSummaries: summariesToProto(m.Summaries)}
 	for _, mv := range m.Members {
 		req.Members = append(req.Members, MemberStateToProto(mv))
 	}
@@ -87,7 +109,7 @@ func msgToReq(m *GossipMessage) *wavespanv1.GossipExchangeRequest {
 }
 
 func reqToMsg(r *wavespanv1.GossipExchangeRequest) *GossipMessage {
-	m := &GossipMessage{From: memberFromProto(r.GetFrom())}
+	m := &GossipMessage{From: memberFromProto(r.GetFrom()), Summaries: summariesFromProto(r.GetHolderSummaries())}
 	for _, ms := range r.GetMembers() {
 		m.Members = append(m.Members, memberStateFromProto(ms))
 	}
@@ -95,7 +117,7 @@ func reqToMsg(r *wavespanv1.GossipExchangeRequest) *GossipMessage {
 }
 
 func msgToResp(m *GossipMessage) *wavespanv1.GossipExchangeResponse {
-	resp := &wavespanv1.GossipExchangeResponse{From: memberToProto(m.From)}
+	resp := &wavespanv1.GossipExchangeResponse{From: memberToProto(m.From), HolderSummaries: summariesToProto(m.Summaries)}
 	for _, mv := range m.Members {
 		resp.Members = append(resp.Members, MemberStateToProto(mv))
 	}
@@ -103,7 +125,7 @@ func msgToResp(m *GossipMessage) *wavespanv1.GossipExchangeResponse {
 }
 
 func respToMsg(r *wavespanv1.GossipExchangeResponse) *GossipMessage {
-	m := &GossipMessage{From: memberFromProto(r.GetFrom())}
+	m := &GossipMessage{From: memberFromProto(r.GetFrom()), Summaries: summariesFromProto(r.GetHolderSummaries())}
 	for _, ms := range r.GetMembers() {
 		m.Members = append(m.Members, memberStateFromProto(ms))
 	}

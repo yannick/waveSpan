@@ -48,13 +48,27 @@ func (r *ConnectReplicator) StoreReplica(ctx context.Context, target membership.
 	return resp.Msg, nil
 }
 
-// ReplicaServer adapts a Receiver to the ReplicationService Connect handler.
-type ReplicaServer struct {
-	recv *Receiver
+// SubscriptionSource pushes cache updates to a key subscriber (implemented by the cache package
+// in M5.B). When nil, SubscribeKey sends only the current record and closes.
+type SubscriptionSource interface {
+	Subscribe(ctx context.Context, req *wavespanv1.SubscribeKeyRequest, send func(*wavespanv1.CacheUpdate) error) error
 }
 
-// NewReplicaServer builds the Connect handler around a receiver.
-func NewReplicaServer(recv *Receiver) *ReplicaServer { return &ReplicaServer{recv: recv} }
+// ReplicaServer adapts a Receiver to the full ReplicationService Connect handler (StoreReplica,
+// FetchReplica, SubscribeKey).
+type ReplicaServer struct {
+	recv   *Receiver
+	reader RecordReader
+	self   string
+	dataAd string
+	source SubscriptionSource
+}
+
+// NewReplicaServer builds the Connect handler. reader serves FetchReplica; source (optional)
+// serves live SubscribeKey updates.
+func NewReplicaServer(recv *Receiver, reader RecordReader, selfMemberID, selfDataAddr string, source SubscriptionSource) *ReplicaServer {
+	return &ReplicaServer{recv: recv, reader: reader, self: selfMemberID, dataAd: selfDataAddr, source: source}
+}
 
 // Handler returns the mountable Connect handler (path, handler) for the data port.
 func (s *ReplicaServer) Handler() (string, http.Handler) {
@@ -68,4 +82,33 @@ func (s *ReplicaServer) StoreReplica(_ context.Context, req *connect.Request[wav
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// FetchReplica returns the local winning record for a key (design/05 "FetchReplica protocol").
+func (s *ReplicaServer) FetchReplica(_ context.Context, req *connect.Request[wavespanv1.FetchReplicaRequest]) (*connect.Response[wavespanv1.FetchReplicaResponse], error) {
+	rec, found, err := s.reader.GetRecord(req.Msg.GetNamespace(), req.Msg.GetKey())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	resp := &wavespanv1.FetchReplicaResponse{Found: found, Record: rec}
+	if found && req.Msg.GetWantSubscriptionOffer() {
+		resp.SubscriptionOffer = &wavespanv1.SubscriptionOffer{SourceMemberId: s.self, SourceDataAddr: s.dataAd}
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// SubscribeKey streams cache updates for a key. Without a live source (M5.A) it sends the current
+// record once and closes; the subscriber then refetches on demand.
+func (s *ReplicaServer) SubscribeKey(ctx context.Context, req *connect.Request[wavespanv1.SubscribeKeyRequest], stream *connect.ServerStream[wavespanv1.CacheUpdate]) error {
+	if s.source != nil {
+		return s.source.Subscribe(ctx, req.Msg, stream.Send)
+	}
+	rec, found, err := s.reader.GetRecord(req.Msg.GetNamespace(), req.Msg.GetKey())
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	if found {
+		return stream.Send(&wavespanv1.CacheUpdate{Namespace: req.Msg.GetNamespace(), Key: req.Msg.GetKey(), Record: rec, StreamSequence: 1})
+	}
+	return nil
 }

@@ -17,6 +17,7 @@ type Receiver struct {
 	store    *recordstore.Store
 	memberID string
 	idem     *Idempotency
+	onStored func(namespace string, key []byte)
 }
 
 // NewReceiver builds a StoreReplica receiver over a local record store.
@@ -26,6 +27,10 @@ func NewReceiver(store *recordstore.Store, memberID string, idem *Idempotency) *
 	}
 	return &Receiver{store: store, memberID: memberID, idem: idem}
 }
+
+// SetOnStored installs a callback invoked after a replica is durably stored, so the node can
+// advertise itself as a holder (the gossiped holder bloom; M5).
+func (r *Receiver) SetOnStored(fn func(namespace string, key []byte)) { r.onStored = fn }
 
 // Apply stores a replica durably and returns the applied (winning) version.
 func (r *Receiver) Apply(req *wavespanv1.StoreReplicaRequest) (*wavespanv1.StoreReplicaResponse, error) {
@@ -42,6 +47,9 @@ func (r *Receiver) Apply(req *wavespanv1.StoreReplicaRequest) (*wavespanv1.Store
 		return nil, err
 	}
 	r.idem.Record(req.GetMutationId(), version.FromProto(rec.GetVersion()))
+	if r.onStored != nil && !rec.GetTombstone() {
+		r.onStored(req.GetNamespace(), req.GetKey())
+	}
 	return &wavespanv1.StoreReplicaResponse{
 		Durable: true, MemberId: r.memberID, AppliedVersion: winner.ToProto(),
 		ConflictState: wavespanv1.ConflictState_CONFLICT_NONE,
