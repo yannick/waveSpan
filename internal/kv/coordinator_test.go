@@ -68,7 +68,7 @@ func TestOriginPlusOneSucceedsWithOneReplica(t *testing.T) {
 	n1, n2 := newNode(t, "node1"), newNode(t, "node2")
 	repl := &fakeReplicator{nodes: map[string]*node{"node1": n1, "node2": n2}, down: map[string]bool{}}
 	cluster := staticCluster{aliveView("node1"), aliveView("node2")}
-	coord := NewCoordinator(n1.store, member("node1"), cluster, latencygraph.New(latencygraph.DefaultConfig()), repl, defaultPolicy(), local.NewIdempotency(0), time.Second)
+	coord := NewCoordinator(n1.store, member("node1"), cluster, latencygraph.New(latencygraph.DefaultConfig()), repl, defaultPolicy(), local.NewIdempotency(0), nil, nil, time.Second)
 
 	out, err := coord.Put(context.Background(), "default", []byte("foo"), []byte("bar"), nil, "")
 	if err != nil {
@@ -88,7 +88,7 @@ func TestOriginPlusOneFailsWithNoCandidates(t *testing.T) {
 	n1 := newNode(t, "node1")
 	repl := &fakeReplicator{nodes: map[string]*node{"node1": n1}, down: map[string]bool{}}
 	cluster := staticCluster{aliveView("node1")} // only self
-	coord := NewCoordinator(n1.store, member("node1"), cluster, latencygraph.New(latencygraph.DefaultConfig()), repl, defaultPolicy(), local.NewIdempotency(0), time.Second)
+	coord := NewCoordinator(n1.store, member("node1"), cluster, latencygraph.New(latencygraph.DefaultConfig()), repl, defaultPolicy(), local.NewIdempotency(0), nil, nil, time.Second)
 
 	_, err := coord.Put(context.Background(), "default", []byte("k"), []byte("v"), nil, "")
 	if err != ErrInsufficientNearbyReplicas {
@@ -104,7 +104,7 @@ func TestOriginKillValueSurvivesOnReplica(t *testing.T) {
 	n1, n2 := newNode(t, "node1"), newNode(t, "node2")
 	repl := &fakeReplicator{nodes: map[string]*node{"node1": n1, "node2": n2}, down: map[string]bool{}}
 	cluster := staticCluster{aliveView("node1"), aliveView("node2")}
-	coord := NewCoordinator(n1.store, member("node1"), cluster, latencygraph.New(latencygraph.DefaultConfig()), repl, defaultPolicy(), local.NewIdempotency(0), time.Second)
+	coord := NewCoordinator(n1.store, member("node1"), cluster, latencygraph.New(latencygraph.DefaultConfig()), repl, defaultPolicy(), local.NewIdempotency(0), nil, nil, time.Second)
 
 	if _, err := coord.Put(context.Background(), "default", []byte("foo"), []byte("bar"), nil, ""); err != nil {
 		t.Fatal(err)
@@ -122,7 +122,7 @@ func TestIdempotentRetryCollapsesToOneMutation(t *testing.T) {
 	repl := &fakeReplicator{nodes: map[string]*node{"node1": n1, "node2": n2}, down: map[string]bool{}}
 	cluster := staticCluster{aliveView("node1"), aliveView("node2")}
 	idem := local.NewIdempotency(0)
-	coord := NewCoordinator(n1.store, member("node1"), cluster, latencygraph.New(latencygraph.DefaultConfig()), repl, defaultPolicy(), idem, time.Second)
+	coord := NewCoordinator(n1.store, member("node1"), cluster, latencygraph.New(latencygraph.DefaultConfig()), repl, defaultPolicy(), idem, nil, nil, time.Second)
 
 	out1, err := coord.Put(context.Background(), "default", []byte("k"), []byte("v1"), nil, "req-1")
 	if err != nil {

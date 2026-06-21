@@ -135,6 +135,29 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 	return winner, nil
 }
 
+// GetRecord returns the winning StoredRecord for a key (used by repair to re-replicate the
+// latest record). found is false when the key is absent locally.
+func (s *Store) GetRecord(namespace string, key []byte) (*wavespanv1.StoredRecord, bool, error) {
+	cur, found, err := s.local.Get(storage.CFKVMeta, latestKey(namespace, key))
+	if err != nil || !found {
+		return nil, false, err
+	}
+	lp, err := storage.DecodeLatestPointer(cur)
+	if err != nil {
+		return nil, false, err
+	}
+	win := version.FromProto(lp.GetWinner())
+	recBytes, rfound, err := s.local.Get(storage.CFKVData, dataKey(namespace, key, win))
+	if err != nil || !rfound {
+		return nil, false, err
+	}
+	rec, err := storage.DecodeStoredRecord(recBytes)
+	if err != nil {
+		return nil, false, err
+	}
+	return rec, true, nil
+}
+
 // GetOutcome is the result of a local read.
 type GetOutcome struct {
 	Found        bool

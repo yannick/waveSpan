@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -65,7 +66,9 @@ type MembershipConfig struct {
 
 // ReplicationConfig selects the replication policy applied to this node.
 type ReplicationConfig struct {
-	PolicyRef string `yaml:"policyRef"`
+	PolicyRef            string `yaml:"policyRef"`
+	TargetNearbyReplicas int    `yaml:"targetNearbyReplicas"`
+	MinAckNearbyReplicas int    `yaml:"minAckNearbyReplicas"`
 }
 
 // AdminConfig is the listen address for the admin HTTP server (/healthz, /readyz, /metrics).
@@ -158,6 +161,16 @@ func (c *Config) applyEnv(get func(string) (string, bool)) {
 	if v, ok := get("WAVESPAN_INSECURE_DEV_MODE"); ok {
 		c.Security.InsecureDevMode = v == "true" || v == "1"
 	}
+	if v, ok := get("WAVESPAN_TARGET_NEARBY_REPLICAS"); ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Replication.TargetNearbyReplicas = n
+		}
+	}
+	if v, ok := get("WAVESPAN_MIN_ACK_NEARBY_REPLICAS"); ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Replication.MinAckNearbyReplicas = n
+		}
+	}
 }
 
 func (c *Config) applyDefaults() {
@@ -175,6 +188,12 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Ports.Data == 0 {
 		c.Ports.Data = defaultDataPort
+	}
+	if c.Replication.TargetNearbyReplicas == 0 {
+		c.Replication.TargetNearbyReplicas = 3
+	}
+	if c.Replication.MinAckNearbyReplicas == 0 {
+		c.Replication.MinAckNearbyReplicas = 1
 	}
 }
 

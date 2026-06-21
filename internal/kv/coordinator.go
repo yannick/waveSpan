@@ -36,18 +36,27 @@ type Coordinator struct {
 	replicator   local.Replicator
 	policy       placement.Policy
 	idem         *local.Idempotency
+	holders      *local.HolderDirectory
+	fanout       *local.Fanout
 	writeTimeout time.Duration
 }
 
-// NewCoordinator wires a coordinator.
-func NewCoordinator(store *recordstore.Store, self membership.Member, cluster Cluster, graph *latencygraph.Graph, replicator local.Replicator, policy placement.Policy, idem *local.Idempotency, writeTimeout time.Duration) *Coordinator {
+// NewCoordinator wires a coordinator. holders and fanout are optional (nil disables holder
+// tracking / background target-N fill; the M4 node wires both).
+func NewCoordinator(store *recordstore.Store, self membership.Member, cluster Cluster, graph *latencygraph.Graph, replicator local.Replicator, policy placement.Policy, idem *local.Idempotency, holders *local.HolderDirectory, fanout *local.Fanout, writeTimeout time.Duration) *Coordinator {
 	if idem == nil {
 		idem = local.NewIdempotency(0)
 	}
 	if writeTimeout <= 0 {
 		writeTimeout = 2 * time.Second
 	}
-	return &Coordinator{store: store, self: self, cluster: cluster, graph: graph, replicator: replicator, policy: policy, idem: idem, writeTimeout: writeTimeout}
+	return &Coordinator{store: store, self: self, cluster: cluster, graph: graph, replicator: replicator, policy: policy, idem: idem, holders: holders, fanout: fanout, writeTimeout: writeTimeout}
+}
+
+func (c *Coordinator) recordHolder(namespace string, key []byte, member string, v version.Version) {
+	if c.holders != nil {
+		c.holders.RecordHolder(namespace, key, member, v)
+	}
 }
 
 // PutOutcome is the result of a coordinated write.
@@ -85,6 +94,7 @@ func (c *Coordinator) write(ctx context.Context, namespace string, key, value []
 	if _, err := c.store.Apply(rec, kind); err != nil { // origin local durable
 		return PutOutcome{}, err
 	}
+	c.recordHolder(namespace, key, c.self.MemberID, v) // origin is a durable holder
 
 	cands, err := placement.Select(c.self, c.cluster.Members(), c.graph, c.policy)
 	if err != nil {
@@ -92,19 +102,23 @@ func (c *Coordinator) write(ctx context.Context, namespace string, key, value []
 		return PutOutcome{}, ErrInsufficientNearbyReplicas
 	}
 
-	acked, spill := c.fanout(ctx, cands, namespace, key, rec)
+	acked, spill := c.replicateMinAck(ctx, cands, namespace, key, rec, v)
 	if acked < c.policy.MinAckNearbyReplicas {
 		return PutOutcome{}, ErrInsufficientNearbyReplicas
 	}
 	if idemKey != "" {
 		c.idem.Record(idemKey, v)
 	}
+	// background fill to the target nearby replica count (M4).
+	if c.fanout != nil {
+		c.fanout.Enqueue(local.FanoutJob{Namespace: namespace, Key: key, Record: rec})
+	}
 	return PutOutcome{Version: v, AckedNearbyReplicas: acked, GeoSpillover: spill}, nil
 }
 
-// fanout replicates to candidates in order until minAck durable acknowledgements are collected.
-// Target-N background fill (the remaining candidates) lands in M4.
-func (c *Coordinator) fanout(ctx context.Context, cands []placement.Candidate, namespace string, key []byte, rec *wavespanv1.StoredRecord) (acked int, spill bool) {
+// replicateMinAck replicates to candidates in order until minAck durable acknowledgements are
+// collected. The background fanout worker fills the remaining target-N holders (M4).
+func (c *Coordinator) replicateMinAck(ctx context.Context, cands []placement.Candidate, namespace string, key []byte, rec *wavespanv1.StoredRecord, v version.Version) (acked int, spill bool) {
 	req := local.BuildRequest(namespace, key, rec, c.self.MemberID)
 	for _, cand := range cands {
 		callCtx, cancel := context.WithTimeout(ctx, c.writeTimeout)
@@ -112,6 +126,7 @@ func (c *Coordinator) fanout(ctx context.Context, cands []placement.Candidate, n
 		cancel()
 		if err == nil && resp.GetDurable() {
 			acked++
+			c.recordHolder(namespace, key, cand.Member.MemberID, v)
 			if cand.GeoSpillover {
 				spill = true
 			}
