@@ -29,6 +29,7 @@ for i in $(seq 1 "$N"); do
     --env WAVESPAN_ZONE="zone-$zone" \
     --env WAVESPAN_REGION=dev-region \
     --env WAVESPAN_GEO=dev \
+    --env WAVESPAN_STORAGE_PATH=/var/lib/wavespan \
     --env WAVESPAN_SEEDS="$seeds" \
     "$IMAGE"
 done
