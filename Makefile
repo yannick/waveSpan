@@ -30,7 +30,8 @@ test-race:
 
 ## test-integration: docker-based integration tests (requires Docker + ../wavesdb)
 test-integration:
-	$(GO) test -tags integration ./tests/integration/...
+	docker compose -f docker/docker-compose.yaml build
+	$(GO) test -tags integration -timeout 600s ./tests/integration/...
 
 ## lint: golangci-lint
 lint:

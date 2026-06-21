@@ -16,9 +16,14 @@ import (
 	"time"
 
 	"github.com/cwire/wavespan/internal/config"
+	"github.com/cwire/wavespan/internal/kv"
 	"github.com/cwire/wavespan/internal/membership"
 	"github.com/cwire/wavespan/internal/observability"
+	"github.com/cwire/wavespan/internal/placement"
+	"github.com/cwire/wavespan/internal/recordstore"
+	local "github.com/cwire/wavespan/internal/replication/local"
 	"github.com/cwire/wavespan/internal/storage"
+	"github.com/cwire/wavespan/internal/version"
 )
 
 func main() {
@@ -63,8 +68,26 @@ func run() error {
 	logger.Info("member identity", "storage_uuid", storageUUID, "gossip_addr", self.GossipAddr,
 		"zone", self.Zone, "region", self.Region, "geo", self.Geo)
 
+	// KV data path (M3): local record store, StoreReplica receiver, origin+1 coordinator.
+	rstore := recordstore.NewStore(store, cfg.ClusterID, cfg.MemberID, version.NewClock(nil, 500), version.NewSequencer(0))
+	idem := local.NewIdempotency(0)
+	receiver := local.NewReceiver(rstore, cfg.MemberID, idem)
+	replicaSrv := local.NewReplicaServer(receiver)
+	policy := placement.Policy{
+		TargetNearbyReplicas: 3, MinAckNearbyReplicas: 1, RequireDistinctNodes: true,
+		Geo: placement.PreferLocalGeo, AllowSpilloverForDurability: true, ComplianceGeo: self.Geo,
+	}
+	coord := kv.NewCoordinator(rstore, self, svc, svc.Graph(), local.NewConnectReplicator(http.DefaultClient), policy, idem, 2*time.Second)
+	kvSvc := kv.NewService(coord, kv.NewReader(rstore, self), self)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Data server on the data port: public KvService + internal ReplicationService.
+	dataMux := http.NewServeMux()
+	dataMux.Handle(kvSvc.Handler())
+	dataMux.Handle(replicaSrv.Handler())
+	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: dataMux, ReadHeaderTimeout: 5 * time.Second}
 
 	// Gossip server on the gossip port.
 	gossipMux := http.NewServeMux()
@@ -77,11 +100,17 @@ func run() error {
 	adminMux.Handle("/admin/latency", latencyHandler(svc))
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second}
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	go func() {
 		logger.Info("gossip server listening", "addr", gossipSrv.Addr)
 		if err := gossipSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("gossip server: %w", err)
+		}
+	}()
+	go func() {
+		logger.Info("data server listening", "addr", dataSrv.Addr)
+		if err := dataSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- fmt.Errorf("data server: %w", err)
 		}
 	}()
 	go func() {
@@ -105,6 +134,7 @@ func run() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = gossipSrv.Shutdown(shutdownCtx)
+		_ = dataSrv.Shutdown(shutdownCtx)
 		_ = adminSrv.Shutdown(shutdownCtx)
 		logger.Info("clean shutdown complete")
 		return nil

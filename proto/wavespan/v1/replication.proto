@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+import "wavespan/v1/common.proto";
+
+// ReplicaClass distinguishes durable replicas (counted for write durability) from disposable
+// dynamic-cache copies (design/05 replica types).
+enum ReplicaClass {
+  REPLICA_CLASS_UNSPECIFIED = 0;
+  REPLICA_CLASS_NEARBY_DURABLE = 1;
+  REPLICA_CLASS_DYNAMIC_CACHE = 2;
+}
+
+// StoreReplicaRequest carries a versioned record to a nearby peer for durable replication
+// (design/05 "StoreReplica protocol").
+message StoreReplicaRequest {
+  string namespace = 1;
+  bytes key = 2;
+  StoredRecord record = 3;
+  ReplicaClass replica_class = 4;
+  string coordinator_member_id = 5;
+  string mutation_id = 6;
+}
+
+message StoreReplicaResponse {
+  bool durable = 1;
+  string member_id = 2;
+  Version applied_version = 3;
+  ConflictState conflict_state = 4;
+}
+
+// ReplicationService is the internal replica-write API (mTLS-only in production, design/15).
+service ReplicationService {
+  rpc StoreReplica(StoreReplicaRequest) returns (StoreReplicaResponse);
+}

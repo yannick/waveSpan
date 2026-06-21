@@ -25,7 +25,7 @@ services:
       WAVESPAN_REGION: dev-region
       WAVESPAN_GEO: dev
       WAVESPAN_STORAGE_PATH: /var/lib/wavespan
-    ports: ["7901:7900"]
+    ports: ["7901:7900", "7811:7800"]
     volumes: ["node1-data:/var/lib/wavespan"]
   node2:
     <<: *node
@@ -39,7 +39,7 @@ services:
       WAVESPAN_REGION: dev-region
       WAVESPAN_GEO: dev
       WAVESPAN_STORAGE_PATH: /var/lib/wavespan
-    ports: ["7902:7900"]
+    ports: ["7902:7900", "7812:7800"]
     volumes: ["node2-data:/var/lib/wavespan"]
   node3:
     <<: *node
@@ -53,7 +53,7 @@ services:
       WAVESPAN_REGION: dev-region
       WAVESPAN_GEO: dev
       WAVESPAN_STORAGE_PATH: /var/lib/wavespan
-    ports: ["7903:7900"]
+    ports: ["7903:7900", "7813:7800"]
     volumes: ["node3-data:/var/lib/wavespan"]
 
 volumes:
