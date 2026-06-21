@@ -28,6 +28,10 @@ test:
 test-race:
 	CGO_ENABLED=1 $(GO) test -race ./...
 
+## test-integration: docker-based integration tests (requires Docker + ../wavesdb)
+test-integration:
+	$(GO) test -tags integration ./tests/integration/...
+
 ## lint: golangci-lint
 lint:
 	golangci-lint run

@@ -3,6 +3,7 @@ module github.com/cwire/wavespan
 go 1.26.4
 
 require (
+	connectrpc.com/connect v1.20.0
 	github.com/prometheus/client_golang v1.23.2
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1

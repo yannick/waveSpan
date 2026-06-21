@@ -6,3 +6,5 @@
 /internal/ui/dist/
 /ui/node_modules/
 /ui/gen/
+/.wavespan-data/
+/cmd/wavespan-node/.wavespan-data/

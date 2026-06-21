@@ -3,7 +3,7 @@
 clusterId: dev
 memberId: node1
 storage:
-  path: /var/lib/wavespan
+  path: ./.wavespan-data
   engine: wavesdb
 membership:
   runtime: docker
