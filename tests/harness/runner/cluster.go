@@ -48,15 +48,16 @@ type Cluster struct {
 	container   map[string]string // member -> docker container name
 }
 
-// DevCluster is the 3-node docker-compose dev cluster.
+// DevCluster is the 3-node harness cluster (target=2 so every node holds every key — see
+// docker/docker-compose.harness.yaml for why full convergence requires that).
 func DevCluster() *Cluster {
 	return &Cluster{
-		composeFile: "../../docker/docker-compose.yaml",
-		project:     "wavespan-dev",
+		composeFile: "../../docker/docker-compose.harness.yaml",
+		project:     "wavespan-harness",
 		members:     []string{"node1", "node2", "node3"},
-		dataPort:    map[string]string{"node1": "7811", "node2": "7812", "node3": "7813"},
-		adminPort:   map[string]string{"node1": "7901", "node2": "7902", "node3": "7903"},
-		container:   map[string]string{"node1": "wavespan-dev-node1-1", "node2": "wavespan-dev-node2-1", "node3": "wavespan-dev-node3-1"},
+		dataPort:    map[string]string{"node1": "7821", "node2": "7822", "node3": "7823"},
+		adminPort:   map[string]string{"node1": "7911", "node2": "7912", "node3": "7913"},
+		container:   map[string]string{"node1": "wavespan-harness-node1-1", "node2": "wavespan-harness-node2-1", "node3": "wavespan-harness-node3-1"},
 	}
 }
 
@@ -102,11 +103,39 @@ func (c *Cluster) Up(formTimeout time.Duration) error {
 // Down tears the cluster down (removing volumes).
 func (c *Cluster) Down() error { return c.compose("down", "-v") }
 
-// LiveMembers returns members that currently report ALIVE in their own roster.
+// allFormed reports whether every member sees the full roster.
 func (c *Cluster) allFormed() bool {
 	for _, m := range c.members {
 		if len(membershipStates(c.AdminAddr(m))) != len(c.members) {
 			return false
+		}
+	}
+	return true
+}
+
+// WaitConverged waits until every member sees every other member ALIVE again (the cluster has
+// re-formed after a healed nemesis), then a short settle delay for replication/repair to converge.
+func (c *Cluster) WaitConverged(timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if c.allAlive() {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	time.Sleep(3 * time.Second) // settle window for fanout/repair/anti-entropy
+}
+
+func (c *Cluster) allAlive() bool {
+	for _, m := range c.members {
+		states := membershipStates(c.AdminAddr(m))
+		if len(states) != len(c.members) {
+			return false
+		}
+		for _, st := range states {
+			if st != "ALIVE" {
+				return false
+			}
 		}
 	}
 	return true

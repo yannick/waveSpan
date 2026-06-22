@@ -138,6 +138,12 @@ func run() error {
 		local.RepairConfig{IsAlive: isAlive, ChurnHigh: churnHigh, WriteTimeout: 2 * time.Second})
 	fanout.SetRepair(repair)
 
+	// Intra-cluster anti-entropy: best-effort origin+1 fanout can miss a holder of a concurrently
+	// written key, and target-N repair only restores MISSING holders, not STALE ones. This pull-based
+	// pass adopts the highest version of each local key from alive peers so concurrent same-key
+	// writers converge across all replicas (design/13).
+	intraAE := local.NewIntraAntiEntropy(rstore, self, svc, local.NewConnectPeerFetch(http.DefaultClient), intraAENamespaces(cfg))
+
 	// M4 metrics: under-replication estimate (spot-churn alert signal) + repair queue depth.
 	underReplicated := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_under_replicated_keys_estimate", Help: "keys below target durable-holder count"})
 	repairQueueDepth := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_repair_queue_depth", Help: "pending repair items"})
@@ -308,6 +314,7 @@ func run() error {
 	go repair.Run(ctx, 200*time.Millisecond)
 	go evictor.Run(ctx, time.Minute)
 	go sweeper.Run(ctx, 30*time.Second)
+	go intraAE.Run(ctx, 2*time.Second)
 	if startGlobal != nil {
 		startGlobal()
 	}
@@ -415,6 +422,20 @@ func latencyHandler(svc *membership.Service) http.HandlerFunc {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// intraAENamespaces is the set of namespaces reconciled by intra-cluster anti-entropy (default +
+// any configured namespaces, including keep-siblings ones).
+func intraAENamespaces(cfg *config.Config) []string {
+	ns := []string{"default"}
+	seen := map[string]bool{"default": true}
+	for _, n := range cfg.Namespaces {
+		if n.Name != "" && !seen[n.Name] {
+			seen[n.Name] = true
+			ns = append(ns, n.Name)
+		}
+	}
+	return ns
 }
 
 // livenessKind maps a membership liveness state to the gossip event kind surfaced in the UI.

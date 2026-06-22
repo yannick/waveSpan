@@ -1,0 +1,41 @@
+{
+  "seed": 1,
+  "ops": [
+    {
+      "kind": "put",
+      "key": "reg",
+      "value": "node1-39-26",
+      "start_ms": 1782119917144,
+      "end_ms": 1782119917148,
+      "ack": true,
+      "served_by": "node1",
+      "policy": "hlc-last-write-wins",
+      "writer_version": {
+        "HLCPhysicalMs": 1782119917144,
+        "HLCLogical": 0,
+        "WriterClusterID": "harness",
+        "WriterMemberID": "node1",
+        "WriterSequence": 40
+      }
+    },
+    {
+      "kind": "get",
+      "key": "reg",
+      "value": "node3-39-489",
+      "start_ms": 1782119950463,
+      "end_ms": 1782119950467,
+      "ack": true,
+      "served_by": "node2",
+      "cluster": "harness",
+      "policy": "hlc-last-write-wins",
+      "observed_version": {
+        "HLCPhysicalMs": 1782119917137,
+        "HLCLogical": 0,
+        "WriterClusterID": "harness",
+        "WriterMemberID": "node3",
+        "WriterSequence": 40
+      }
+    }
+  ],
+  "faults": []
+}

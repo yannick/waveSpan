@@ -87,6 +87,16 @@ func (c *Client) Get(ctx context.Context, member, ns, key, session string) (stri
 	return val, found && op.Ack
 }
 
+// Peek reads from a member WITHOUT recording into the history (used to poll for convergence before
+// the final recorded read; the polling reads themselves are not part of the verified history).
+func (c *Client) Peek(ctx context.Context, member, ns, key string) (string, bool) {
+	resp, err := c.kv[member].Get(ctx, connect.NewRequest(&wavespanv1.GetRequest{Namespace: ns, Key: []byte(key)}))
+	if err != nil {
+		return "", false
+	}
+	return string(resp.Msg.GetValue()), resp.Msg.GetFound()
+}
+
 // Delete tombstones a key.
 func (c *Client) Delete(ctx context.Context, member, ns, key, reqID string) bool {
 	start := c.now()
