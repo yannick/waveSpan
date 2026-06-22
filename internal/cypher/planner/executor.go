@@ -45,6 +45,12 @@ type Executor struct {
 	Ctx           context.Context //nolint:containedctx // executor is request-scoped, not long-lived
 	VectorScatter func(ctx context.Context, indexName string, query []float32, k, efSearch int, exact, rerank bool) (fragments [][]vector.Hit, unreachable int)
 
+	// KV, when set, backs the kv.* built-ins. Nil ⇒ kv.* returns "backend not configured".
+	KV KVAccess
+	// evalErr captures the first error raised inside expression evaluation (evalScalar cannot
+	// return an error); Execute aborts the query with it after the current operator.
+	evalErr error
+
 	pods          map[string]bool
 	warns         []string
 	columns       []string
@@ -66,6 +72,22 @@ var procedures = map[string]Procedure{}
 // RegisterProcedure registers a CALL-able procedure by name (e.g. "vector.searchExact").
 func RegisterProcedure(name string, fn Procedure) { procedures[name] = fn }
 
+// KVAccess is the KV read/write surface the cypher kv.* built-ins use. It is satisfied by
+// internal/kv.CypherKV, which routes to the same Reader/Coordinator the gRPC KV API uses.
+type KVAccess interface {
+	Get(ctx context.Context, namespace string, key []byte) (value []byte, found bool, err error)
+	Put(ctx context.Context, namespace string, key, value []byte, ttlMs *int64) (version string, err error)
+	Delete(ctx context.Context, namespace string, key []byte) (version string, err error)
+}
+
+// ScalarFunc is a CALL-free function usable inline in expressions, e.g. kv.get(ns, key).
+type ScalarFunc func(e *Executor, args []*wavespanv1.Value, row bindingRow) (*wavespanv1.Value, error)
+
+var funcs = map[string]ScalarFunc{}
+
+// RegisterFunction registers a scalar function by name (e.g. "kv.get").
+func RegisterFunction(name string, fn ScalarFunc) { funcs[name] = fn }
+
 // Execute plans and runs a parsed query.
 func (e *Executor) Execute(q *parser.Query) (*Result, error) {
 	ops, err := Plan(q)
@@ -83,6 +105,9 @@ func (e *Executor) Execute(q *parser.Query) (*Result, error) {
 	for _, op := range ops {
 		if rows, err = e.apply(op, rows); err != nil {
 			return nil, err
+		}
+		if e.evalErr != nil {
+			return nil, e.evalErr
 		}
 		if err := e.Limits.checkIntermediate(len(rows)); err != nil {
 			return nil, err

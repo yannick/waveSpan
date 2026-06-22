@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/cwire/wavespan/internal/cypher/parser"
@@ -39,8 +40,37 @@ func (e *Executor) evalScalar(expr parser.Expr, row bindingRow) *wavespanv1.Valu
 		return e.evalUnary(x, row)
 	case *parser.BinaryExpr:
 		return e.evalBinary(x, row)
+	case *parser.FunctionCall:
+		return e.evalFunc(x, row)
 	}
 	return vNull()
+}
+
+// evalFunc evaluates a scalar function call. Failures (unknown name, bad args, backend error)
+// are recorded on e.evalErr (first wins) and surface as a hard query error after the current
+// operator; the expression itself yields null meanwhile.
+func (e *Executor) evalFunc(x *parser.FunctionCall, row bindingRow) *wavespanv1.Value {
+	fn, ok := funcs[x.Name]
+	if !ok {
+		e.setEvalErr(fmt.Errorf("cypher: unknown function %s", x.Name))
+		return vNull()
+	}
+	args := make([]*wavespanv1.Value, len(x.Args))
+	for i, a := range x.Args {
+		args[i] = e.evalScalar(a, row)
+	}
+	v, err := fn(e, args, row)
+	if err != nil {
+		e.setEvalErr(err)
+		return vNull()
+	}
+	return v
+}
+
+func (e *Executor) setEvalErr(err error) {
+	if e.evalErr == nil {
+		e.evalErr = err
+	}
 }
 
 func (e *Executor) evalUnary(x *parser.UnaryExpr, row bindingRow) *wavespanv1.Value {
