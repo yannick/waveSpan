@@ -191,3 +191,10 @@ func (l *OutLog) Bytes(peer string, partition uint32) int64 {
 	defer l.mu.Unlock()
 	return l.bytes[pk(peer, partition)]
 }
+
+// LastSeq returns the last appended seq for (peer, partition).
+func (l *OutLog) LastSeq(peer string, partition uint32) uint64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.seq[pk(peer, partition)]
+}

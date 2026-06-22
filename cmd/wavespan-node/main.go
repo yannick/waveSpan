@@ -17,15 +17,18 @@ import (
 
 	"github.com/cwire/wavespan/internal/cache"
 	"github.com/cwire/wavespan/internal/config"
+	"github.com/cwire/wavespan/internal/conflict"
 	"github.com/cwire/wavespan/internal/kv"
 	"github.com/cwire/wavespan/internal/membership"
 	"github.com/cwire/wavespan/internal/observability"
 	"github.com/cwire/wavespan/internal/placement"
 	"github.com/cwire/wavespan/internal/recordstore"
+	global "github.com/cwire/wavespan/internal/replication/global"
 	local "github.com/cwire/wavespan/internal/replication/local"
 	"github.com/cwire/wavespan/internal/storage"
 	"github.com/cwire/wavespan/internal/ttl"
 	"github.com/cwire/wavespan/internal/version"
+	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -160,10 +163,47 @@ func run() error {
 	defer stop()
 	subscriber.SetBaseContext(ctx) // subscriptions live for the node lifetime, not per-request
 
+	// Global active-active replication (M7): tap origin writes into a per-peer out-log, serve the
+	// GlobalReplication API, ship via the sender, and reconcile via anti-entropy.
+	var globalSrv *global.Server
+	var startGlobal func()
+	if cfg.GlobalReplication.Enabled() {
+		applier := global.NewApplier(rstore, conflict.NewRegistry(), cfg.ConflictPolicy)
+		ae := global.NewAntiEntropy(rstore)
+		gmetrics := global.NewMetrics(metrics.Registry)
+		globalSrv = global.NewServer(applier, ae)
+		outlog := global.NewOutLog(store, cfg.GlobalReplication.OutLogDiskBudgetBytes)
+		peers := cfg.GlobalReplication.Peers
+		coord.SetGlobalTap(func(ns string, key []byte, rec *wavespanv1.StoredRecord) {
+			m := &wavespanv1.GlobalMutation{
+				Id:        &wavespanv1.GlobalMutationId{ClusterId: self.ClusterID, MemberId: self.MemberID, WriterSequence: rec.GetVersion().GetWriterSequence()},
+				Namespace: ns, Key: key, Record: rec, Partition: global.Partition(ns, key),
+			}
+			for _, p := range peers {
+				_ = outlog.Append(p.ClusterID, m, cfg.GlobalDurabilityRequired(ns))
+			}
+		})
+		sender := global.NewSender(outlog, peers, nil)
+		nsList := []string{"default"}
+		for _, n := range cfg.Namespaces {
+			nsList = append(nsList, n.Name)
+		}
+		reconciler := global.NewReconciler(ae, applier, outlog, peers, nsList, nil, gmetrics)
+		aeInterval := time.Duration(cfg.GlobalReplication.AntiEntropyIntervalSeconds) * time.Second
+		startGlobal = func() {
+			go sender.Run(ctx, time.Second)
+			go reconciler.Run(ctx, aeInterval)
+		}
+		logger.Info("global replication enabled", "peers", len(peers))
+	}
+
 	// Data server on the data port: public KvService + internal ReplicationService.
 	dataMux := http.NewServeMux()
 	dataMux.Handle(kvSvc.Handler())
 	dataMux.Handle(replicaSrv.Handler())
+	if globalSrv != nil {
+		dataMux.Handle(globalSrv.Handler())
+	}
 	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: dataMux, ReadHeaderTimeout: 5 * time.Second}
 
 	// Gossip server on the gossip port.
@@ -207,6 +247,9 @@ func run() error {
 	go repair.Run(ctx, 200*time.Millisecond)
 	go evictor.Run(ctx, time.Minute)
 	go sweeper.Run(ctx, 30*time.Second)
+	if startGlobal != nil {
+		startGlobal()
+	}
 	go func() {
 		t := time.NewTicker(time.Second)
 		defer t.Stop()
