@@ -181,6 +181,18 @@ func run() error {
 		local.RepairConfig{IsAlive: isAlive, ChurnHigh: churnHigh, WriteTimeout: 2 * time.Second})
 	fanout.SetRepair(repair)
 
+	// "Replicate everywhere" namespaces (design/05 node sync): writes go to EVERY alive node, repair
+	// targets the full alive set, and a joining node streams the existing records on bootstrap.
+	everywhere := cfg.EverywhereNamespaces()
+	everywhereFn := func(ns string) bool { return everywhere[ns] }
+	fanout.SetEverywhere(everywhereFn)
+	repair.SetEverywhere(everywhereFn)
+	var everywhereList []string
+	for ns := range everywhere {
+		everywhereList = append(everywhereList, ns)
+	}
+	bootstrapper := local.NewBootstrapper(rstore, self, svc, local.NewConnectBackfill(httpClient), everywhereList)
+
 	// Intra-cluster anti-entropy: best-effort origin+1 fanout can miss a holder of a concurrently
 	// written key, and target-N repair only restores MISSING holders, not STALE ones. This pull-based
 	// pass adopts the highest version of each local key from alive peers so concurrent same-key
@@ -246,6 +258,15 @@ func run() error {
 		applier.SetVectorSink(func(v *wavespanv1.VectorRecord) {
 			_ = vstore.Put(v)
 			indexSet.OnWrite(v)
+		})
+		// A cross-cluster write lands on one local node; spread it within this cluster exactly like a
+		// locally-originated write — so a replicate-everywhere namespace reaches every local node, and
+		// the holder is advertised — instead of sitting on the single receiving node.
+		applier.SetOnApply(func(ns string, key []byte, rec *wavespanv1.StoredRecord) {
+			onStored(ns, key)
+			if everywhereFn(ns) {
+				fanout.Enqueue(local.FanoutJob{Namespace: ns, Key: key, Record: rec})
+			}
 		})
 		ae := global.NewAntiEntropy(rstore)
 		gmetrics := global.NewMetrics(metrics.Registry)
@@ -376,6 +397,7 @@ func run() error {
 	go evictor.Run(ctx, time.Minute)
 	go sweeper.Run(ctx, 30*time.Second)
 	go intraAE.Run(ctx, 2*time.Second)
+	go bootstrapper.Run(ctx, 2*time.Second) // stream "everywhere" namespaces from a peer on join
 	if startGlobal != nil {
 		startGlobal()
 	}

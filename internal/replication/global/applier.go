@@ -27,6 +27,14 @@ type Applier struct {
 	mu         sync.Mutex
 	applied    map[string]bool // mutation_id -> applied (dedupe / replay protection)
 	vectorSink func(*wavespanv1.VectorRecord)
+	onApply    func(namespace string, key []byte, rec *wavespanv1.StoredRecord)
+}
+
+// SetOnApply installs a hook invoked after a successful inbound KV apply, so the receiving node can
+// spread the record within its local cluster (fanout) and advertise the holder — making a
+// replicate-everywhere namespace stay everywhere across the global boundary.
+func (a *Applier) SetOnApply(fn func(namespace string, key []byte, rec *wavespanv1.StoredRecord)) {
+	a.onApply = fn
 }
 
 // SetVectorSink routes applied raw-vector mutations (reserved namespace) to the local vector store
@@ -106,5 +114,12 @@ func (a *Applier) Apply(m *wavespanv1.GlobalMutation) (bool, error) {
 	a.mu.Lock()
 	a.applied[id] = true
 	a.mu.Unlock()
+	// Inbound cross-cluster writes land on ONE local node; the hook lets the node spread them within
+	// the local cluster (e.g. fanout an "everywhere" namespace to all local nodes) + advertise the
+	// holder, exactly as a locally-originated write does. Without it, a replicate-everywhere namespace
+	// would not stay "everywhere" across the global boundary.
+	if a.onApply != nil && res.Kind != conflict.KindReject {
+		a.onApply(ns, key, res.Record)
+	}
 	return true, nil
 }

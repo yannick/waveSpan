@@ -87,6 +87,9 @@ func (c *Cluster) compose(args ...string) error {
 
 // Up brings the cluster up and waits for membership to form.
 func (c *Cluster) Up(formTimeout time.Duration) error {
+	// Clean slate first so a lingering cluster from a prior (possibly failed) test never blocks this
+	// one — back-to-back compose up/down on a busy Docker host otherwise races on ports/volumes.
+	_ = c.compose("down", "-v")
 	if err := c.compose("up", "-d"); err != nil {
 		return err
 	}
@@ -102,6 +105,16 @@ func (c *Cluster) Up(formTimeout time.Duration) error {
 
 // Down tears the cluster down (removing volumes).
 func (c *Cluster) Down() error { return c.compose("down", "-v") }
+
+// WipeAndRestart removes a member's container AND its data volume, then brings it back empty —
+// simulating a fresh node joining (for testing bootstrap/backfill).
+func (c *Cluster) WipeAndRestart(member string) error {
+	if err := c.compose("rm", "-sf", member); err != nil {
+		return err
+	}
+	_ = exec.Command("docker", "volume", "rm", "-f", c.project+"_h-"+member+"-data").Run()
+	return c.compose("up", "-d", member)
+}
 
 // allFormed reports whether every member sees the full roster.
 func (c *Cluster) allFormed() bool {

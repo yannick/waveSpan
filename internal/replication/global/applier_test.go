@@ -91,3 +91,23 @@ func TestApplyTTLUsesOriginExpiry(t *testing.T) {
 		t.Fatalf("applied expiry must equal origin expiry, got %v want %d", out.ExpiresAtMs, origin)
 	}
 }
+
+// TestApplyOnApplyHookSpreads: a successful inbound apply fires the onApply hook (so the receiving
+// node can fanout an everywhere namespace), and a replay does not fire it again.
+func TestApplyOnApplyHookSpreads(t *testing.T) {
+	s := newRecStore(t, "b1")
+	a := NewApplier(s, conflict.NewRegistry(), nil)
+	var fired [][]byte
+	a.SetOnApply(func(_ string, key []byte, _ *wavespanv1.StoredRecord) { fired = append(fired, key) })
+
+	m := gmut("test-a", "a1", 1, 100, "ref", "k", "v", false, nil)
+	if _, err := a.Apply(m); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Apply(m); err != nil { // replay
+		t.Fatal(err)
+	}
+	if len(fired) != 1 || string(fired[0]) != "k" {
+		t.Fatalf("onApply should fire once for a new apply, got %d", len(fired))
+	}
+}

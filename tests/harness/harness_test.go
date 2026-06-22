@@ -15,6 +15,7 @@ package harness
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -140,4 +141,53 @@ func TestPRGateIdempotencyUnderPause(t *testing.T) {
 	cancel()
 	c.WaitConverged(15 * time.Second)
 	runChecks(t, h)
+}
+
+// TestPRGateEverywhereBackfill: writes to a replicate-everywhere namespace land on every node, and a
+// wiped node that rejoins streams them back via bootstrap — verified with a local-only ScanLocal
+// count (no read warms the cache), so it proves proactive backfill, not fetch-on-miss.
+func TestPRGateEverywhereBackfill(t *testing.T) {
+	c, cl, _ := setUp(t, 4)
+	members := c.Members()
+	bg := context.Background()
+
+	const n = 40
+	for i := 0; i < n; i++ {
+		if !cl.Put(bg, members[0], "ref", fmt.Sprintf("ref/%d", i), fmt.Sprintf("v%d", i), "", "") {
+			t.Fatalf("put %d not acked", i)
+		}
+	}
+
+	// every node holds every record locally (replicate-everywhere fanout).
+	waitUntil(t, 30*time.Second, func() bool {
+		for _, m := range members {
+			if cl.LocalCount(bg, m, "ref") != n {
+				return false
+			}
+		}
+		return true
+	}, "replicate-everywhere fanout to all nodes")
+
+	// wipe node3 (container + data volume) and bring it back empty.
+	victim := members[2]
+	if err := c.WipeAndRestart(victim); err != nil {
+		t.Fatalf("wipe %s: %v", victim, err)
+	}
+	c.WaitConverged(30 * time.Second)
+
+	// backfill: without reading any key, the rejoined node must stream all records back.
+	waitUntil(t, 60*time.Second, func() bool { return cl.LocalCount(bg, victim, "ref") == n },
+		"wiped node backfilled the everywhere namespace")
+}
+
+func waitUntil(t *testing.T, timeout time.Duration, cond func() bool, what string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatalf("timeout waiting for: %s", what)
 }

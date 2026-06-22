@@ -23,6 +23,7 @@ import (
 type Client struct {
 	mu      sync.Mutex
 	kv      map[string]wavespanv1connect.KvServiceClient
+	repl    map[string]wavespanv1connect.ReplicationServiceClient
 	history *runner.History
 	now     func() int64
 }
@@ -30,10 +31,12 @@ type Client struct {
 // New wires a client over member->dataAddr and a shared history.
 func New(dataAddrs map[string]string, h *runner.History) *Client {
 	kv := map[string]wavespanv1connect.KvServiceClient{}
+	repl := map[string]wavespanv1connect.ReplicationServiceClient{}
 	for member, addr := range dataAddrs {
 		kv[member] = wavespanv1connect.NewKvServiceClient(http.DefaultClient, "http://"+addr)
+		repl[member] = wavespanv1connect.NewReplicationServiceClient(http.DefaultClient, "http://"+addr)
 	}
-	return &Client{kv: kv, history: h, now: func() int64 { return time.Now().UnixMilli() }}
+	return &Client{kv: kv, repl: repl, history: h, now: func() int64 { return time.Now().UnixMilli() }}
 }
 
 func (c *Client) record(op runner.Op) {
@@ -95,6 +98,16 @@ func (c *Client) Peek(ctx context.Context, member, ns, key string) (string, bool
 		return "", false
 	}
 	return string(resp.Msg.GetValue()), resp.Msg.GetFound()
+}
+
+// LocalCount returns how many records a member holds LOCALLY for a namespace (ScanLocal never
+// fetches from peers), so it proves what a node physically holds — used to verify backfill.
+func (c *Client) LocalCount(ctx context.Context, member, ns string) int {
+	resp, err := c.repl[member].ScanLocal(ctx, connect.NewRequest(&wavespanv1.ScanLocalRequest{Namespace: ns}))
+	if err != nil {
+		return -1
+	}
+	return len(resp.Msg.GetRows())
 }
 
 // Delete tombstones a key.

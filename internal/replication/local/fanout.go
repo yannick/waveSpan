@@ -37,7 +37,13 @@ type Fanout struct {
 	targetHolders int
 	writeTimeout  time.Duration
 	jobs          chan FanoutJob
+	everywhere    func(namespace string) bool // namespaces replicated to every node
 }
+
+// SetEverywhere installs the predicate selecting namespaces that replicate to all nodes.
+func (f *Fanout) SetEverywhere(fn func(namespace string) bool) { f.everywhere = fn }
+
+func (f *Fanout) isEverywhere(ns string) bool { return f.everywhere != nil && f.everywhere(ns) }
 
 // NewFanout wires a fanout worker. targetHolders is origin + target nearby replicas.
 func NewFanout(self membership.Member, cluster Cluster, graph *latencygraph.Graph, replicator Replicator, holders *HolderDirectory, policy placement.Policy, writeTimeout time.Duration) *Fanout {
@@ -92,6 +98,10 @@ func capTarget(target int, members []membership.MemberView) int {
 // Fill replicates to additional candidates until the target durable-holder count is reached.
 // Any shortfall is handed to the repair engine.
 func (f *Fanout) Fill(ctx context.Context, job FanoutJob) {
+	if f.isEverywhere(job.Namespace) {
+		f.fillEverywhere(ctx, job)
+		return
+	}
 	target := capTarget(f.targetHolders, f.cluster.Members())
 	if f.holders.Count(job.Namespace, job.Key) >= target {
 		return
@@ -118,6 +128,33 @@ func (f *Fanout) Fill(ctx context.Context, job FanoutJob) {
 	}
 	// could not reach target: record the gap for repair (design/05 failure paths).
 	if f.holders.Count(job.Namespace, job.Key) < target && f.repair != nil {
+		f.repair.Enqueue(RepairItem{Namespace: job.Namespace, Key: job.Key, Record: job.Record})
+	}
+}
+
+// fillEverywhere replicates the record to EVERY alive member (the "replicate everywhere" policy).
+// Any member it cannot reach is handed to repair, which re-pushes until all alive nodes hold it.
+func (f *Fanout) fillEverywhere(ctx context.Context, job FanoutJob) {
+	v := version.FromProto(job.Record.GetVersion())
+	req := BuildRequest(job.Namespace, job.Key, job.Record, f.self.MemberID)
+	missed := false
+	for _, m := range f.cluster.Members() {
+		if m.State != membership.StateAlive || m.Member.MemberID == f.self.MemberID {
+			continue
+		}
+		if f.holds(job.Namespace, job.Key, m.Member.MemberID) {
+			continue
+		}
+		callCtx, cancel := context.WithTimeout(ctx, f.writeTimeout)
+		resp, rerr := f.replicator.StoreReplica(callCtx, m.Member, req)
+		cancel()
+		if rerr == nil && resp.GetDurable() {
+			f.holders.RecordHolder(job.Namespace, job.Key, m.Member.MemberID, v)
+		} else {
+			missed = true
+		}
+	}
+	if missed && f.repair != nil {
 		f.repair.Enqueue(RepairItem{Namespace: job.Namespace, Key: job.Key, Record: job.Record})
 	}
 }

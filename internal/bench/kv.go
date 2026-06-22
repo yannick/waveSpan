@@ -13,6 +13,7 @@ import (
 
 // KVOptions configures the KV load test.
 type KVOptions struct {
+	Namespace   string
 	Concurrency int
 	Keys        int
 	ReadRatio   float64
@@ -27,6 +28,10 @@ type KVResult struct {
 
 // RunKV runs a mixed put/get load test.
 func RunKV(addr string, opt KVOptions) *KVResult {
+	ns := opt.Namespace
+	if ns == "" {
+		ns = "default"
+	}
 	client := kvClient(addr)
 	res := &KVResult{Get: &Latencies{}, Put: &Latencies{}}
 	ctx, cancel := context.WithTimeout(context.Background(), opt.Duration)
@@ -42,7 +47,7 @@ func RunKV(addr string, opt KVOptions) *KVResult {
 				key := fmt.Sprintf("bench/%d", rng.Intn(opt.Keys))
 				start := time.Now()
 				if rng.Float64() < opt.ReadRatio {
-					_, err := client.Get(ctx, connect.NewRequest(&wavespanv1.GetRequest{Namespace: "default", Key: []byte(key)}))
+					_, err := client.Get(ctx, connect.NewRequest(&wavespanv1.GetRequest{Namespace: ns, Key: []byte(key)}))
 					switch {
 					case err == nil:
 						res.Get.Add(time.Since(start))
@@ -51,7 +56,7 @@ func RunKV(addr string, opt KVOptions) *KVResult {
 					}
 				} else {
 					_, err := client.Put(ctx, connect.NewRequest(&wavespanv1.PutRequest{
-						Namespace: "default", Key: []byte(key), Value: []byte("v"), RequireOriginPlusOne: true,
+						Namespace: ns, Key: []byte(key), Value: []byte("v"), RequireOriginPlusOne: true,
 					}))
 					switch {
 					case err == nil:
