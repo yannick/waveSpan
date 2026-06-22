@@ -55,7 +55,9 @@ func Allowed(role Role, surface Surface) bool {
 // default to admin (deny-by-default for unclassified internal calls).
 func SurfaceForProcedure(procedure string) Surface {
 	switch procedure {
-	case "/wavespan.v1.KvService/Get", "/wavespan.v1.KvService/Scan", "/wavespan.v1.Cypher/Query":
+	case "/wavespan.v1.KvService/Get", "/wavespan.v1.KvService/Scan", "/wavespan.v1.Cypher/Query",
+		"/wavespan.v1.ObservabilityService/StreamGossip", "/wavespan.v1.ObservabilityService/InspectLocal",
+		"/wavespan.v1.ObservabilityService/InspectGlobal", "/wavespan.v1.ObservabilityService/GetClusterView":
 		return SurfacePublicRead
 	case "/wavespan.v1.KvService/Put", "/wavespan.v1.KvService/Delete", "/wavespan.v1.VectorService/Put":
 		return SurfacePublicWrite
