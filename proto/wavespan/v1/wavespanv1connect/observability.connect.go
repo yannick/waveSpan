@@ -45,6 +45,9 @@ const (
 	// ObservabilityServiceGetClusterViewProcedure is the fully-qualified name of the
 	// ObservabilityService's GetClusterView RPC.
 	ObservabilityServiceGetClusterViewProcedure = "/wavespan.v1.ObservabilityService/GetClusterView"
+	// ObservabilityServiceGraphExploreProcedure is the fully-qualified name of the
+	// ObservabilityService's GraphExplore RPC.
+	ObservabilityServiceGraphExploreProcedure = "/wavespan.v1.ObservabilityService/GraphExplore"
 )
 
 // ObservabilityServiceClient is a client for the wavespan.v1.ObservabilityService service.
@@ -53,6 +56,7 @@ type ObservabilityServiceClient interface {
 	InspectLocal(context.Context, *connect.Request[v1.InspectLocalRequest]) (*connect.ServerStreamForClient[v1.InspectRow], error)
 	InspectGlobal(context.Context, *connect.Request[v1.InspectGlobalRequest]) (*connect.ServerStreamForClient[v1.InspectRow], error)
 	GetClusterView(context.Context, *connect.Request[v1.GetClusterViewRequest]) (*connect.Response[v1.GetClusterViewResponse], error)
+	GraphExplore(context.Context, *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error)
 }
 
 // NewObservabilityServiceClient constructs a client for the wavespan.v1.ObservabilityService
@@ -90,6 +94,12 @@ func NewObservabilityServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(observabilityServiceMethods.ByName("GetClusterView")),
 			connect.WithClientOptions(opts...),
 		),
+		graphExplore: connect.NewClient[v1.GraphExploreRequest, v1.GraphExploreResponse](
+			httpClient,
+			baseURL+ObservabilityServiceGraphExploreProcedure,
+			connect.WithSchema(observabilityServiceMethods.ByName("GraphExplore")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -99,6 +109,7 @@ type observabilityServiceClient struct {
 	inspectLocal   *connect.Client[v1.InspectLocalRequest, v1.InspectRow]
 	inspectGlobal  *connect.Client[v1.InspectGlobalRequest, v1.InspectRow]
 	getClusterView *connect.Client[v1.GetClusterViewRequest, v1.GetClusterViewResponse]
+	graphExplore   *connect.Client[v1.GraphExploreRequest, v1.GraphExploreResponse]
 }
 
 // StreamGossip calls wavespan.v1.ObservabilityService.StreamGossip.
@@ -121,12 +132,18 @@ func (c *observabilityServiceClient) GetClusterView(ctx context.Context, req *co
 	return c.getClusterView.CallUnary(ctx, req)
 }
 
+// GraphExplore calls wavespan.v1.ObservabilityService.GraphExplore.
+func (c *observabilityServiceClient) GraphExplore(ctx context.Context, req *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error) {
+	return c.graphExplore.CallUnary(ctx, req)
+}
+
 // ObservabilityServiceHandler is an implementation of the wavespan.v1.ObservabilityService service.
 type ObservabilityServiceHandler interface {
 	StreamGossip(context.Context, *connect.Request[v1.StreamGossipRequest], *connect.ServerStream[v1.GossipEvent]) error
 	InspectLocal(context.Context, *connect.Request[v1.InspectLocalRequest], *connect.ServerStream[v1.InspectRow]) error
 	InspectGlobal(context.Context, *connect.Request[v1.InspectGlobalRequest], *connect.ServerStream[v1.InspectRow]) error
 	GetClusterView(context.Context, *connect.Request[v1.GetClusterViewRequest]) (*connect.Response[v1.GetClusterViewResponse], error)
+	GraphExplore(context.Context, *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error)
 }
 
 // NewObservabilityServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -160,6 +177,12 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 		connect.WithSchema(observabilityServiceMethods.ByName("GetClusterView")),
 		connect.WithHandlerOptions(opts...),
 	)
+	observabilityServiceGraphExploreHandler := connect.NewUnaryHandler(
+		ObservabilityServiceGraphExploreProcedure,
+		svc.GraphExplore,
+		connect.WithSchema(observabilityServiceMethods.ByName("GraphExplore")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.ObservabilityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ObservabilityServiceStreamGossipProcedure:
@@ -170,6 +193,8 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 			observabilityServiceInspectGlobalHandler.ServeHTTP(w, r)
 		case ObservabilityServiceGetClusterViewProcedure:
 			observabilityServiceGetClusterViewHandler.ServeHTTP(w, r)
+		case ObservabilityServiceGraphExploreProcedure:
+			observabilityServiceGraphExploreHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -193,4 +218,8 @@ func (UnimplementedObservabilityServiceHandler) InspectGlobal(context.Context, *
 
 func (UnimplementedObservabilityServiceHandler) GetClusterView(context.Context, *connect.Request[v1.GetClusterViewRequest]) (*connect.Response[v1.GetClusterViewResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.GetClusterView is not implemented"))
+}
+
+func (UnimplementedObservabilityServiceHandler) GraphExplore(context.Context, *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.GraphExplore is not implemented"))
 }

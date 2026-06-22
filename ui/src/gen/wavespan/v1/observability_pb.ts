@@ -8,13 +8,15 @@ import type { Completeness, ConflictState, ResponseMeta, Version } from "./commo
 import { file_wavespan_v1_common } from "./common_pb";
 import type { LatencyEdge, MemberState } from "./admin_pb";
 import { file_wavespan_v1_admin } from "./admin_pb";
+import type { Value } from "./cypher_pb";
+import { file_wavespan_v1_cypher } from "./cypher_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file wavespan/v1/observability.proto.
  */
 export const file_wavespan_v1_observability: GenFile = /*@__PURE__*/
-  fileDesc("Ch93YXZlc3Bhbi92MS9vYnNlcnZhYmlsaXR5LnByb3RvEgt3YXZlc3Bhbi52MSKJAQoMR29zc2lwRmlsdGVyEiYKBWtpbmRzGAEgAygOMhcud2F2ZXNwYW4udjEuR29zc2lwS2luZBINCgVwZWVycxgCIAMoCRIvCglkaXJlY3Rpb24YAyABKA4yHC53YXZlc3Bhbi52MS5Hb3NzaXBEaXJlY3Rpb24SEQoJbmFtZXNwYWNlGAQgASgJIs8BChRHb3NzaXBQYXlsb2FkU3VtbWFyeRIOCgZydHRfbXMYASABKAESEQoJbmV3X3N0YXRlGAIgASgJEhEKCXdhdGVybWFyaxgDIAEoBBIUCgxhcHByb3hfY291bnQYBCABKAQSDwoHZXdtYV9tcxgFIAEoARIOCgZwOTVfbXMYBiABKAESFQoNYWRkZWRfbWVtYmVycxgHIAMoCRIXCg9yZW1vdmVkX21lbWJlcnMYCCADKAkSGgoScGF5bG9hZF9zaXplX2J5dGVzGAkgASgNIskBCgxHb3NzaXBSZWNvcmQSJQoEa2luZBgBIAEoDjIXLndhdmVzcGFuLnYxLkdvc3NpcEtpbmQSLwoJZGlyZWN0aW9uGAIgASgOMhwud2F2ZXNwYW4udjEuR29zc2lwRGlyZWN0aW9uEgwKBHBlZXIYAyABKAkSEgoKYXRfdW5peF9tcxgEIAEoAxILCgNzZXEYBSABKAQSMgoHc3VtbWFyeRgGIAEoCzIhLndhdmVzcGFuLnYxLkdvc3NpcFBheWxvYWRTdW1tYXJ5IjkKCUdhcE1hcmtlchIVCg1kcm9wcGVkX2NvdW50GAEgASgEEhUKDXNpbmNlX3VuaXhfbXMYAiABKAMiagoLR29zc2lwRXZlbnQSKwoGcmVjb3JkGAEgASgLMhkud2F2ZXNwYW4udjEuR29zc2lwUmVjb3JkSAASJQoDZ2FwGAIgASgLMhYud2F2ZXNwYW4udjEuR2FwTWFya2VySABCBwoFZXZlbnQiUgoTU3RyZWFtR29zc2lwUmVxdWVzdBIpCgZmaWx0ZXIYASABKAsyGS53YXZlc3Bhbi52MS5Hb3NzaXBGaWx0ZXISEAoIYmFja2ZpbGwYAiABKAgi+AEKDUluc3BlY3RIb2xkZXISEQoJbWVtYmVyX2lkGAEgASgJEi4KDGhvbGRlcl9jbGFzcxgCIAEoDjIYLndhdmVzcGFuLnYxLkhvbGRlckNsYXNzEiUKB3ZlcnNpb24YAyABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEiwKCGNvbmZsaWN0GAQgASgOMhoud2F2ZXNwYW4udjEuQ29uZmxpY3RTdGF0ZRIaChJyZXBsaWNhdGlvbl9sYWdfbXMYBSABKAMSFwoPcGVlcl9jbHVzdGVyX2lkGAYgASgJEhoKEmdsb2JhbF9yZXBsX2xhZ19tcxgHIAEoAyJZCg5JbnNwZWN0U2libGluZxIlCgd2ZXJzaW9uGAEgASgLMhQud2F2ZXNwYW4udjEuVmVyc2lvbhIRCgl0b21ic3RvbmUYAiABKAgSDQoFdmFsdWUYAyABKAwivwIKCkluc3BlY3RLZXkSFAoMbG9naWNhbF9wYXRoGAEgASgJEhAKCGtleV9oYXNoGAIgASgJEiUKB3ZlcnNpb24YAyABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEiwKCGNvbmZsaWN0GAQgASgOMhoud2F2ZXNwYW4udjEuQ29uZmxpY3RTdGF0ZRIRCgl0b21ic3RvbmUYBSABKAgSHwoSZXhwaXJlc19hdF91bml4X21zGAYgASgDSACIAQESDQoFdmFsdWUYByABKAwSLQoIc2libGluZ3MYCCADKAsyGy53YXZlc3Bhbi52MS5JbnNwZWN0U2libGluZxIrCgdob2xkZXJzGAkgAygLMhoud2F2ZXNwYW4udjEuSW5zcGVjdEhvbGRlckIVChNfZXhwaXJlc19hdF91bml4X21zInAKDkluc3BlY3RUcmFpbGVyEhUKDXJvd3NfcmV0dXJuZWQYASABKAQSNQoSZmluYWxfY29tcGxldGVuZXNzGAIgASgOMhkud2F2ZXNwYW4udjEuQ29tcGxldGVuZXNzEhAKCHdhcm5pbmdzGAMgAygJIpgBCgpJbnNwZWN0Um93EisKBmhlYWRlchgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YUgAEiYKA2tleRgCIAEoCzIXLndhdmVzcGFuLnYxLkluc3BlY3RLZXlIABIuCgd0cmFpbGVyGAMgASgLMhsud2F2ZXNwYW4udjEuSW5zcGVjdFRyYWlsZXJIAEIFCgNyb3ciqwEKE0luc3BlY3RMb2NhbFJlcXVlc3QSJwoIa2V5c3BhY2UYASABKA4yFS53YXZlc3Bhbi52MS5LZXlzcGFjZRIRCgluYW1lc3BhY2UYAiABKAkSDgoGcHJlZml4GAMgASgMEhEKCXN0YXJ0X2tleRgEIAEoDBIPCgdlbmRfa2V5GAUgASgMEg0KBWxpbWl0GAYgASgNEhUKDWluY2x1ZGVfdmFsdWUYByABKAgilQEKFEluc3BlY3RHbG9iYWxSZXF1ZXN0EicKCGtleXNwYWNlGAEgASgOMhUud2F2ZXNwYW4udjEuS2V5c3BhY2USEQoJbmFtZXNwYWNlGAIgASgJEgsKA2tleRgDIAEoDBIVCg1pbmNsdWRlX3ZhbHVlGAQgASgIEh0KFWluY2x1ZGVfcGVlcl9jbHVzdGVycxgFIAEoCCJVChFSYW5nZVJlcGFpclN0YXR1cxITCgtyYW5nZV9zdGFydBgBIAEoDBIRCglyYW5nZV9lbmQYAiABKAwSGAoQdW5kZXJfcmVwbGljYXRlZBgDIAEoDSIXChVHZXRDbHVzdGVyVmlld1JlcXVlc3QivwEKFkdldENsdXN0ZXJWaWV3UmVzcG9uc2USKQoHbWVtYmVycxgBIAMoCzIYLndhdmVzcGFuLnYxLk1lbWJlclN0YXRlEicKBWVkZ2VzGAIgAygLMhgud2F2ZXNwYW4udjEuTGF0ZW5jeUVkZ2USLgoGcmVwYWlyGAMgAygLMh4ud2F2ZXNwYW4udjEuUmFuZ2VSZXBhaXJTdGF0dXMSIQoZdW5kZXJfcmVwbGljYXRlZF9lc3RpbWF0ZRgEIAEoBCruAQoKR29zc2lwS2luZBIbChdHT1NTSVBfS0lORF9VTlNQRUNJRklFRBAAEg8KC0dPU1NJUF9QSU5HEAESDgoKR09TU0lQX0FDSxACEhMKD0dPU1NJUF9JTkRJUkVDVBADEhIKDkdPU1NJUF9TVVNQRUNUEAQSEAoMR09TU0lQX0FMSVZFEAUSFgoSR09TU0lQX1VOUkVBQ0hBQkxFEAYSGQoVR09TU0lQX0hPTERFUl9TVU1NQVJZEAcSFwoTR09TU0lQX0xBVEVOQ1lfRURHRRAIEhsKF0dPU1NJUF9NRU1CRVJTSElQX0RFTFRBEAkqagoPR29zc2lwRGlyZWN0aW9uEiAKHEdPU1NJUF9ESVJFQ1RJT05fVU5TUEVDSUZJRUQQABIPCgtHT1NTSVBfU0VORBABEg8KC0dPU1NJUF9SRUNWEAISEwoPR09TU0lQX0lOVEVSTkFMEAMqXgoIS2V5c3BhY2USGAoUS0VZU1BBQ0VfVU5TUEVDSUZJRUQQABIPCgtLRVlTUEFDRV9LVhABEhIKDktFWVNQQUNFX0dSQVBIEAISEwoPS0VZU1BBQ0VfVkVDVE9SEAMqbAoLSG9sZGVyQ2xhc3MSHAoYSE9MREVSX0NMQVNTX1VOU1BFQ0lGSUVEEAASEQoNSE9MREVSX09SSUdJThABEhIKDkhPTERFUl9EVVJBQkxFEAISGAoUSE9MREVSX0RZTkFNSUNfQ0FDSEUQAzLbAgoUT2JzZXJ2YWJpbGl0eVNlcnZpY2USTAoMU3RyZWFtR29zc2lwEiAud2F2ZXNwYW4udjEuU3RyZWFtR29zc2lwUmVxdWVzdBoYLndhdmVzcGFuLnYxLkdvc3NpcEV2ZW50MAESSwoMSW5zcGVjdExvY2FsEiAud2F2ZXNwYW4udjEuSW5zcGVjdExvY2FsUmVxdWVzdBoXLndhdmVzcGFuLnYxLkluc3BlY3RSb3cwARJNCg1JbnNwZWN0R2xvYmFsEiEud2F2ZXNwYW4udjEuSW5zcGVjdEdsb2JhbFJlcXVlc3QaFy53YXZlc3Bhbi52MS5JbnNwZWN0Um93MAESWQoOR2V0Q2x1c3RlclZpZXcSIi53YXZlc3Bhbi52MS5HZXRDbHVzdGVyVmlld1JlcXVlc3QaIy53YXZlc3Bhbi52MS5HZXRDbHVzdGVyVmlld1Jlc3BvbnNlQqoBCg9jb20ud2F2ZXNwYW4udjFCEk9ic2VydmFiaWxpdHlQcm90b1ABWjZnaXRodWIuY29tL2N3aXJlL3dhdmVzcGFuL3Byb3RvL3dhdmVzcGFuL3YxO3dhdmVzcGFudjGiAgNXWFiqAgtXYXZlc3Bhbi5WMcoCC1dhdmVzcGFuXFYx4gIXV2F2ZXNwYW5cVjFcR1BCTWV0YWRhdGHqAgxXYXZlc3Bhbjo6VjFiBnByb3RvMw", [file_wavespan_v1_common, file_wavespan_v1_admin]);
+  fileDesc("Ch93YXZlc3Bhbi92MS9vYnNlcnZhYmlsaXR5LnByb3RvEgt3YXZlc3Bhbi52MSKJAQoMR29zc2lwRmlsdGVyEiYKBWtpbmRzGAEgAygOMhcud2F2ZXNwYW4udjEuR29zc2lwS2luZBINCgVwZWVycxgCIAMoCRIvCglkaXJlY3Rpb24YAyABKA4yHC53YXZlc3Bhbi52MS5Hb3NzaXBEaXJlY3Rpb24SEQoJbmFtZXNwYWNlGAQgASgJIs8BChRHb3NzaXBQYXlsb2FkU3VtbWFyeRIOCgZydHRfbXMYASABKAESEQoJbmV3X3N0YXRlGAIgASgJEhEKCXdhdGVybWFyaxgDIAEoBBIUCgxhcHByb3hfY291bnQYBCABKAQSDwoHZXdtYV9tcxgFIAEoARIOCgZwOTVfbXMYBiABKAESFQoNYWRkZWRfbWVtYmVycxgHIAMoCRIXCg9yZW1vdmVkX21lbWJlcnMYCCADKAkSGgoScGF5bG9hZF9zaXplX2J5dGVzGAkgASgNIskBCgxHb3NzaXBSZWNvcmQSJQoEa2luZBgBIAEoDjIXLndhdmVzcGFuLnYxLkdvc3NpcEtpbmQSLwoJZGlyZWN0aW9uGAIgASgOMhwud2F2ZXNwYW4udjEuR29zc2lwRGlyZWN0aW9uEgwKBHBlZXIYAyABKAkSEgoKYXRfdW5peF9tcxgEIAEoAxILCgNzZXEYBSABKAQSMgoHc3VtbWFyeRgGIAEoCzIhLndhdmVzcGFuLnYxLkdvc3NpcFBheWxvYWRTdW1tYXJ5IjkKCUdhcE1hcmtlchIVCg1kcm9wcGVkX2NvdW50GAEgASgEEhUKDXNpbmNlX3VuaXhfbXMYAiABKAMiagoLR29zc2lwRXZlbnQSKwoGcmVjb3JkGAEgASgLMhkud2F2ZXNwYW4udjEuR29zc2lwUmVjb3JkSAASJQoDZ2FwGAIgASgLMhYud2F2ZXNwYW4udjEuR2FwTWFya2VySABCBwoFZXZlbnQiUgoTU3RyZWFtR29zc2lwUmVxdWVzdBIpCgZmaWx0ZXIYASABKAsyGS53YXZlc3Bhbi52MS5Hb3NzaXBGaWx0ZXISEAoIYmFja2ZpbGwYAiABKAgi+AEKDUluc3BlY3RIb2xkZXISEQoJbWVtYmVyX2lkGAEgASgJEi4KDGhvbGRlcl9jbGFzcxgCIAEoDjIYLndhdmVzcGFuLnYxLkhvbGRlckNsYXNzEiUKB3ZlcnNpb24YAyABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEiwKCGNvbmZsaWN0GAQgASgOMhoud2F2ZXNwYW4udjEuQ29uZmxpY3RTdGF0ZRIaChJyZXBsaWNhdGlvbl9sYWdfbXMYBSABKAMSFwoPcGVlcl9jbHVzdGVyX2lkGAYgASgJEhoKEmdsb2JhbF9yZXBsX2xhZ19tcxgHIAEoAyJZCg5JbnNwZWN0U2libGluZxIlCgd2ZXJzaW9uGAEgASgLMhQud2F2ZXNwYW4udjEuVmVyc2lvbhIRCgl0b21ic3RvbmUYAiABKAgSDQoFdmFsdWUYAyABKAwivwIKCkluc3BlY3RLZXkSFAoMbG9naWNhbF9wYXRoGAEgASgJEhAKCGtleV9oYXNoGAIgASgJEiUKB3ZlcnNpb24YAyABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEiwKCGNvbmZsaWN0GAQgASgOMhoud2F2ZXNwYW4udjEuQ29uZmxpY3RTdGF0ZRIRCgl0b21ic3RvbmUYBSABKAgSHwoSZXhwaXJlc19hdF91bml4X21zGAYgASgDSACIAQESDQoFdmFsdWUYByABKAwSLQoIc2libGluZ3MYCCADKAsyGy53YXZlc3Bhbi52MS5JbnNwZWN0U2libGluZxIrCgdob2xkZXJzGAkgAygLMhoud2F2ZXNwYW4udjEuSW5zcGVjdEhvbGRlckIVChNfZXhwaXJlc19hdF91bml4X21zInAKDkluc3BlY3RUcmFpbGVyEhUKDXJvd3NfcmV0dXJuZWQYASABKAQSNQoSZmluYWxfY29tcGxldGVuZXNzGAIgASgOMhkud2F2ZXNwYW4udjEuQ29tcGxldGVuZXNzEhAKCHdhcm5pbmdzGAMgAygJIpgBCgpJbnNwZWN0Um93EisKBmhlYWRlchgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YUgAEiYKA2tleRgCIAEoCzIXLndhdmVzcGFuLnYxLkluc3BlY3RLZXlIABIuCgd0cmFpbGVyGAMgASgLMhsud2F2ZXNwYW4udjEuSW5zcGVjdFRyYWlsZXJIAEIFCgNyb3ciqwEKE0luc3BlY3RMb2NhbFJlcXVlc3QSJwoIa2V5c3BhY2UYASABKA4yFS53YXZlc3Bhbi52MS5LZXlzcGFjZRIRCgluYW1lc3BhY2UYAiABKAkSDgoGcHJlZml4GAMgASgMEhEKCXN0YXJ0X2tleRgEIAEoDBIPCgdlbmRfa2V5GAUgASgMEg0KBWxpbWl0GAYgASgNEhUKDWluY2x1ZGVfdmFsdWUYByABKAgilQEKFEluc3BlY3RHbG9iYWxSZXF1ZXN0EicKCGtleXNwYWNlGAEgASgOMhUud2F2ZXNwYW4udjEuS2V5c3BhY2USEQoJbmFtZXNwYWNlGAIgASgJEgsKA2tleRgDIAEoDBIVCg1pbmNsdWRlX3ZhbHVlGAQgASgIEh0KFWluY2x1ZGVfcGVlcl9jbHVzdGVycxgFIAEoCCJVChFSYW5nZVJlcGFpclN0YXR1cxITCgtyYW5nZV9zdGFydBgBIAEoDBIRCglyYW5nZV9lbmQYAiABKAwSGAoQdW5kZXJfcmVwbGljYXRlZBgDIAEoDSIXChVHZXRDbHVzdGVyVmlld1JlcXVlc3QivwEKFkdldENsdXN0ZXJWaWV3UmVzcG9uc2USKQoHbWVtYmVycxgBIAMoCzIYLndhdmVzcGFuLnYxLk1lbWJlclN0YXRlEicKBWVkZ2VzGAIgAygLMhgud2F2ZXNwYW4udjEuTGF0ZW5jeUVkZ2USLgoGcmVwYWlyGAMgAygLMh4ud2F2ZXNwYW4udjEuUmFuZ2VSZXBhaXJTdGF0dXMSIQoZdW5kZXJfcmVwbGljYXRlZF9lc3RpbWF0ZRgEIAEoBCKvAQoJR3JhcGhOb2RlEg8KB25vZGVfaWQYASABKAkSDgoGbGFiZWxzGAIgAygJEjoKCnByb3BlcnRpZXMYAyADKAsyJi53YXZlc3Bhbi52MS5HcmFwaE5vZGUuUHJvcGVydGllc0VudHJ5GkUKD1Byb3BlcnRpZXNFbnRyeRILCgNrZXkYASABKAkSIQoFdmFsdWUYAiABKAsyEi53YXZlc3Bhbi52MS5WYWx1ZToCOAEiSgoJR3JhcGhFZGdlEg8KB2VkZ2VfaWQYASABKAkSDgoGc291cmNlGAIgASgJEg4KBnRhcmdldBgDIAEoCRIMCgR0eXBlGAQgASgJInIKE0dyYXBoRXhwbG9yZVJlcXVlc3QSEAoIZ3JhcGhfaWQYASABKAkSFAoMc2VlZF9ub2RlX2lkGAIgASgJEg0KBWRlcHRoGAMgASgNEg0KBWxpbWl0GAQgASgNEhUKDWluY2x1ZGVfdmFsdWUYBSABKAgidwoUR3JhcGhFeHBsb3JlUmVzcG9uc2USJQoFbm9kZXMYASADKAsyFi53YXZlc3Bhbi52MS5HcmFwaE5vZGUSJQoFZWRnZXMYAiADKAsyFi53YXZlc3Bhbi52MS5HcmFwaEVkZ2USEQoJdHJ1bmNhdGVkGAMgASgIKu4BCgpHb3NzaXBLaW5kEhsKF0dPU1NJUF9LSU5EX1VOU1BFQ0lGSUVEEAASDwoLR09TU0lQX1BJTkcQARIOCgpHT1NTSVBfQUNLEAISEwoPR09TU0lQX0lORElSRUNUEAMSEgoOR09TU0lQX1NVU1BFQ1QQBBIQCgxHT1NTSVBfQUxJVkUQBRIWChJHT1NTSVBfVU5SRUFDSEFCTEUQBhIZChVHT1NTSVBfSE9MREVSX1NVTU1BUlkQBxIXChNHT1NTSVBfTEFURU5DWV9FREdFEAgSGwoXR09TU0lQX01FTUJFUlNISVBfREVMVEEQCSpqCg9Hb3NzaXBEaXJlY3Rpb24SIAocR09TU0lQX0RJUkVDVElPTl9VTlNQRUNJRklFRBAAEg8KC0dPU1NJUF9TRU5EEAESDwoLR09TU0lQX1JFQ1YQAhITCg9HT1NTSVBfSU5URVJOQUwQAypeCghLZXlzcGFjZRIYChRLRVlTUEFDRV9VTlNQRUNJRklFRBAAEg8KC0tFWVNQQUNFX0tWEAESEgoOS0VZU1BBQ0VfR1JBUEgQAhITCg9LRVlTUEFDRV9WRUNUT1IQAypsCgtIb2xkZXJDbGFzcxIcChhIT0xERVJfQ0xBU1NfVU5TUEVDSUZJRUQQABIRCg1IT0xERVJfT1JJR0lOEAESEgoOSE9MREVSX0RVUkFCTEUQAhIYChRIT0xERVJfRFlOQU1JQ19DQUNIRRADMrADChRPYnNlcnZhYmlsaXR5U2VydmljZRJMCgxTdHJlYW1Hb3NzaXASIC53YXZlc3Bhbi52MS5TdHJlYW1Hb3NzaXBSZXF1ZXN0Ghgud2F2ZXNwYW4udjEuR29zc2lwRXZlbnQwARJLCgxJbnNwZWN0TG9jYWwSIC53YXZlc3Bhbi52MS5JbnNwZWN0TG9jYWxSZXF1ZXN0Ghcud2F2ZXNwYW4udjEuSW5zcGVjdFJvdzABEk0KDUluc3BlY3RHbG9iYWwSIS53YXZlc3Bhbi52MS5JbnNwZWN0R2xvYmFsUmVxdWVzdBoXLndhdmVzcGFuLnYxLkluc3BlY3RSb3cwARJZCg5HZXRDbHVzdGVyVmlldxIiLndhdmVzcGFuLnYxLkdldENsdXN0ZXJWaWV3UmVxdWVzdBojLndhdmVzcGFuLnYxLkdldENsdXN0ZXJWaWV3UmVzcG9uc2USUwoMR3JhcGhFeHBsb3JlEiAud2F2ZXNwYW4udjEuR3JhcGhFeHBsb3JlUmVxdWVzdBohLndhdmVzcGFuLnYxLkdyYXBoRXhwbG9yZVJlc3BvbnNlQqoBCg9jb20ud2F2ZXNwYW4udjFCEk9ic2VydmFiaWxpdHlQcm90b1ABWjZnaXRodWIuY29tL2N3aXJlL3dhdmVzcGFuL3Byb3RvL3dhdmVzcGFuL3YxO3dhdmVzcGFudjGiAgNXWFiqAgtXYXZlc3Bhbi5WMcoCC1dhdmVzcGFuXFYx4gIXV2F2ZXNwYW5cVjFcR1BCTWV0YWRhdGHqAgxXYXZlc3Bhbjo6VjFiBnByb3RvMw", [file_wavespan_v1_common, file_wavespan_v1_admin, file_wavespan_v1_cypher]);
 
 /**
  * GossipFilter narrows the stream server-side (design/26).
@@ -591,6 +593,144 @@ export const GetClusterViewResponseSchema: GenMessage<GetClusterViewResponse> = 
   messageDesc(file_wavespan_v1_observability, 15);
 
 /**
+ * GraphNode is a property-graph node for visualization. Property values are redacted unless the
+ * request includes include_value with an admin role.
+ *
+ * @generated from message wavespan.v1.GraphNode
+ */
+export type GraphNode = Message<"wavespan.v1.GraphNode"> & {
+  /**
+   * @generated from field: string node_id = 1;
+   */
+  nodeId: string;
+
+  /**
+   * @generated from field: repeated string labels = 2;
+   */
+  labels: string[];
+
+  /**
+   * @generated from field: map<string, wavespan.v1.Value> properties = 3;
+   */
+  properties: { [key: string]: Value };
+};
+
+/**
+ * Describes the message wavespan.v1.GraphNode.
+ * Use `create(GraphNodeSchema)` to create a new message.
+ */
+export const GraphNodeSchema: GenMessage<GraphNode> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_observability, 16);
+
+/**
+ * GraphEdge is a directed relationship between two nodes.
+ *
+ * @generated from message wavespan.v1.GraphEdge
+ */
+export type GraphEdge = Message<"wavespan.v1.GraphEdge"> & {
+  /**
+   * @generated from field: string edge_id = 1;
+   */
+  edgeId: string;
+
+  /**
+   * @generated from field: string source = 2;
+   */
+  source: string;
+
+  /**
+   * @generated from field: string target = 3;
+   */
+  target: string;
+
+  /**
+   * @generated from field: string type = 4;
+   */
+  type: string;
+};
+
+/**
+ * Describes the message wavespan.v1.GraphEdge.
+ * Use `create(GraphEdgeSchema)` to create a new message.
+ */
+export const GraphEdgeSchema: GenMessage<GraphEdge> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_observability, 17);
+
+/**
+ * @generated from message wavespan.v1.GraphExploreRequest
+ */
+export type GraphExploreRequest = Message<"wavespan.v1.GraphExploreRequest"> & {
+  /**
+   * @generated from field: string graph_id = 1;
+   */
+  graphId: string;
+
+  /**
+   * optional; empty starts from the whole graph (bounded by limit)
+   *
+   * @generated from field: string seed_node_id = 2;
+   */
+  seedNodeId: string;
+
+  /**
+   * BFS hops from the seed (0 => just the seed / first page)
+   *
+   * @generated from field: uint32 depth = 3;
+   */
+  depth: number;
+
+  /**
+   * max nodes returned (server-capped)
+   *
+   * @generated from field: uint32 limit = 4;
+   */
+  limit: number;
+
+  /**
+   * reveal property values (admin only)
+   *
+   * @generated from field: bool include_value = 5;
+   */
+  includeValue: boolean;
+};
+
+/**
+ * Describes the message wavespan.v1.GraphExploreRequest.
+ * Use `create(GraphExploreRequestSchema)` to create a new message.
+ */
+export const GraphExploreRequestSchema: GenMessage<GraphExploreRequest> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_observability, 18);
+
+/**
+ * @generated from message wavespan.v1.GraphExploreResponse
+ */
+export type GraphExploreResponse = Message<"wavespan.v1.GraphExploreResponse"> & {
+  /**
+   * @generated from field: repeated wavespan.v1.GraphNode nodes = 1;
+   */
+  nodes: GraphNode[];
+
+  /**
+   * @generated from field: repeated wavespan.v1.GraphEdge edges = 2;
+   */
+  edges: GraphEdge[];
+
+  /**
+   * more nodes exist than the limit returned
+   *
+   * @generated from field: bool truncated = 3;
+   */
+  truncated: boolean;
+};
+
+/**
+ * Describes the message wavespan.v1.GraphExploreResponse.
+ * Use `create(GraphExploreResponseSchema)` to create a new message.
+ */
+export const GraphExploreResponseSchema: GenMessage<GraphExploreResponse> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_observability, 19);
+
+/**
  * GossipKind classifies a gossip event.
  *
  * @generated from enum wavespan.v1.GossipKind
@@ -792,6 +932,14 @@ export const ObservabilityService: GenService<{
     methodKind: "unary";
     input: typeof GetClusterViewRequestSchema;
     output: typeof GetClusterViewResponseSchema;
+  },
+  /**
+   * @generated from rpc wavespan.v1.ObservabilityService.GraphExplore
+   */
+  graphExplore: {
+    methodKind: "unary";
+    input: typeof GraphExploreRequestSchema;
+    output: typeof GraphExploreResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_wavespan_v1_observability, 0);

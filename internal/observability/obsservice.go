@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
+	"github.com/cwire/wavespan/internal/graph"
 	"github.com/cwire/wavespan/internal/latencygraph"
 	"github.com/cwire/wavespan/internal/membership"
 	"github.com/cwire/wavespan/internal/recordstore"
@@ -34,6 +35,8 @@ type ObsService struct {
 
 	// InspectGlobal support (M13.B); nil disables cross-cluster resolution.
 	globalInspector GlobalInspector
+	// Visual node explorer support; nil disables GraphExplore.
+	graph *graph.Store
 }
 
 // NewObsService wires the observability service.

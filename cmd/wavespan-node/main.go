@@ -231,7 +231,8 @@ func run() error {
 	vectorSvc := vector.NewService(vstore, newGraphVersion).WithHooks(indexSet.OnWrite, vectorGlobalTap)
 
 	// Graph + Cypher (M8/M9/M10): plans and executes against the local graph store, with vector search.
-	cypherSvc := cypher.NewService(graph.NewStore(store), cfg.ClusterID, cfg.MemberID, newGraphVersion).
+	graphStore := graph.NewStore(store)
+	cypherSvc := cypher.NewService(graphStore, cfg.ClusterID, cfg.MemberID, newGraphVersion).
 		WithVector(vstore, indexSet.Meta, indexSet.Live)
 
 	// Data server on the data port: public KvService + Cypher + Vector + internal ReplicationService.
@@ -267,10 +268,13 @@ func run() error {
 		gossipTap.StateChange(memberID, livenessKind(st), st.String())
 	})
 	obsSvc := observability.NewObsService(gossipRing, svc, self, rstore).
-		WithUnderReplicated(func() uint64 { return uint64(holders.UnderReplicatedEstimate(targetHolders, isAlive)) })
+		WithUnderReplicated(func() uint64 { return uint64(holders.UnderReplicatedEstimate(targetHolders, isAlive)) }).
+		WithGraph(graphStore) // enables the visual node explorer (GraphExplore)
 	adminIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
 	obsPath, obsHandler := obsSvc.Handler()
-	adminMux.Handle(obsPath, adminIdentity.EnforceHTTP(obsHandler))           // ObservabilityService (admin auth)
+	adminMux.Handle(obsPath, adminIdentity.EnforceHTTP(obsHandler)) // ObservabilityService (admin auth)
+	cypherPath, cypherHandler := cypherSvc.Handler()
+	adminMux.Handle(cypherPath, adminIdentity.EnforceHTTP(cypherHandler))     // Cypher console (same origin as the UI)
 	adminMux.Handle("/", adminIdentity.EnforceHTTP(ui.NewServer().Handler())) // SPA at root (health/metrics take precedence)
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second}
 
