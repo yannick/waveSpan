@@ -1,8 +1,7 @@
-package main
+package bench
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -13,67 +12,76 @@ import (
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
-// loadCmd bulk-loads a social graph (User nodes + FOLLOWS edges) and KV keys for benchmarking.
-func loadCmd(args []string) error {
-	fs := flag.NewFlagSet("load", flag.ContinueOnError)
-	addr := fs.String("addr", "localhost:7800", "data-port address")
-	graph := fs.String("graph", "g", "graph id")
-	users := fs.Int("users", 2000, "User nodes to create")
-	follows := fs.Int("follows", 6000, "FOLLOWS edges to create")
-	kv := fs.Int("kv", 5000, "KV keys to write")
-	conc := fs.Int("concurrency", 16, "loader concurrency")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	ctx := context.Background()
-	cy := cypherClient(*addr)
-	kvc := kvClient(*addr)
+// LoadOptions configures the bulk loader.
+type LoadOptions struct {
+	Graph              string
+	Users, Follows, KV int
+	Concurrency        int
+}
+
+// LoadResult reports how much was loaded and how long it took.
+type LoadResult struct {
+	Users, Follows, KV int
+	Elapsed            time.Duration
+}
+
+// Load bulk-loads a social graph (User nodes + FOLLOWS edges) and KV keys for benchmarking.
+func Load(ctx context.Context, addr string, opt LoadOptions, progress func(string)) LoadResult {
+	cy := cypherClient(addr)
+	kvc := kvClient(addr)
 	cities := []string{"NYC", "SF", "LA", "SEA", "AUS"}
-
+	if progress == nil {
+		progress = func(string) {}
+	}
 	start := time.Now()
-	var created int64
+	res := LoadResult{}
 
-	// nodes
-	runPool(*conc, *users, func(i int) {
+	var nodes int64
+	runPool(opt.Concurrency, opt.Users, func(i int) {
 		q := fmt.Sprintf("CREATE (:User {id:'user-%d', name:'User %d', age:%d, city:'%s'})", i, i, 18+i%60, cities[i%len(cities)])
-		if execCypher(ctx, cy, *graph, q) {
-			atomic.AddInt64(&created, 1)
+		if execCypher(ctx, cy, opt.Graph, q) {
+			atomic.AddInt64(&nodes, 1)
 		}
 	})
-	fmt.Printf("loaded %d/%d User nodes\n", created, *users)
+	res.Users = int(nodes)
+	progress(fmt.Sprintf("loaded %d/%d User nodes", res.Users, opt.Users))
 
-	// edges: user-i FOLLOWS user-(i*7+1 mod users)
-	created = 0
-	runPool(*conc, *follows, func(i int) {
-		a := i % *users
-		b := (i*7 + 1) % *users
+	var edges int64
+	runPool(opt.Concurrency, opt.Follows, func(i int) {
+		a := i % opt.Users
+		b := (i*7 + 1) % opt.Users
 		if a == b {
 			return
 		}
 		q := fmt.Sprintf("MATCH (a:User {id:'user-%d'}), (b:User {id:'user-%d'}) CREATE (a)-[:FOLLOWS]->(b)", a, b)
-		if execCypher(ctx, cy, *graph, q) {
-			atomic.AddInt64(&created, 1)
+		if execCypher(ctx, cy, opt.Graph, q) {
+			atomic.AddInt64(&edges, 1)
 		}
 	})
-	fmt.Printf("loaded %d FOLLOWS edges\n", created)
+	res.Follows = int(edges)
+	progress(fmt.Sprintf("loaded %d FOLLOWS edges", res.Follows))
 
-	// KV
-	created = 0
-	runPool(*conc, *kv, func(i int) {
+	var keys int64
+	runPool(opt.Concurrency, opt.KV, func(i int) {
 		_, err := kvc.Put(ctx, connect.NewRequest(&wavespanv1.PutRequest{
 			Namespace: "default", Key: []byte(fmt.Sprintf("bench/%d", i)), Value: []byte(fmt.Sprintf("value-%d", i)), RequireOriginPlusOne: true,
 		}))
 		if err == nil {
-			atomic.AddInt64(&created, 1)
+			atomic.AddInt64(&keys, 1)
 		}
 	})
-	fmt.Printf("loaded %d/%d KV keys\n", created, *kv)
-	fmt.Printf("load complete in %s\n", time.Since(start).Round(time.Millisecond))
-	return nil
+	res.KV = int(keys)
+	progress(fmt.Sprintf("loaded %d/%d KV keys", res.KV, opt.KV))
+
+	res.Elapsed = time.Since(start)
+	return res
 }
 
 // runPool runs fn(0..n-1) across `workers` goroutines.
 func runPool(workers, n int, fn func(int)) {
+	if workers < 1 {
+		workers = 1
+	}
 	jobs := make(chan int, workers*2)
 	var wg sync.WaitGroup
 	for w := 0; w < workers; w++ {

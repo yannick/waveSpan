@@ -4,7 +4,10 @@ go 1.26.4
 
 require (
 	connectrpc.com/connect v1.20.0
+	github.com/google/pprof v0.0.0-20260604005048-7023385849c0
 	github.com/prometheus/client_golang v1.23.2
+	github.com/zeebo/blake3 v0.2.4
+	golang.org/x/sys v0.44.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 	wavesdb v0.0.0
@@ -20,10 +23,8 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
-	github.com/zeebo/blake3 v0.2.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/sys v0.44.0 // indirect
 )
 
 replace wavesdb v0.0.0 => ../wavesdb

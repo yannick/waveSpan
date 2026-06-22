@@ -1,6 +1,7 @@
 // Command wavespan-bench is a load + benchmark client for WaveSpan. It bulk-loads test data (KV +
 // a social graph) and replays a folder of Cypher queries under concurrency, reporting throughput
-// and p50/p95/p99 latency per query. It talks to a data pod over Connect (default :7800).
+// and p50/p95/p99 latency per query. The workloads live in internal/bench so wavespan-profile drives
+// identical traffic while profiling.
 //
 //	wavespan-bench load  --addr localhost:7811 --users 2000 --follows 6000 --kv 5000
 //	wavespan-bench query --addr localhost:7811 --queries bench/queries --concurrency 16 --duration 30s
@@ -8,8 +9,13 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"os"
+	"time"
+
+	"github.com/cwire/wavespan/internal/bench"
 )
 
 func main() {
@@ -38,12 +44,71 @@ func main() {
 	}
 }
 
+func loadCmd(args []string) error {
+	fs := flag.NewFlagSet("load", flag.ContinueOnError)
+	addr := fs.String("addr", "localhost:7800", "data-port address")
+	graph := fs.String("graph", "g", "graph id")
+	users := fs.Int("users", 2000, "User nodes to create")
+	follows := fs.Int("follows", 6000, "FOLLOWS edges to create")
+	kv := fs.Int("kv", 5000, "KV keys to write")
+	conc := fs.Int("concurrency", 16, "loader concurrency")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	res := bench.Load(context.Background(), *addr, bench.LoadOptions{
+		Graph: *graph, Users: *users, Follows: *follows, KV: *kv, Concurrency: *conc,
+	}, func(s string) { fmt.Println(s) })
+	fmt.Printf("load complete in %s\n", res.Elapsed.Round(time.Millisecond))
+	return nil
+}
+
+func queryCmd(args []string) error {
+	fs := flag.NewFlagSet("query", flag.ContinueOnError)
+	addr := fs.String("addr", "localhost:7800", "data-port address")
+	dir := fs.String("queries", "bench/queries", "directory of .cypher query files")
+	graph := fs.String("graph", "g", "graph id")
+	conc := fs.Int("concurrency", 16, "concurrent clients per query")
+	dur := fs.Duration("duration", 15*time.Second, "duration per query")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	queries, err := bench.LoadQueries(*dir)
+	if err != nil {
+		return err
+	}
+	if len(queries) == 0 {
+		return fmt.Errorf("no .cypher files in %s", *dir)
+	}
+	fmt.Printf("# cypher benchmark: %d queries, concurrency=%d, duration=%s each\n", len(queries), *conc, *dur)
+	for _, r := range bench.RunQueries(*addr, *graph, queries, *conc, *dur) {
+		fmt.Println(r.Lat.Report(r.Name, *dur))
+	}
+	return nil
+}
+
+func kvCmd(args []string) error {
+	fs := flag.NewFlagSet("kv", flag.ContinueOnError)
+	addr := fs.String("addr", "localhost:7800", "data-port address")
+	conc := fs.Int("concurrency", 32, "concurrent clients")
+	dur := fs.Duration("duration", 15*time.Second, "duration")
+	keys := fs.Int("keys", 10000, "key space size")
+	readRatio := fs.Float64("read-ratio", 0.5, "fraction of ops that are reads")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	res := bench.RunKV(*addr, bench.KVOptions{Concurrency: *conc, Keys: *keys, ReadRatio: *readRatio, Duration: *dur})
+	fmt.Printf("# KV benchmark: concurrency=%d, duration=%s, read-ratio=%.0f%%\n", *conc, *dur, *readRatio*100)
+	fmt.Println(res.Get.Report("kv-get", *dur))
+	fmt.Println(res.Put.Report("kv-put", *dur))
+	return nil
+}
+
 func usage() {
 	fmt.Fprint(os.Stderr, `usage: wavespan-bench <command>
 
 commands:
   load   --addr host:port [--users N] [--follows N] [--kv N] [--graph g]   bulk-load KV + a social graph
   query  --addr host:port --queries DIR [--concurrency N] [--duration D] [--graph g]   replay Cypher queries, report latency
-  kv     --addr host:port [--concurrency N] [--duration D]   KV put/get load test
+  kv     --addr host:port [--concurrency N] [--duration D] [--read-ratio R]   KV put/get load test
 `)
 }

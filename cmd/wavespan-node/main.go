@@ -281,6 +281,7 @@ func run() error {
 	adminMux := observability.AdminMux(metrics, ready)
 	adminMux.Handle("/admin/membership", membershipHandler(svc))
 	adminMux.Handle("/admin/latency", latencyHandler(svc))
+	enableProfiling(adminMux, logger) // net/http/pprof on the admin port when WAVESPAN_PROFILING_ENABLED
 
 	// Embedded UI + ObservabilityService (M13): a gossip ring fed by a liveness tap, the streaming
 	// introspection service, and the embedded SPA — all on the admin port behind admin auth.
