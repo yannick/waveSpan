@@ -374,6 +374,14 @@ func run() error {
 				return nil, err
 			}
 			return resp.Msg, nil
+		}).
+		WithKvDeleter(func(ctx context.Context, target membership.Member, req *wavespanv1.DeleteRequest) (*wavespanv1.DeleteResult, error) {
+			// Forward the Data Browser delete (tombstone) to the chosen coordinator's data port.
+			resp, err := wavespanv1connect.NewKvServiceClient(httpClient, "http://"+target.DataAddr).Delete(ctx, connect.NewRequest(req))
+			if err != nil {
+				return nil, err
+			}
+			return resp.Msg, nil
 		})
 	adminIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
 	obsPath, obsHandler := obsSvc.Handler()

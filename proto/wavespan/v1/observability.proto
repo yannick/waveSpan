@@ -127,6 +127,7 @@ message InspectKey {
   bytes value = 7; // redacted unless include_value + admin
   repeated InspectSibling siblings = 8;
   repeated InspectHolder holders = 9;
+  bytes logical_key = 10; // raw key bytes (within the namespace), for exact admin delete from the UI
 }
 
 message InspectTrailer {
@@ -226,6 +227,9 @@ service ObservabilityService {
   // AdminPut writes a KV record for testing from the node UI, coordinated by a chosen cluster
   // member (target_member_id) so the operator can pick which node originates the write.
   rpc AdminPut(AdminPutRequest) returns (AdminPutResponse);
+  // AdminDelete writes a tombstone for a KV record from the node UI (Data Browser delete),
+  // coordinated by a chosen cluster member (target_member_id), mirroring AdminPut.
+  rpc AdminDelete(AdminDeleteRequest) returns (AdminDeleteResponse);
 }
 
 // AdminPutRequest is a test/admin KV write issued from the node UI (design/26). The write is
@@ -241,6 +245,24 @@ message AdminPutRequest {
 
 // AdminPutResponse reports the outcome of an AdminPut, including which member coordinated it.
 message AdminPutResponse {
+  bool ok = 1;
+  Version version = 2;
+  uint32 acked_nearby_replicas = 3;
+  string coordinator_member_id = 4;
+  string error = 5;
+}
+
+// AdminDeleteRequest is a test/admin KV delete (tombstone write) issued from the node UI Data
+// Browser. Like AdminPut it is forwarded to target_member_id's data port so that member becomes
+// the write coordinator/origin; an empty target_member_id means the serving node coordinates.
+message AdminDeleteRequest {
+  string namespace = 1;
+  bytes key = 2;
+  string target_member_id = 3;
+}
+
+// AdminDeleteResponse reports the outcome of an AdminDelete, including which member coordinated it.
+message AdminDeleteResponse {
   bool ok = 1;
   Version version = 2;
   uint32 acked_nearby_replicas = 3;

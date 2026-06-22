@@ -49,12 +49,19 @@ type ObsService struct {
 	// Test/admin KV write forwarder; nil disables AdminPut. Forwards a Put to a chosen member's
 	// data port so that member coordinates the write.
 	kvWriter KvWriter
+	// Test/admin KV delete forwarder; nil disables AdminDelete. Forwards a Delete (tombstone) to a
+	// chosen member's data port, mirroring kvWriter.
+	kvDeleter KvDeleter
 }
 
 // KvWriter forwards a KV Put to a target member's data-port KvService, returning the result. It lets
 // the node UI write a record coordinated by a chosen cluster member (design/26). Wired in the node
 // from the shared replication HTTP client.
 type KvWriter func(ctx context.Context, target membership.Member, req *wavespanv1.PutRequest) (*wavespanv1.PutResult, error)
+
+// KvDeleter forwards a KV Delete (tombstone write) to a target member's data-port KvService. It lets
+// the node UI delete a record from the Data Browser coordinated by a chosen cluster member.
+type KvDeleter func(ctx context.Context, target membership.Member, req *wavespanv1.DeleteRequest) (*wavespanv1.DeleteResult, error)
 
 // NewObsService wires the observability service.
 func NewObsService(ring *GossipRing, cluster ClusterSource, self membership.Member, rstore *recordstore.Store) *ObsService {
@@ -83,6 +90,12 @@ func (s *ObsService) WithClusterScan(h holderScanner) *ObsService {
 // WithKvWriter enables AdminPut: the node-UI KV write tool that forwards to a chosen coordinator.
 func (s *ObsService) WithKvWriter(w KvWriter) *ObsService {
 	s.kvWriter = w
+	return s
+}
+
+// WithKvDeleter enables AdminDelete: the Data Browser delete action, forwarded to a chosen coordinator.
+func (s *ObsService) WithKvDeleter(d KvDeleter) *ObsService {
+	s.kvDeleter = d
 	return s
 }
 

@@ -27,7 +27,7 @@ func (s *ObsService) InspectGlobal(ctx context.Context, req *connect.Request[wav
 		return err
 	}
 
-	ik := &wavespanv1.InspectKey{LogicalPath: ns + "/" + string(key), KeyHash: security.KeyHash(ns, key)}
+	ik := &wavespanv1.InspectKey{LogicalPath: ns + "/" + string(key), KeyHash: security.KeyHash(ns, key), LogicalKey: key}
 
 	// the local node's own copy, if present.
 	complete := true

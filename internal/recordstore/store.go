@@ -179,9 +179,21 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 	off3 = len(buf)
 	recBytes, lpBytes, envBytes := buf[:off1], buf[off1:off2], buf[off2:off3]
 
+	// Carry the record's expiry into the engine's native per-key TTL so wavesdb physically reclaims
+	// the versioned record and its latest pointer on compaction once expired (design/02). The lazy
+	// sweeper below (cross-replica tombstones) and the read-path expiry check remain the logical
+	// authority; this just stops expired bytes from lingering on disk indefinitely.
+	var recExpiry int64
+	if rec.ExpiresAtUnixMs != nil && !rec.GetTombstone() {
+		recExpiry = rec.GetExpiresAtUnixMs()
+	}
+	var lpExpiry int64
+	if winnerExpiry != nil && !winnerTombstone {
+		lpExpiry = *winnerExpiry
+	}
 	ops := []storage.StoreOp{
-		{CF: storage.CFKVData, Key: dataKey(ns, key, recVer), Value: recBytes},
-		{CF: storage.CFKVMeta, Key: latestKey(ns, key), Value: lpBytes},
+		{CF: storage.CFKVData, Key: dataKey(ns, key, recVer), Value: recBytes, ExpiresAtUnixMs: recExpiry},
+		{CF: storage.CFKVMeta, Key: latestKey(ns, key), Value: lpBytes, ExpiresAtUnixMs: lpExpiry},
 		{CF: storage.CFReplLog, Key: storage.ReplLogKey(ns, s.logSeq.Add(1)), Value: envBytes},
 	}
 	// index into the lazy-TTL bucket so the sweeper can find it (design/03 "TTL storage").

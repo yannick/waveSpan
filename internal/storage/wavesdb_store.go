@@ -3,9 +3,24 @@ package storage
 import (
 	"bytes"
 	"errors"
+	"time"
 
 	"wavesdb"
 )
+
+// ttlForExpiry converts an absolute expires-at unix-ms into the remaining lifetime wavesdb expects
+// as a per-key TTL. 0 (or unset) means no TTL. An already-past expiry yields a minimal positive
+// duration so the engine treats the entry as immediately expired rather than as "no TTL".
+func ttlForExpiry(expiresAtUnixMs int64) time.Duration {
+	if expiresAtUnixMs <= 0 {
+		return 0
+	}
+	d := time.Until(time.UnixMilli(expiresAtUnixMs))
+	if d <= 0 {
+		return time.Millisecond
+	}
+	return d
+}
 
 // WavesdbStore is the production LocalStore backed by the wavesdb LSM engine. It is the only
 // package that imports wavesdb (design/17 dependency direction).
@@ -102,7 +117,7 @@ func (s *WavesdbStore) batch(ops []StoreOp, isolation wavesdb.IsolationLevel) er
 		if op.Delete {
 			err = txn.Delete(h, op.Key)
 		} else {
-			err = txn.Put(h, op.Key, op.Value, 0)
+			err = txn.Put(h, op.Key, op.Value, ttlForExpiry(op.ExpiresAtUnixMs))
 		}
 		if err != nil {
 			_ = txn.Rollback()

@@ -42,6 +42,35 @@ func (s *ObsService) AdminPut(ctx context.Context, req *connect.Request[wavespan
 	}), nil
 }
 
+// AdminDelete writes a tombstone for a KV record from the Data Browser, coordinated by a chosen
+// cluster member (mirrors AdminPut). A delete is a Put(tombstone) on the target's data port, so the
+// chosen member becomes the write origin and the tombstone replicates from there. Failures are
+// reported in the response body so the UI can show them inline.
+func (s *ObsService) AdminDelete(ctx context.Context, req *connect.Request[wavespanv1.AdminDeleteRequest]) (*connect.Response[wavespanv1.AdminDeleteResponse], error) {
+	m := req.Msg
+	if s.kvDeleter == nil {
+		return connect.NewResponse(&wavespanv1.AdminDeleteResponse{Error: "admin delete not enabled on this node"}), nil
+	}
+	target, ok := s.resolveTarget(m.GetTargetMemberId())
+	if !ok {
+		return connect.NewResponse(&wavespanv1.AdminDeleteResponse{Error: "unknown target member: " + m.GetTargetMemberId()}), nil
+	}
+
+	del := &wavespanv1.DeleteRequest{
+		Namespace: m.GetNamespace(), Key: m.GetKey(), RequireOriginPlusOne: true,
+	}
+	res, err := s.kvDeleter(ctx, target, del)
+	if err != nil {
+		return connect.NewResponse(&wavespanv1.AdminDeleteResponse{CoordinatorMemberId: target.MemberID, Error: err.Error()}), nil
+	}
+	return connect.NewResponse(&wavespanv1.AdminDeleteResponse{
+		Ok:                  true,
+		Version:             res.GetVersion(),
+		AckedNearbyReplicas: res.GetAckedNearbyReplicas(),
+		CoordinatorMemberId: target.MemberID,
+	}), nil
+}
+
 // resolveTarget maps a requested member id to a member: empty or self resolves to this node;
 // otherwise it must be a current cluster member.
 func (s *ObsService) resolveTarget(id string) (membership.Member, bool) {

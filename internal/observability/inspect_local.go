@@ -143,6 +143,7 @@ func (mk *mergedKey) toInspectKey(ns string) *wavespanv1.InspectKey {
 	ik := &wavespanv1.InspectKey{
 		LogicalPath: ns + "/" + string(mk.logicalKey),
 		KeyHash:     security.KeyHash(ns, mk.logicalKey),
+		LogicalKey:  mk.logicalKey,
 		Version:     mk.version,
 		Tombstone:   mk.tombstone,
 	}

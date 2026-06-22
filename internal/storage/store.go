@@ -34,6 +34,10 @@ type StoreOp struct {
 	Key    []byte
 	Value  []byte
 	Delete bool
+	// ExpiresAtUnixMs, when > 0, sets the engine's native per-key TTL so wavesdb physically drops
+	// the entry during compaction once expired (design/02 "TTL storage"). 0 means no expiry. The
+	// store converts it to a remaining time.Duration at write time.
+	ExpiresAtUnixMs int64
 }
 
 // StoreKV is a key/value pair yielded by a scan.
