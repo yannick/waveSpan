@@ -28,6 +28,7 @@
 - `25_correctness_harness.md`
 - `26_node_ui_and_observability.md`
 - `27_transport_performance.md`
+- `28_replication_factor_and_node_sync.md`
 - `README.md`
 - `adr/0001_eventual_consistency.md`
 - `adr/0002_origin_plus_one_write_ack.md`

@@ -1,9 +1,14 @@
 # Replication modes & node sync
 
+> Operator quick reference. The full specification — write path, the Backfill RPC, the Bootstrapper,
+> global multi-cluster composition, correctness properties, and failure modes — is in
+> [`design/28_replication_factor_and_node_sync.md`](../design/28_replication_factor_and_node_sync.md).
+
 WaveSpan replicates each key to a set of **holders**. By default that set is `origin + target-N`
 nearby replicas (latency-graph placement). A namespace can override this with a **replication
-factor**, including **"everywhere"** — every node holds every record — which in turn requires a
-**bootstrap/backfill** so a joining node receives the existing records.
+factor**, including the two everywhere modes — `all` (the local cluster) and `global` (every
+cluster) — which in turn require a **bootstrap/backfill** so a joining node receives the existing
+records.
 
 ## Per-namespace replication factor
 
