@@ -101,6 +101,7 @@ func (e *Executor) Execute(q *parser.Query) (*Result, error) {
 		e.Limits = DefaultLimits()
 	}
 	e.pods = map[string]bool{}
+	e.evalErr = nil // reset per run so a prior failure can't abort a reused Executor
 	rows := []bindingRow{{}}
 	for _, op := range ops {
 		if rows, err = e.apply(op, rows); err != nil {
