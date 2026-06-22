@@ -30,6 +30,7 @@ import (
 	"github.com/cwire/wavespan/internal/storage"
 	"github.com/cwire/wavespan/internal/ttl"
 	"github.com/cwire/wavespan/internal/vector"
+	"github.com/cwire/wavespan/internal/vector/ann"
 	"github.com/cwire/wavespan/internal/version"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -166,18 +167,41 @@ func run() error {
 	defer stop()
 	subscriber.SetBaseContext(ctx) // subscriptions live for the node lifetime, not per-request
 
-	// Global active-active replication (M7): tap origin writes into a per-peer out-log, serve the
-	// GlobalReplication API, ship via the sender, and reconcile via anti-entropy.
+	// Vector store + indexes (M9/M10): exact + approximate search via the Cypher vector.* procedures;
+	// raw vectors are ingested via VectorService and replicate through the global stream.
+	vstore := vector.NewStore(store)
+	var metas []*vector.IndexMeta
+	for _, vi := range cfg.VectorIndexes {
+		meta, verr := vector.ParseVectorIndexSpec(vector.IndexSpec{
+			Name: vi.Name, Collection: vi.Collection, Metric: vi.Metric, Dimensions: vi.Dimensions,
+			Label: vi.Label, Property: vi.Property, ExactEnabled: vi.ExactEnabled,
+		})
+		if verr != nil {
+			return fmt.Errorf("vector index %q: %w", vi.Name, verr)
+		}
+		metas = append(metas, meta)
+	}
+	indexSet := vector.NewIndexSet(metas, ann.DefaultParams())
+	newGraphVersion := func() *wavespanv1.Version { return rstore.NextVersion().ToProto() }
+
+	// Global active-active replication (M7/M10): tap origin KV writes AND raw-vector writes into a
+	// per-peer out-log, serve the GlobalReplication API, ship via the sender, reconcile via
+	// anti-entropy. Applied raw vectors route into the local vector store + ANN index (TS-084).
 	var globalSrv *global.Server
 	var startGlobal func()
+	var vectorGlobalTap func(ns string, key []byte, rec *wavespanv1.StoredRecord)
 	if cfg.GlobalReplication.Enabled() {
 		applier := global.NewApplier(rstore, conflict.NewRegistry(), cfg.ConflictPolicy)
+		applier.SetVectorSink(func(v *wavespanv1.VectorRecord) {
+			_ = vstore.Put(v)
+			indexSet.OnWrite(v)
+		})
 		ae := global.NewAntiEntropy(rstore)
 		gmetrics := global.NewMetrics(metrics.Registry)
 		globalSrv = global.NewServer(applier, ae)
 		outlog := global.NewOutLog(store, cfg.GlobalReplication.OutLogDiskBudgetBytes)
 		peers := cfg.GlobalReplication.Peers
-		coord.SetGlobalTap(func(ns string, key []byte, rec *wavespanv1.StoredRecord) {
+		appendToPeers := func(ns string, key []byte, rec *wavespanv1.StoredRecord) {
 			m := &wavespanv1.GlobalMutation{
 				Id:        &wavespanv1.GlobalMutationId{ClusterId: self.ClusterID, MemberId: self.MemberID, WriterSequence: rec.GetVersion().GetWriterSequence()},
 				Namespace: ns, Key: key, Record: rec, Partition: global.Partition(ns, key),
@@ -185,7 +209,9 @@ func run() error {
 			for _, p := range peers {
 				_ = outlog.Append(p.ClusterID, m, cfg.GlobalDurabilityRequired(ns))
 			}
-		})
+		}
+		coord.SetGlobalTap(appendToPeers)
+		vectorGlobalTap = appendToPeers
 		sender := global.NewSender(outlog, peers, nil)
 		nsList := []string{"default"}
 		for _, n := range cfg.Namespaces {
@@ -200,26 +226,11 @@ func run() error {
 		logger.Info("global replication enabled", "peers", len(peers))
 	}
 
-	// Vector store + indexes (M9): exact search is exposed through the Cypher vector.searchExact
-	// procedure; raw vectors are ingested via VectorService.
-	vstore := vector.NewStore(store)
-	vectorIndexes := map[string]*vector.IndexMeta{}
-	for _, vi := range cfg.VectorIndexes {
-		meta, verr := vector.ParseVectorIndexSpec(vector.IndexSpec{
-			Name: vi.Name, Collection: vi.Collection, Metric: vi.Metric, Dimensions: vi.Dimensions,
-			Label: vi.Label, Property: vi.Property, ExactEnabled: vi.ExactEnabled,
-		})
-		if verr != nil {
-			return fmt.Errorf("vector index %q: %w", vi.Name, verr)
-		}
-		vectorIndexes[vi.Name] = meta
-	}
-	newGraphVersion := func() *wavespanv1.Version { return rstore.NextVersion().ToProto() }
-	vectorSvc := vector.NewService(vstore, newGraphVersion)
+	vectorSvc := vector.NewService(vstore, newGraphVersion).WithHooks(indexSet.OnWrite, vectorGlobalTap)
 
-	// Graph + Cypher (M8/M9): plans and executes against the local graph store, with vector search.
+	// Graph + Cypher (M8/M9/M10): plans and executes against the local graph store, with vector search.
 	cypherSvc := cypher.NewService(graph.NewStore(store), cfg.ClusterID, cfg.MemberID, newGraphVersion).
-		WithVector(vstore, func(name string) (*vector.IndexMeta, bool) { m, ok := vectorIndexes[name]; return m, ok })
+		WithVector(vstore, indexSet.Meta, indexSet.Live)
 
 	// Data server on the data port: public KvService + Cypher + Vector + internal ReplicationService.
 	dataMux := http.NewServeMux()

@@ -10,15 +10,24 @@ import (
 )
 
 // Service is the VectorService Connect handler: it ingests raw vectors into the local store
-// (design/08). Search is served via the Cypher vector.searchExact procedure.
+// (design/08). Search is served via the Cypher vector.search* procedures.
 type Service struct {
 	store      *Store
 	newVersion func() *wavespanv1.Version
+	onWrite    func(*wavespanv1.VectorRecord)                            // update the local live index
+	globalTap  func(ns string, key []byte, rec *wavespanv1.StoredRecord) // ship to peer clusters
 }
 
 // NewService wires the vector ingest service.
 func NewService(store *Store, newVersion func() *wavespanv1.Version) *Service {
 	return &Service{store: store, newVersion: newVersion}
+}
+
+// WithHooks installs the local-index updater and the global-replication tap (M10).
+func (s *Service) WithHooks(onWrite func(*wavespanv1.VectorRecord), globalTap func(ns string, key []byte, rec *wavespanv1.StoredRecord)) *Service {
+	s.onWrite = onWrite
+	s.globalTap = globalTap
+	return s
 }
 
 // Handler returns the mountable Connect handler for the data port.
@@ -38,6 +47,14 @@ func (s *Service) Put(_ context.Context, req *connect.Request[wavespanv1.PutVect
 	rec.Dimensions = uint32(len(rec.GetValues()))
 	if err := s.store.Put(rec); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if s.onWrite != nil {
+		s.onWrite(rec) // make it immediately searchable via the local live index
+	}
+	if s.globalTap != nil {
+		if sr, werr := Wrap(rec); werr == nil {
+			s.globalTap(sr.GetNamespace(), sr.GetLogicalKey(), sr) // replicate the raw vector to peers
+		}
 	}
 	return connect.NewResponse(&wavespanv1.PutVectorResponse{}), nil
 }

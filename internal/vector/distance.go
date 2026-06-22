@@ -37,6 +37,11 @@ func Distance(metric Metric, a, b []float32) float64 {
 	}
 }
 
+// metricDist adapts a Metric to an ann.DistanceFunc.
+func metricDist(metric Metric) func(a, b []float32) float64 {
+	return func(a, b []float32) float64 { return Distance(metric, a, b) }
+}
+
 // Score returns the user-facing similarity score where LARGER means more similar (the inverse
 // ranking of Distance): cosine similarity, dot product, or -euclidean.
 func Score(metric Metric, a, b []float32) float64 {

@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/cwire/wavespan/internal/conflict"
+	"github.com/cwire/wavespan/internal/vector"
 	"github.com/cwire/wavespan/internal/version"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 )
@@ -23,9 +24,14 @@ type Applier struct {
 	registry  *conflict.Registry
 	policyFor func(namespace string) string
 
-	mu      sync.Mutex
-	applied map[string]bool // mutation_id -> applied (dedupe / replay protection)
+	mu         sync.Mutex
+	applied    map[string]bool // mutation_id -> applied (dedupe / replay protection)
+	vectorSink func(*wavespanv1.VectorRecord)
 }
+
+// SetVectorSink routes applied raw-vector mutations (reserved namespace) to the local vector store
+// and index instead of the KV recordstore (design/08 TS-084). Only raw records cross the wire.
+func (a *Applier) SetVectorSink(sink func(*wavespanv1.VectorRecord)) { a.vectorSink = sink }
 
 // NewApplier wires an applier. policyFor maps a namespace to its conflict-policy name (empty =>
 // hlc-last-write-wins).
@@ -63,6 +69,19 @@ func (a *Applier) Apply(m *wavespanv1.GlobalMutation) (bool, error) {
 
 	ns, key := m.GetNamespace(), m.GetKey()
 	incoming := m.GetRecord()
+
+	// raw vectors route to the vector store/index, not the KV recordstore (TS-084).
+	if vector.IsMutationNamespace(ns) {
+		if a.vectorSink != nil {
+			if vrec, derr := vector.Unwrap(incoming); derr == nil {
+				a.vectorSink(vrec)
+			}
+		}
+		a.mu.Lock()
+		a.applied[id] = true
+		a.mu.Unlock()
+		return true, nil
+	}
 
 	var existing []*wavespanv1.StoredRecord
 	if rec, found, err := a.store.GetRecord(ns, key); err == nil && found {

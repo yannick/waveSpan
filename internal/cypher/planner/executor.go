@@ -32,10 +32,11 @@ type Executor struct {
 	Params      map[string]*wavespanv1.Value
 	NewVersion  func() *wavespanv1.Version
 
-	// Vector search support (M9): the vector store and an index-name resolver enable the
-	// vector.searchExact procedure.
+	// Vector search support: the vector store + index resolver enable vector.searchExact (M9); the
+	// live-index resolver enables vector.searchApprox (M10).
 	VectorStore *vector.Store
 	VectorIndex func(name string) (*vector.IndexMeta, bool)
+	VectorLive  func(name string) (*vector.LiveIndex, bool)
 
 	pods    map[string]bool
 	warns   []string

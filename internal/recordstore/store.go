@@ -328,7 +328,9 @@ func (s *Store) ApplySiblings(namespace string, key []byte, siblings []*wavespan
 }
 
 // EncodeStoredRecordRaw marshals a StoredRecord (exposed for ApplySiblings).
-func EncodeStoredRecordRaw(r *wavespanv1.StoredRecord) ([]byte, error) { return storage.EncodeStoredRecord(r) }
+func EncodeStoredRecordRaw(r *wavespanv1.StoredRecord) ([]byte, error) {
+	return storage.EncodeStoredRecord(r)
+}
 
 // GetRecord returns the winning StoredRecord for a key (used by repair to re-replicate the
 // latest record). found is false when the key is absent locally.

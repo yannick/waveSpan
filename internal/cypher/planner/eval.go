@@ -130,6 +130,14 @@ func literalValue(x *parser.Literal) *wavespanv1.Value {
 			}
 		}
 		return &wavespanv1.Value{Value: &wavespanv1.Value_ListValue{ListValue: lst}}
+	case x.Map != nil:
+		m := &wavespanv1.ValueMap{Entries: map[string]*wavespanv1.Value{}}
+		for key, el := range x.Map {
+			if lit, ok := el.(*parser.Literal); ok {
+				m.Entries[key] = literalValue(lit)
+			}
+		}
+		return &wavespanv1.Value{Value: &wavespanv1.Value_MapValue{MapValue: m}}
 	}
 	return vNull()
 }
