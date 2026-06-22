@@ -136,3 +136,13 @@ func TestKVGetInWhereFiltersRows(t *testing.T) {
 		t.Fatalf("expected [Alice], got %v", got)
 	}
 }
+
+// A non-UTF8 stored value (which the gRPC KV API may legitimately write as bytes) must surface as a
+// clean query error from kv.get, not corrupt the result stream with an opaque proto marshal failure.
+func TestKVGetNonUTF8ValueErrors(t *testing.T) {
+	kv := &fakeKV{data: map[string]string{nsKey("x", []byte("bin")): "\xff\xfe\xfd"}}
+	ast, _ := parser.Parse("RETURN kv.get('x','bin') AS v")
+	if _, err := (&Executor{KV: kv}).Execute(ast); err == nil {
+		t.Fatal("kv.get on a non-UTF8 value must be a hard error")
+	}
+}

@@ -94,7 +94,20 @@ replication fanout). This is one coherent store, not a side channel.
 Usable inline in any expression (`RETURN`, `WHERE`, computed properties, etc.).
 
 Returns the value as a string, or `null` if the key is absent, tombstoned, or expired.
-A `null` result always means "key genuinely absent" — it is never a silent error.
+
+A bad call (wrong arity, non-string arguments, unconfigured backend) is a hard query error,
+never `null`. `null` is reserved for "the read found no live value."
+
+Reads are eventual, exactly like the gRPC KV `Get`: local-first, with a closest-holder
+fetch on a local miss. If that holder fetch fails (holder unreachable), the read currently
+surfaces as `null` — the same behavior the gRPC KV API exhibits, so the two stay coherent,
+but it means a transient `null` can in principle hide an unreachable holder rather than a
+genuinely absent key. (A future enhancement should mark such a read partial via
+`partial_graph_possible`; today it does not.)
+
+`kv.get` exposes **string** values only. A value the gRPC KV API wrote as non-UTF8 bytes is
+not representable as a Cypher string and yields a hard error (not silent truncation); read
+such keys via the gRPC KV API, or a future `kv.getBytes` built-in.
 
 ### `CALL kv.put(namespace, key, value [, options])` — procedure
 
