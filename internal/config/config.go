@@ -64,11 +64,28 @@ type MembershipConfig struct {
 	Seeds   []string `yaml:"seeds"`
 }
 
-// ReplicationConfig selects the replication policy applied to this node.
+// ReplicationConfig selects the replication policy applied to this node. The replica counts are
+// pointers so an explicit 0 (single-node / local-only dev) is distinct from "unset" (defaults).
 type ReplicationConfig struct {
 	PolicyRef            string `yaml:"policyRef"`
-	TargetNearbyReplicas int    `yaml:"targetNearbyReplicas"`
-	MinAckNearbyReplicas int    `yaml:"minAckNearbyReplicas"`
+	TargetNearbyReplicas *int   `yaml:"targetNearbyReplicas"`
+	MinAckNearbyReplicas *int   `yaml:"minAckNearbyReplicas"`
+}
+
+// Target returns the target nearby replica count (default 3).
+func (r ReplicationConfig) Target() int {
+	if r.TargetNearbyReplicas != nil {
+		return *r.TargetNearbyReplicas
+	}
+	return 3
+}
+
+// MinAck returns the minimum nearby durable replicas for write ACK (default 1, origin+1).
+func (r ReplicationConfig) MinAck() int {
+	if r.MinAckNearbyReplicas != nil {
+		return *r.MinAckNearbyReplicas
+	}
+	return 1
 }
 
 // AdminConfig is the listen address for the admin HTTP server (/healthz, /readyz, /metrics).
@@ -163,12 +180,12 @@ func (c *Config) applyEnv(get func(string) (string, bool)) {
 	}
 	if v, ok := get("WAVESPAN_TARGET_NEARBY_REPLICAS"); ok {
 		if n, err := strconv.Atoi(v); err == nil {
-			c.Replication.TargetNearbyReplicas = n
+			c.Replication.TargetNearbyReplicas = &n
 		}
 	}
 	if v, ok := get("WAVESPAN_MIN_ACK_NEARBY_REPLICAS"); ok {
 		if n, err := strconv.Atoi(v); err == nil {
-			c.Replication.MinAckNearbyReplicas = n
+			c.Replication.MinAckNearbyReplicas = &n
 		}
 	}
 }
@@ -189,12 +206,8 @@ func (c *Config) applyDefaults() {
 	if c.Ports.Data == 0 {
 		c.Ports.Data = defaultDataPort
 	}
-	if c.Replication.TargetNearbyReplicas == 0 {
-		c.Replication.TargetNearbyReplicas = 3
-	}
-	if c.Replication.MinAckNearbyReplicas == 0 {
-		c.Replication.MinAckNearbyReplicas = 1
-	}
+	// replica-count defaults are provided by ReplicationConfig.Target()/MinAck() so an explicit 0
+	// (single-node dev) is preserved.
 }
 
 // Validate enforces the fail-fast rules (TS-002).

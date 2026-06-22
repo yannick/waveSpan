@@ -1,0 +1,20 @@
+# Single-node development config. Sets minAckNearbyReplicas: 0 so a lone node can serve writes
+# (the origin copy is durable; there is no peer to replicate to). Do NOT use this in production —
+# the default origin+1 policy (config/dev.yaml) requires a nearby durable replica per ADR-0002.
+clusterId: dev
+memberId: node1
+storage:
+  path: ./.wavespan-data
+  engine: wavesdb
+membership:
+  runtime: docker
+  seeds:
+    - "node1:7700"
+replication:
+  policyRef: dev-single
+  targetNearbyReplicas: 0
+  minAckNearbyReplicas: 0
+admin:
+  listen: ":7900"
+security:
+  insecureDevMode: true

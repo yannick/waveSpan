@@ -106,6 +106,14 @@ func (c *Coordinator) write(ctx context.Context, namespace string, key, value []
 
 	cands, err := placement.Select(c.self, c.cluster.Members(), c.graph, c.policy)
 	if err != nil {
+		// minAck=0 explicitly opts into local-only writes (single-node dev / degraded mode):
+		// the origin copy is durable and the write is acknowledged with zero nearby replicas.
+		if c.policy.MinAckNearbyReplicas <= 0 {
+			if idemKey != "" {
+				c.idem.Record(idemKey, v)
+			}
+			return PutOutcome{Version: v, AckedNearbyReplicas: 0}, nil
+		}
 		// no candidate can host a nearby durable replica -> origin+1 cannot be satisfied
 		return PutOutcome{}, ErrInsufficientNearbyReplicas
 	}

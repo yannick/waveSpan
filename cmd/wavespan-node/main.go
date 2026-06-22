@@ -96,8 +96,8 @@ func run() error {
 	}
 	receiver.SetOnStored(onStored)
 	policy := placement.Policy{
-		TargetNearbyReplicas: cfg.Replication.TargetNearbyReplicas,
-		MinAckNearbyReplicas: cfg.Replication.MinAckNearbyReplicas,
+		TargetNearbyReplicas: cfg.Replication.Target(),
+		MinAckNearbyReplicas: cfg.Replication.MinAck(),
 		RequireDistinctNodes: true,
 		Geo:                  placement.PreferLocalGeo, AllowSpilloverForDurability: true, ComplianceGeo: self.Geo,
 	}

@@ -113,6 +113,7 @@ Deliverables:
 - lazy TTL buckets;
 - TTL sweeper;
 - scan metadata.
+- Prefix Scans
 
 Acceptance:
 
