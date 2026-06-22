@@ -9,12 +9,12 @@ import (
 // M2 ships the type and the range directory; M4 populates them. Carrying the right envelope
 // now means gossip wire format is stable from the start.
 type HolderSummary struct {
-	Namespace          string
-	RangeID            string
-	MemberID           string
-	BloomFilter        []byte
-	ApproximateKeys    uint64
-	GeneratedAtUnixMs  int64
+	Namespace         string
+	RangeID           string
+	MemberID          string
+	BloomFilter       []byte
+	ApproximateKeys   uint64
+	GeneratedAtUnixMs int64
 }
 
 // Stale reports whether the summary is older than the stale TTL (design/04 "Holder summary

@@ -28,4 +28,3 @@ func DecodeEdge(b []byte) (*wavespanv1.EdgeRecord, error) {
 	}
 	return e, nil
 }
-

@@ -105,9 +105,9 @@ func TestScoreDeterministic(t *testing.T) {
 
 func TestTopologyPenaltyTable(t *testing.T) {
 	cases := []struct {
-		name                       string
-		sz, sr, sg, pz, pr, pg     string
-		want                       float64
+		name                   string
+		sz, sr, sg, pz, pr, pg string
+		want                   float64
 	}{
 		{"same zone", "a", "r", "g", "a", "r", "g", 0},
 		{"same region diff zone", "a", "r", "g", "b", "r", "g", 0.2},

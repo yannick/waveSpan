@@ -51,8 +51,8 @@ func TestExpiredFilter(t *testing.T) {
 
 func TestSweeperEmitsTombstoneForExpiredOnly(t *testing.T) {
 	s := newStore(t, 1_000_000)
-	putTTL(t, s, "soon", 1000)         // expires 1_001_000
-	putTTL(t, s, "later", 10_000_000)  // expires far in the future
+	putTTL(t, s, "soon", 1000)        // expires 1_001_000
+	putTTL(t, s, "later", 10_000_000) // expires far in the future
 	calls := 0
 	sw := NewSweeper(s, tombstoneCounter(s, &calls), func() int64 { return 1_002_000 }) // past 'soon', before 'later'
 

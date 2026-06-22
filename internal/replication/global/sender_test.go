@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/cwire/wavespan/internal/conflict"
 	"github.com/cwire/wavespan/internal/config"
+	"github.com/cwire/wavespan/internal/conflict"
 	"github.com/cwire/wavespan/internal/storage"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 )

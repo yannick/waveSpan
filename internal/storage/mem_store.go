@@ -98,7 +98,7 @@ func (s *MemStore) Snapshot() (Snapshot, error) {
 	return &memSnapshot{cfs: cfs}, nil
 }
 
-func (s *MemStore) Flush(ColumnFamily) error                 { return nil }
+func (s *MemStore) Flush(ColumnFamily) error                        { return nil }
 func (s *MemStore) CompactRange(ColumnFamily, []byte, []byte) error { return nil }
 
 func (s *MemStore) Close() error {
