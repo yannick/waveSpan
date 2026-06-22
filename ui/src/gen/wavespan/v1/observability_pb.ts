@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file wavespan/v1/observability.proto.
  */
 export const file_wavespan_v1_observability: GenFile = /*@__PURE__*/
-  fileDesc("Ch93YXZlc3Bhbi92MS9vYnNlcnZhYmlsaXR5LnByb3RvEgt3YXZlc3Bhbi52MSKJAQoMR29zc2lwRmlsdGVyEiYKBWtpbmRzGAEgAygOMhcud2F2ZXNwYW4udjEuR29zc2lwS2luZBINCgVwZWVycxgCIAMoCRIvCglkaXJlY3Rpb24YAyABKA4yHC53YXZlc3Bhbi52MS5Hb3NzaXBEaXJlY3Rpb24SEQoJbmFtZXNwYWNlGAQgASgJIs8BChRHb3NzaXBQYXlsb2FkU3VtbWFyeRIOCgZydHRfbXMYASABKAESEQoJbmV3X3N0YXRlGAIgASgJEhEKCXdhdGVybWFyaxgDIAEoBBIUCgxhcHByb3hfY291bnQYBCABKAQSDwoHZXdtYV9tcxgFIAEoARIOCgZwOTVfbXMYBiABKAESFQoNYWRkZWRfbWVtYmVycxgHIAMoCRIXCg9yZW1vdmVkX21lbWJlcnMYCCADKAkSGgoScGF5bG9hZF9zaXplX2J5dGVzGAkgASgNIskBCgxHb3NzaXBSZWNvcmQSJQoEa2luZBgBIAEoDjIXLndhdmVzcGFuLnYxLkdvc3NpcEtpbmQSLwoJZGlyZWN0aW9uGAIgASgOMhwud2F2ZXNwYW4udjEuR29zc2lwRGlyZWN0aW9uEgwKBHBlZXIYAyABKAkSEgoKYXRfdW5peF9tcxgEIAEoAxILCgNzZXEYBSABKAQSMgoHc3VtbWFyeRgGIAEoCzIhLndhdmVzcGFuLnYxLkdvc3NpcFBheWxvYWRTdW1tYXJ5IjkKCUdhcE1hcmtlchIVCg1kcm9wcGVkX2NvdW50GAEgASgEEhUKDXNpbmNlX3VuaXhfbXMYAiABKAMiagoLR29zc2lwRXZlbnQSKwoGcmVjb3JkGAEgASgLMhkud2F2ZXNwYW4udjEuR29zc2lwUmVjb3JkSAASJQoDZ2FwGAIgASgLMhYud2F2ZXNwYW4udjEuR2FwTWFya2VySABCBwoFZXZlbnQiUgoTU3RyZWFtR29zc2lwUmVxdWVzdBIpCgZmaWx0ZXIYASABKAsyGS53YXZlc3Bhbi52MS5Hb3NzaXBGaWx0ZXISEAoIYmFja2ZpbGwYAiABKAgi+AEKDUluc3BlY3RIb2xkZXISEQoJbWVtYmVyX2lkGAEgASgJEi4KDGhvbGRlcl9jbGFzcxgCIAEoDjIYLndhdmVzcGFuLnYxLkhvbGRlckNsYXNzEiUKB3ZlcnNpb24YAyABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEiwKCGNvbmZsaWN0GAQgASgOMhoud2F2ZXNwYW4udjEuQ29uZmxpY3RTdGF0ZRIaChJyZXBsaWNhdGlvbl9sYWdfbXMYBSABKAMSFwoPcGVlcl9jbHVzdGVyX2lkGAYgASgJEhoKEmdsb2JhbF9yZXBsX2xhZ19tcxgHIAEoAyJZCg5JbnNwZWN0U2libGluZxIlCgd2ZXJzaW9uGAEgASgLMhQud2F2ZXNwYW4udjEuVmVyc2lvbhIRCgl0b21ic3RvbmUYAiABKAgSDQoFdmFsdWUYAyABKAwi1AIKCkluc3BlY3RLZXkSFAoMbG9naWNhbF9wYXRoGAEgASgJEhAKCGtleV9oYXNoGAIgASgJEiUKB3ZlcnNpb24YAyABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEiwKCGNvbmZsaWN0GAQgASgOMhoud2F2ZXNwYW4udjEuQ29uZmxpY3RTdGF0ZRIRCgl0b21ic3RvbmUYBSABKAgSHwoSZXhwaXJlc19hdF91bml4X21zGAYgASgDSACIAQESDQoFdmFsdWUYByABKAwSLQoIc2libGluZ3MYCCADKAsyGy53YXZlc3Bhbi52MS5JbnNwZWN0U2libGluZxIrCgdob2xkZXJzGAkgAygLMhoud2F2ZXNwYW4udjEuSW5zcGVjdEhvbGRlchITCgtsb2dpY2FsX2tleRgKIAEoDEIVChNfZXhwaXJlc19hdF91bml4X21zInAKDkluc3BlY3RUcmFpbGVyEhUKDXJvd3NfcmV0dXJuZWQYASABKAQSNQoSZmluYWxfY29tcGxldGVuZXNzGAIgASgOMhkud2F2ZXNwYW4udjEuQ29tcGxldGVuZXNzEhAKCHdhcm5pbmdzGAMgAygJIpgBCgpJbnNwZWN0Um93EisKBmhlYWRlchgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YUgAEiYKA2tleRgCIAEoCzIXLndhdmVzcGFuLnYxLkluc3BlY3RLZXlIABIuCgd0cmFpbGVyGAMgASgLMhsud2F2ZXNwYW4udjEuSW5zcGVjdFRyYWlsZXJIAEIFCgNyb3ciwQEKE0luc3BlY3RMb2NhbFJlcXVlc3QSJwoIa2V5c3BhY2UYASABKA4yFS53YXZlc3Bhbi52MS5LZXlzcGFjZRIRCgluYW1lc3BhY2UYAiABKAkSDgoGcHJlZml4GAMgASgMEhEKCXN0YXJ0X2tleRgEIAEoDBIPCgdlbmRfa2V5GAUgASgMEg0KBWxpbWl0GAYgASgNEhUKDWluY2x1ZGVfdmFsdWUYByABKAgSFAoMY2x1c3Rlcl93aWRlGAggASgIIpUBChRJbnNwZWN0R2xvYmFsUmVxdWVzdBInCghrZXlzcGFjZRgBIAEoDjIVLndhdmVzcGFuLnYxLktleXNwYWNlEhEKCW5hbWVzcGFjZRgCIAEoCRILCgNrZXkYAyABKAwSFQoNaW5jbHVkZV92YWx1ZRgEIAEoCBIdChVpbmNsdWRlX3BlZXJfY2x1c3RlcnMYBSABKAgiVQoRUmFuZ2VSZXBhaXJTdGF0dXMSEwoLcmFuZ2Vfc3RhcnQYASABKAwSEQoJcmFuZ2VfZW5kGAIgASgMEhgKEHVuZGVyX3JlcGxpY2F0ZWQYAyABKA0iFwoVR2V0Q2x1c3RlclZpZXdSZXF1ZXN0Ir8BChZHZXRDbHVzdGVyVmlld1Jlc3BvbnNlEikKB21lbWJlcnMYASADKAsyGC53YXZlc3Bhbi52MS5NZW1iZXJTdGF0ZRInCgVlZGdlcxgCIAMoCzIYLndhdmVzcGFuLnYxLkxhdGVuY3lFZGdlEi4KBnJlcGFpchgDIAMoCzIeLndhdmVzcGFuLnYxLlJhbmdlUmVwYWlyU3RhdHVzEiEKGXVuZGVyX3JlcGxpY2F0ZWRfZXN0aW1hdGUYBCABKAQirwEKCUdyYXBoTm9kZRIPCgdub2RlX2lkGAEgASgJEg4KBmxhYmVscxgCIAMoCRI6Cgpwcm9wZXJ0aWVzGAMgAygLMiYud2F2ZXNwYW4udjEuR3JhcGhOb2RlLlByb3BlcnRpZXNFbnRyeRpFCg9Qcm9wZXJ0aWVzRW50cnkSCwoDa2V5GAEgASgJEiEKBXZhbHVlGAIgASgLMhIud2F2ZXNwYW4udjEuVmFsdWU6AjgBIkoKCUdyYXBoRWRnZRIPCgdlZGdlX2lkGAEgASgJEg4KBnNvdXJjZRgCIAEoCRIOCgZ0YXJnZXQYAyABKAkSDAoEdHlwZRgEIAEoCSJyChNHcmFwaEV4cGxvcmVSZXF1ZXN0EhAKCGdyYXBoX2lkGAEgASgJEhQKDHNlZWRfbm9kZV9pZBgCIAEoCRINCgVkZXB0aBgDIAEoDRINCgVsaW1pdBgEIAEoDRIVCg1pbmNsdWRlX3ZhbHVlGAUgASgIIncKFEdyYXBoRXhwbG9yZVJlc3BvbnNlEiUKBW5vZGVzGAEgAygLMhYud2F2ZXNwYW4udjEuR3JhcGhOb2RlEiUKBWVkZ2VzGAIgAygLMhYud2F2ZXNwYW4udjEuR3JhcGhFZGdlEhEKCXRydW5jYXRlZBgDIAEoCCJ6Cg9BZG1pblB1dFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBINCgV2YWx1ZRgDIAEoDBITCgZ0dGxfbXMYBCABKANIAIgBARIYChB0YXJnZXRfbWVtYmVyX2lkGAUgASgJQgkKB190dGxfbXMikgEKEEFkbWluUHV0UmVzcG9uc2USCgoCb2sYASABKAgSJQoHdmVyc2lvbhgCIAEoCzIULndhdmVzcGFuLnYxLlZlcnNpb24SHQoVYWNrZWRfbmVhcmJ5X3JlcGxpY2FzGAMgASgNEh0KFWNvb3JkaW5hdG9yX21lbWJlcl9pZBgEIAEoCRINCgVlcnJvchgFIAEoCSJOChJBZG1pbkRlbGV0ZVJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBIYChB0YXJnZXRfbWVtYmVyX2lkGAMgASgJIpUBChNBZG1pbkRlbGV0ZVJlc3BvbnNlEgoKAm9rGAEgASgIEiUKB3ZlcnNpb24YAiABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEh0KFWFja2VkX25lYXJieV9yZXBsaWNhcxgDIAEoDRIdChVjb29yZGluYXRvcl9tZW1iZXJfaWQYBCABKAkSDQoFZXJyb3IYBSABKAkq7gEKCkdvc3NpcEtpbmQSGwoXR09TU0lQX0tJTkRfVU5TUEVDSUZJRUQQABIPCgtHT1NTSVBfUElORxABEg4KCkdPU1NJUF9BQ0sQAhITCg9HT1NTSVBfSU5ESVJFQ1QQAxISCg5HT1NTSVBfU1VTUEVDVBAEEhAKDEdPU1NJUF9BTElWRRAFEhYKEkdPU1NJUF9VTlJFQUNIQUJMRRAGEhkKFUdPU1NJUF9IT0xERVJfU1VNTUFSWRAHEhcKE0dPU1NJUF9MQVRFTkNZX0VER0UQCBIbChdHT1NTSVBfTUVNQkVSU0hJUF9ERUxUQRAJKmoKD0dvc3NpcERpcmVjdGlvbhIgChxHT1NTSVBfRElSRUNUSU9OX1VOU1BFQ0lGSUVEEAASDwoLR09TU0lQX1NFTkQQARIPCgtHT1NTSVBfUkVDVhACEhMKD0dPU1NJUF9JTlRFUk5BTBADKl4KCEtleXNwYWNlEhgKFEtFWVNQQUNFX1VOU1BFQ0lGSUVEEAASDwoLS0VZU1BBQ0VfS1YQARISCg5LRVlTUEFDRV9HUkFQSBACEhMKD0tFWVNQQUNFX1ZFQ1RPUhADKmwKC0hvbGRlckNsYXNzEhwKGEhPTERFUl9DTEFTU19VTlNQRUNJRklFRBAAEhEKDUhPTERFUl9PUklHSU4QARISCg5IT0xERVJfRFVSQUJMRRACEhgKFEhPTERFUl9EWU5BTUlDX0NBQ0hFEAMyywQKFE9ic2VydmFiaWxpdHlTZXJ2aWNlEkwKDFN0cmVhbUdvc3NpcBIgLndhdmVzcGFuLnYxLlN0cmVhbUdvc3NpcFJlcXVlc3QaGC53YXZlc3Bhbi52MS5Hb3NzaXBFdmVudDABEksKDEluc3BlY3RMb2NhbBIgLndhdmVzcGFuLnYxLkluc3BlY3RMb2NhbFJlcXVlc3QaFy53YXZlc3Bhbi52MS5JbnNwZWN0Um93MAESTQoNSW5zcGVjdEdsb2JhbBIhLndhdmVzcGFuLnYxLkluc3BlY3RHbG9iYWxSZXF1ZXN0Ghcud2F2ZXNwYW4udjEuSW5zcGVjdFJvdzABElkKDkdldENsdXN0ZXJWaWV3EiIud2F2ZXNwYW4udjEuR2V0Q2x1c3RlclZpZXdSZXF1ZXN0GiMud2F2ZXNwYW4udjEuR2V0Q2x1c3RlclZpZXdSZXNwb25zZRJTCgxHcmFwaEV4cGxvcmUSIC53YXZlc3Bhbi52MS5HcmFwaEV4cGxvcmVSZXF1ZXN0GiEud2F2ZXNwYW4udjEuR3JhcGhFeHBsb3JlUmVzcG9uc2USRwoIQWRtaW5QdXQSHC53YXZlc3Bhbi52MS5BZG1pblB1dFJlcXVlc3QaHS53YXZlc3Bhbi52MS5BZG1pblB1dFJlc3BvbnNlElAKC0FkbWluRGVsZXRlEh8ud2F2ZXNwYW4udjEuQWRtaW5EZWxldGVSZXF1ZXN0GiAud2F2ZXNwYW4udjEuQWRtaW5EZWxldGVSZXNwb25zZUKqAQoPY29tLndhdmVzcGFuLnYxQhJPYnNlcnZhYmlsaXR5UHJvdG9QAVo2Z2l0aHViLmNvbS9jd2lyZS93YXZlc3Bhbi9wcm90by93YXZlc3Bhbi92MTt3YXZlc3BhbnYxogIDV1hYqgILV2F2ZXNwYW4uVjHKAgtXYXZlc3BhblxWMeICF1dhdmVzcGFuXFYxXEdQQk1ldGFkYXRh6gIMV2F2ZXNwYW46OlYxYgZwcm90bzM", [file_wavespan_v1_common, file_wavespan_v1_admin, file_wavespan_v1_cypher]);
+  fileDesc("Ch93YXZlc3Bhbi92MS9vYnNlcnZhYmlsaXR5LnByb3RvEgt3YXZlc3Bhbi52MSKJAQoMR29zc2lwRmlsdGVyEiYKBWtpbmRzGAEgAygOMhcud2F2ZXNwYW4udjEuR29zc2lwS2luZBINCgVwZWVycxgCIAMoCRIvCglkaXJlY3Rpb24YAyABKA4yHC53YXZlc3Bhbi52MS5Hb3NzaXBEaXJlY3Rpb24SEQoJbmFtZXNwYWNlGAQgASgJIs8BChRHb3NzaXBQYXlsb2FkU3VtbWFyeRIOCgZydHRfbXMYASABKAESEQoJbmV3X3N0YXRlGAIgASgJEhEKCXdhdGVybWFyaxgDIAEoBBIUCgxhcHByb3hfY291bnQYBCABKAQSDwoHZXdtYV9tcxgFIAEoARIOCgZwOTVfbXMYBiABKAESFQoNYWRkZWRfbWVtYmVycxgHIAMoCRIXCg9yZW1vdmVkX21lbWJlcnMYCCADKAkSGgoScGF5bG9hZF9zaXplX2J5dGVzGAkgASgNIskBCgxHb3NzaXBSZWNvcmQSJQoEa2luZBgBIAEoDjIXLndhdmVzcGFuLnYxLkdvc3NpcEtpbmQSLwoJZGlyZWN0aW9uGAIgASgOMhwud2F2ZXNwYW4udjEuR29zc2lwRGlyZWN0aW9uEgwKBHBlZXIYAyABKAkSEgoKYXRfdW5peF9tcxgEIAEoAxILCgNzZXEYBSABKAQSMgoHc3VtbWFyeRgGIAEoCzIhLndhdmVzcGFuLnYxLkdvc3NpcFBheWxvYWRTdW1tYXJ5IjkKCUdhcE1hcmtlchIVCg1kcm9wcGVkX2NvdW50GAEgASgEEhUKDXNpbmNlX3VuaXhfbXMYAiABKAMiagoLR29zc2lwRXZlbnQSKwoGcmVjb3JkGAEgASgLMhkud2F2ZXNwYW4udjEuR29zc2lwUmVjb3JkSAASJQoDZ2FwGAIgASgLMhYud2F2ZXNwYW4udjEuR2FwTWFya2VySABCBwoFZXZlbnQiUgoTU3RyZWFtR29zc2lwUmVxdWVzdBIpCgZmaWx0ZXIYASABKAsyGS53YXZlc3Bhbi52MS5Hb3NzaXBGaWx0ZXISEAoIYmFja2ZpbGwYAiABKAgi+AEKDUluc3BlY3RIb2xkZXISEQoJbWVtYmVyX2lkGAEgASgJEi4KDGhvbGRlcl9jbGFzcxgCIAEoDjIYLndhdmVzcGFuLnYxLkhvbGRlckNsYXNzEiUKB3ZlcnNpb24YAyABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEiwKCGNvbmZsaWN0GAQgASgOMhoud2F2ZXNwYW4udjEuQ29uZmxpY3RTdGF0ZRIaChJyZXBsaWNhdGlvbl9sYWdfbXMYBSABKAMSFwoPcGVlcl9jbHVzdGVyX2lkGAYgASgJEhoKEmdsb2JhbF9yZXBsX2xhZ19tcxgHIAEoAyJZCg5JbnNwZWN0U2libGluZxIlCgd2ZXJzaW9uGAEgASgLMhQud2F2ZXNwYW4udjEuVmVyc2lvbhIRCgl0b21ic3RvbmUYAiABKAgSDQoFdmFsdWUYAyABKAwi1AIKCkluc3BlY3RLZXkSFAoMbG9naWNhbF9wYXRoGAEgASgJEhAKCGtleV9oYXNoGAIgASgJEiUKB3ZlcnNpb24YAyABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEiwKCGNvbmZsaWN0GAQgASgOMhoud2F2ZXNwYW4udjEuQ29uZmxpY3RTdGF0ZRIRCgl0b21ic3RvbmUYBSABKAgSHwoSZXhwaXJlc19hdF91bml4X21zGAYgASgDSACIAQESDQoFdmFsdWUYByABKAwSLQoIc2libGluZ3MYCCADKAsyGy53YXZlc3Bhbi52MS5JbnNwZWN0U2libGluZxIrCgdob2xkZXJzGAkgAygLMhoud2F2ZXNwYW4udjEuSW5zcGVjdEhvbGRlchITCgtsb2dpY2FsX2tleRgKIAEoDEIVChNfZXhwaXJlc19hdF91bml4X21zInAKDkluc3BlY3RUcmFpbGVyEhUKDXJvd3NfcmV0dXJuZWQYASABKAQSNQoSZmluYWxfY29tcGxldGVuZXNzGAIgASgOMhkud2F2ZXNwYW4udjEuQ29tcGxldGVuZXNzEhAKCHdhcm5pbmdzGAMgAygJIpgBCgpJbnNwZWN0Um93EisKBmhlYWRlchgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YUgAEiYKA2tleRgCIAEoCzIXLndhdmVzcGFuLnYxLkluc3BlY3RLZXlIABIuCgd0cmFpbGVyGAMgASgLMhsud2F2ZXNwYW4udjEuSW5zcGVjdFRyYWlsZXJIAEIFCgNyb3ciwQEKE0luc3BlY3RMb2NhbFJlcXVlc3QSJwoIa2V5c3BhY2UYASABKA4yFS53YXZlc3Bhbi52MS5LZXlzcGFjZRIRCgluYW1lc3BhY2UYAiABKAkSDgoGcHJlZml4GAMgASgMEhEKCXN0YXJ0X2tleRgEIAEoDBIPCgdlbmRfa2V5GAUgASgMEg0KBWxpbWl0GAYgASgNEhUKDWluY2x1ZGVfdmFsdWUYByABKAgSFAoMY2x1c3Rlcl93aWRlGAggASgIIpUBChRJbnNwZWN0R2xvYmFsUmVxdWVzdBInCghrZXlzcGFjZRgBIAEoDjIVLndhdmVzcGFuLnYxLktleXNwYWNlEhEKCW5hbWVzcGFjZRgCIAEoCRILCgNrZXkYAyABKAwSFQoNaW5jbHVkZV92YWx1ZRgEIAEoCBIdChVpbmNsdWRlX3BlZXJfY2x1c3RlcnMYBSABKAgiVQoRUmFuZ2VSZXBhaXJTdGF0dXMSEwoLcmFuZ2Vfc3RhcnQYASABKAwSEQoJcmFuZ2VfZW5kGAIgASgMEhgKEHVuZGVyX3JlcGxpY2F0ZWQYAyABKA0iFwoVR2V0Q2x1c3RlclZpZXdSZXF1ZXN0Ir8BChZHZXRDbHVzdGVyVmlld1Jlc3BvbnNlEikKB21lbWJlcnMYASADKAsyGC53YXZlc3Bhbi52MS5NZW1iZXJTdGF0ZRInCgVlZGdlcxgCIAMoCzIYLndhdmVzcGFuLnYxLkxhdGVuY3lFZGdlEi4KBnJlcGFpchgDIAMoCzIeLndhdmVzcGFuLnYxLlJhbmdlUmVwYWlyU3RhdHVzEiEKGXVuZGVyX3JlcGxpY2F0ZWRfZXN0aW1hdGUYBCABKAQirwEKCUdyYXBoTm9kZRIPCgdub2RlX2lkGAEgASgJEg4KBmxhYmVscxgCIAMoCRI6Cgpwcm9wZXJ0aWVzGAMgAygLMiYud2F2ZXNwYW4udjEuR3JhcGhOb2RlLlByb3BlcnRpZXNFbnRyeRpFCg9Qcm9wZXJ0aWVzRW50cnkSCwoDa2V5GAEgASgJEiEKBXZhbHVlGAIgASgLMhIud2F2ZXNwYW4udjEuVmFsdWU6AjgBIkoKCUdyYXBoRWRnZRIPCgdlZGdlX2lkGAEgASgJEg4KBnNvdXJjZRgCIAEoCRIOCgZ0YXJnZXQYAyABKAkSDAoEdHlwZRgEIAEoCSJyChNHcmFwaEV4cGxvcmVSZXF1ZXN0EhAKCGdyYXBoX2lkGAEgASgJEhQKDHNlZWRfbm9kZV9pZBgCIAEoCRINCgVkZXB0aBgDIAEoDRINCgVsaW1pdBgEIAEoDRIVCg1pbmNsdWRlX3ZhbHVlGAUgASgIIncKFEdyYXBoRXhwbG9yZVJlc3BvbnNlEiUKBW5vZGVzGAEgAygLMhYud2F2ZXNwYW4udjEuR3JhcGhOb2RlEiUKBWVkZ2VzGAIgAygLMhYud2F2ZXNwYW4udjEuR3JhcGhFZGdlEhEKCXRydW5jYXRlZBgDIAEoCCK8AQoMVHVuYWJsZVN0YXRlEgsKA2tleRgBIAEoCRINCgVncm91cBgCIAEoCRINCgV2YWx1ZRgDIAEoCRIVCg1kZWZhdWx0X3ZhbHVlGAQgASgJEg4KBnNvdXJjZRgFIAEoCRIMCgRraW5kGAYgASgJEhAKCGNhdGVnb3J5GAcgASgJEgsKA2RvYxgIIAEoCRILCgN3aHkYCSABKAkSDwoHdmVyc2lvbhgKIAEoBBIPCgdlbnZfdmFyGAsgASgJImAKCk5vZGVDb25maWcSEgoKY2x1c3Rlcl9pZBgBIAEoCRIRCgltZW1iZXJfaWQYAiABKAkSKwoIdHVuYWJsZXMYAyADKAsyGS53YXZlc3Bhbi52MS5UdW5hYmxlU3RhdGUiEgoQR2V0Q29uZmlnUmVxdWVzdCIwChRHZXROb2RlQ29uZmlnUmVxdWVzdBIYChB0YXJnZXRfbWVtYmVyX2lkGAEgASgJIjQKFkFkbWluU2V0VHVuYWJsZVJlcXVlc3QSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJIl8KF0FkbWluU2V0VHVuYWJsZVJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEhgKEHJlcXVpcmVzX3Jlc3RhcnQYAyABKAgSDwoHdmVyc2lvbhgEIAEoBCJ6Cg9BZG1pblB1dFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBINCgV2YWx1ZRgDIAEoDBITCgZ0dGxfbXMYBCABKANIAIgBARIYChB0YXJnZXRfbWVtYmVyX2lkGAUgASgJQgkKB190dGxfbXMikgEKEEFkbWluUHV0UmVzcG9uc2USCgoCb2sYASABKAgSJQoHdmVyc2lvbhgCIAEoCzIULndhdmVzcGFuLnYxLlZlcnNpb24SHQoVYWNrZWRfbmVhcmJ5X3JlcGxpY2FzGAMgASgNEh0KFWNvb3JkaW5hdG9yX21lbWJlcl9pZBgEIAEoCRINCgVlcnJvchgFIAEoCSJOChJBZG1pbkRlbGV0ZVJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBIYChB0YXJnZXRfbWVtYmVyX2lkGAMgASgJIpUBChNBZG1pbkRlbGV0ZVJlc3BvbnNlEgoKAm9rGAEgASgIEiUKB3ZlcnNpb24YAiABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEh0KFWFja2VkX25lYXJieV9yZXBsaWNhcxgDIAEoDRIdChVjb29yZGluYXRvcl9tZW1iZXJfaWQYBCABKAkSDQoFZXJyb3IYBSABKAkqhwIKCkdvc3NpcEtpbmQSGwoXR09TU0lQX0tJTkRfVU5TUEVDSUZJRUQQABIPCgtHT1NTSVBfUElORxABEg4KCkdPU1NJUF9BQ0sQAhITCg9HT1NTSVBfSU5ESVJFQ1QQAxISCg5HT1NTSVBfU1VTUEVDVBAEEhAKDEdPU1NJUF9BTElWRRAFEhYKEkdPU1NJUF9VTlJFQUNIQUJMRRAGEhkKFUdPU1NJUF9IT0xERVJfU1VNTUFSWRAHEhcKE0dPU1NJUF9MQVRFTkNZX0VER0UQCBIbChdHT1NTSVBfTUVNQkVSU0hJUF9ERUxUQRAJEhcKE0dPU1NJUF9DT05GSUdfREVMVEEQCipqCg9Hb3NzaXBEaXJlY3Rpb24SIAocR09TU0lQX0RJUkVDVElPTl9VTlNQRUNJRklFRBAAEg8KC0dPU1NJUF9TRU5EEAESDwoLR09TU0lQX1JFQ1YQAhITCg9HT1NTSVBfSU5URVJOQUwQAypeCghLZXlzcGFjZRIYChRLRVlTUEFDRV9VTlNQRUNJRklFRBAAEg8KC0tFWVNQQUNFX0tWEAESEgoOS0VZU1BBQ0VfR1JBUEgQAhITCg9LRVlTUEFDRV9WRUNUT1IQAypsCgtIb2xkZXJDbGFzcxIcChhIT0xERVJfQ0xBU1NfVU5TUEVDSUZJRUQQABIRCg1IT0xERVJfT1JJR0lOEAESEgoOSE9MREVSX0RVUkFCTEUQAhIYChRIT0xERVJfRFlOQU1JQ19DQUNIRRADMvYFChRPYnNlcnZhYmlsaXR5U2VydmljZRJMCgxTdHJlYW1Hb3NzaXASIC53YXZlc3Bhbi52MS5TdHJlYW1Hb3NzaXBSZXF1ZXN0Ghgud2F2ZXNwYW4udjEuR29zc2lwRXZlbnQwARJLCgxJbnNwZWN0TG9jYWwSIC53YXZlc3Bhbi52MS5JbnNwZWN0TG9jYWxSZXF1ZXN0Ghcud2F2ZXNwYW4udjEuSW5zcGVjdFJvdzABEk0KDUluc3BlY3RHbG9iYWwSIS53YXZlc3Bhbi52MS5JbnNwZWN0R2xvYmFsUmVxdWVzdBoXLndhdmVzcGFuLnYxLkluc3BlY3RSb3cwARJZCg5HZXRDbHVzdGVyVmlldxIiLndhdmVzcGFuLnYxLkdldENsdXN0ZXJWaWV3UmVxdWVzdBojLndhdmVzcGFuLnYxLkdldENsdXN0ZXJWaWV3UmVzcG9uc2USUwoMR3JhcGhFeHBsb3JlEiAud2F2ZXNwYW4udjEuR3JhcGhFeHBsb3JlUmVxdWVzdBohLndhdmVzcGFuLnYxLkdyYXBoRXhwbG9yZVJlc3BvbnNlEkcKCEFkbWluUHV0Ehwud2F2ZXNwYW4udjEuQWRtaW5QdXRSZXF1ZXN0Gh0ud2F2ZXNwYW4udjEuQWRtaW5QdXRSZXNwb25zZRJQCgtBZG1pbkRlbGV0ZRIfLndhdmVzcGFuLnYxLkFkbWluRGVsZXRlUmVxdWVzdBogLndhdmVzcGFuLnYxLkFkbWluRGVsZXRlUmVzcG9uc2USSwoNR2V0Tm9kZUNvbmZpZxIhLndhdmVzcGFuLnYxLkdldE5vZGVDb25maWdSZXF1ZXN0Ghcud2F2ZXNwYW4udjEuTm9kZUNvbmZpZxJcCg9BZG1pblNldFR1bmFibGUSIy53YXZlc3Bhbi52MS5BZG1pblNldFR1bmFibGVSZXF1ZXN0GiQud2F2ZXNwYW4udjEuQWRtaW5TZXRUdW5hYmxlUmVzcG9uc2UyVAoNQ29uZmlnU2VydmljZRJDCglHZXRDb25maWcSHS53YXZlc3Bhbi52MS5HZXRDb25maWdSZXF1ZXN0Ghcud2F2ZXNwYW4udjEuTm9kZUNvbmZpZ0KqAQoPY29tLndhdmVzcGFuLnYxQhJPYnNlcnZhYmlsaXR5UHJvdG9QAVo2Z2l0aHViLmNvbS9jd2lyZS93YXZlc3Bhbi9wcm90by93YXZlc3Bhbi92MTt3YXZlc3BhbnYxogIDV1hYqgILV2F2ZXNwYW4uVjHKAgtXYXZlc3BhblxWMeICF1dhdmVzcGFuXFYxXEdQQk1ldGFkYXRh6gIMV2F2ZXNwYW46OlYxYgZwcm90bzM", [file_wavespan_v1_common, file_wavespan_v1_admin, file_wavespan_v1_cypher]);
 
 /**
  * GossipFilter narrows the stream server-side (design/26).
@@ -747,6 +747,218 @@ export const GraphExploreResponseSchema: GenMessage<GraphExploreResponse> = /*@_
   messageDesc(file_wavespan_v1_observability, 19);
 
 /**
+ * TunableState is one tunable's effective state on a node (used by the Config tab).
+ *
+ * @generated from message wavespan.v1.TunableState
+ */
+export type TunableState = Message<"wavespan.v1.TunableState"> & {
+  /**
+   * dotted key, e.g. "ttl.sweepInterval"
+   *
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * subsystem group
+   *
+   * @generated from field: string group = 2;
+   */
+  group: string;
+
+  /**
+   * current effective value, canonical string
+   *
+   * @generated from field: string value = 3;
+   */
+  value: string;
+
+  /**
+   * built-in default
+   *
+   * @generated from field: string default_value = 4;
+   */
+  defaultValue: string;
+
+  /**
+   * default | file | env | runtime
+   *
+   * @generated from field: string source = 5;
+   */
+  source: string;
+
+  /**
+   * duration | int | int64 | bytes | float | bool | string
+   *
+   * @generated from field: string kind = 6;
+   */
+  kind: string;
+
+  /**
+   * static | hot
+   *
+   * @generated from field: string category = 7;
+   */
+  category: string;
+
+  /**
+   * what it controls
+   *
+   * @generated from field: string doc = 8;
+   */
+  doc: string;
+
+  /**
+   * why it defaults to its value
+   *
+   * @generated from field: string why = 9;
+   */
+  why: string;
+
+  /**
+   * runtime-override version (0 if not runtime-set)
+   *
+   * @generated from field: uint64 version = 10;
+   */
+  version: bigint;
+
+  /**
+   * the WAVESPAN_TUNABLE_* override name
+   *
+   * @generated from field: string env_var = 11;
+   */
+  envVar: string;
+};
+
+/**
+ * Describes the message wavespan.v1.TunableState.
+ * Use `create(TunableStateSchema)` to create a new message.
+ */
+export const TunableStateSchema: GenMessage<TunableState> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_observability, 20);
+
+/**
+ * NodeConfig is a node's full effective tunable set.
+ *
+ * @generated from message wavespan.v1.NodeConfig
+ */
+export type NodeConfig = Message<"wavespan.v1.NodeConfig"> & {
+  /**
+   * @generated from field: string cluster_id = 1;
+   */
+  clusterId: string;
+
+  /**
+   * @generated from field: string member_id = 2;
+   */
+  memberId: string;
+
+  /**
+   * @generated from field: repeated wavespan.v1.TunableState tunables = 3;
+   */
+  tunables: TunableState[];
+};
+
+/**
+ * Describes the message wavespan.v1.NodeConfig.
+ * Use `create(NodeConfigSchema)` to create a new message.
+ */
+export const NodeConfigSchema: GenMessage<NodeConfig> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_observability, 21);
+
+/**
+ * @generated from message wavespan.v1.GetConfigRequest
+ */
+export type GetConfigRequest = Message<"wavespan.v1.GetConfigRequest"> & {
+};
+
+/**
+ * Describes the message wavespan.v1.GetConfigRequest.
+ * Use `create(GetConfigRequestSchema)` to create a new message.
+ */
+export const GetConfigRequestSchema: GenMessage<GetConfigRequest> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_observability, 22);
+
+/**
+ * GetNodeConfigRequest selects which node's config to read (empty = the serving node).
+ *
+ * @generated from message wavespan.v1.GetNodeConfigRequest
+ */
+export type GetNodeConfigRequest = Message<"wavespan.v1.GetNodeConfigRequest"> & {
+  /**
+   * @generated from field: string target_member_id = 1;
+   */
+  targetMemberId: string;
+};
+
+/**
+ * Describes the message wavespan.v1.GetNodeConfigRequest.
+ * Use `create(GetNodeConfigRequestSchema)` to create a new message.
+ */
+export const GetNodeConfigRequestSchema: GenMessage<GetNodeConfigRequest> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_observability, 23);
+
+/**
+ * AdminSetTunableRequest sets a runtime override for one tunable, cluster-wide via gossip.
+ *
+ * @generated from message wavespan.v1.AdminSetTunableRequest
+ */
+export type AdminSetTunableRequest = Message<"wavespan.v1.AdminSetTunableRequest"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from field: string value = 2;
+   */
+  value: string;
+};
+
+/**
+ * Describes the message wavespan.v1.AdminSetTunableRequest.
+ * Use `create(AdminSetTunableRequestSchema)` to create a new message.
+ */
+export const AdminSetTunableRequestSchema: GenMessage<AdminSetTunableRequest> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_observability, 24);
+
+/**
+ * AdminSetTunableResponse reports the outcome of a runtime tunable change.
+ *
+ * @generated from message wavespan.v1.AdminSetTunableResponse
+ */
+export type AdminSetTunableResponse = Message<"wavespan.v1.AdminSetTunableResponse"> & {
+  /**
+   * @generated from field: bool ok = 1;
+   */
+  ok: boolean;
+
+  /**
+   * @generated from field: string error = 2;
+   */
+  error: string;
+
+  /**
+   * true for static tunables (stored as desired-state, applied on restart)
+   *
+   * @generated from field: bool requires_restart = 3;
+   */
+  requiresRestart: boolean;
+
+  /**
+   * @generated from field: uint64 version = 4;
+   */
+  version: bigint;
+};
+
+/**
+ * Describes the message wavespan.v1.AdminSetTunableResponse.
+ * Use `create(AdminSetTunableResponseSchema)` to create a new message.
+ */
+export const AdminSetTunableResponseSchema: GenMessage<AdminSetTunableResponse> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_observability, 25);
+
+/**
  * AdminPutRequest is a test/admin KV write issued from the node UI (design/26). The write is
  * forwarded to target_member_id's data port so that member becomes the write coordinator/origin;
  * an empty target_member_id means the node serving this request coordinates.
@@ -785,7 +997,7 @@ export type AdminPutRequest = Message<"wavespan.v1.AdminPutRequest"> & {
  * Use `create(AdminPutRequestSchema)` to create a new message.
  */
 export const AdminPutRequestSchema: GenMessage<AdminPutRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_observability, 20);
+  messageDesc(file_wavespan_v1_observability, 26);
 
 /**
  * AdminPutResponse reports the outcome of an AdminPut, including which member coordinated it.
@@ -824,7 +1036,7 @@ export type AdminPutResponse = Message<"wavespan.v1.AdminPutResponse"> & {
  * Use `create(AdminPutResponseSchema)` to create a new message.
  */
 export const AdminPutResponseSchema: GenMessage<AdminPutResponse> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_observability, 21);
+  messageDesc(file_wavespan_v1_observability, 27);
 
 /**
  * AdminDeleteRequest is a test/admin KV delete (tombstone write) issued from the node UI Data
@@ -855,7 +1067,7 @@ export type AdminDeleteRequest = Message<"wavespan.v1.AdminDeleteRequest"> & {
  * Use `create(AdminDeleteRequestSchema)` to create a new message.
  */
 export const AdminDeleteRequestSchema: GenMessage<AdminDeleteRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_observability, 22);
+  messageDesc(file_wavespan_v1_observability, 28);
 
 /**
  * AdminDeleteResponse reports the outcome of an AdminDelete, including which member coordinated it.
@@ -894,7 +1106,7 @@ export type AdminDeleteResponse = Message<"wavespan.v1.AdminDeleteResponse"> & {
  * Use `create(AdminDeleteResponseSchema)` to create a new message.
  */
 export const AdminDeleteResponseSchema: GenMessage<AdminDeleteResponse> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_observability, 23);
+  messageDesc(file_wavespan_v1_observability, 29);
 
 /**
  * GossipKind classifies a gossip event.
@@ -951,6 +1163,11 @@ export enum GossipKind {
    * @generated from enum value: GOSSIP_MEMBERSHIP_DELTA = 9;
    */
   GOSSIP_MEMBERSHIP_DELTA = 9,
+
+  /**
+   * @generated from enum value: GOSSIP_CONFIG_DELTA = 10;
+   */
+  GOSSIP_CONFIG_DELTA = 10,
 }
 
 /**
@@ -1129,6 +1346,47 @@ export const ObservabilityService: GenService<{
     input: typeof AdminDeleteRequestSchema;
     output: typeof AdminDeleteResponseSchema;
   },
+  /**
+   * GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
+   * serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
+   * UI Config tab and cross-node config inspection.
+   *
+   * @generated from rpc wavespan.v1.ObservabilityService.GetNodeConfig
+   */
+  getNodeConfig: {
+    methodKind: "unary";
+    input: typeof GetNodeConfigRequestSchema;
+    output: typeof NodeConfigSchema;
+  },
+  /**
+   * AdminSetTunable sets a runtime override for a tunable on this node and gossips it cluster-wide
+   * (LWW by version). Hot tunables apply live; static ones report requires_restart.
+   *
+   * @generated from rpc wavespan.v1.ObservabilityService.AdminSetTunable
+   */
+  adminSetTunable: {
+    methodKind: "unary";
+    input: typeof AdminSetTunableRequestSchema;
+    output: typeof AdminSetTunableResponseSchema;
+  },
 }> = /*@__PURE__*/
   serviceDesc(file_wavespan_v1_observability, 0);
+
+/**
+ * ConfigService is peer-reachable on the DATA port (unlike the admin-only ObservabilityService) so
+ * any node can read another node's effective config. The admin GetNodeConfig forwards here.
+ *
+ * @generated from service wavespan.v1.ConfigService
+ */
+export const ConfigService: GenService<{
+  /**
+   * @generated from rpc wavespan.v1.ConfigService.GetConfig
+   */
+  getConfig: {
+    methodKind: "unary";
+    input: typeof GetConfigRequestSchema;
+    output: typeof NodeConfigSchema;
+  },
+}> = /*@__PURE__*/
+  serviceDesc(file_wavespan_v1_observability, 1);
 

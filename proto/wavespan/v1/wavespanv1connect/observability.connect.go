@@ -23,6 +23,8 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// ObservabilityServiceName is the fully-qualified name of the ObservabilityService service.
 	ObservabilityServiceName = "wavespan.v1.ObservabilityService"
+	// ConfigServiceName is the fully-qualified name of the ConfigService service.
+	ConfigServiceName = "wavespan.v1.ConfigService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -54,6 +56,14 @@ const (
 	// ObservabilityServiceAdminDeleteProcedure is the fully-qualified name of the
 	// ObservabilityService's AdminDelete RPC.
 	ObservabilityServiceAdminDeleteProcedure = "/wavespan.v1.ObservabilityService/AdminDelete"
+	// ObservabilityServiceGetNodeConfigProcedure is the fully-qualified name of the
+	// ObservabilityService's GetNodeConfig RPC.
+	ObservabilityServiceGetNodeConfigProcedure = "/wavespan.v1.ObservabilityService/GetNodeConfig"
+	// ObservabilityServiceAdminSetTunableProcedure is the fully-qualified name of the
+	// ObservabilityService's AdminSetTunable RPC.
+	ObservabilityServiceAdminSetTunableProcedure = "/wavespan.v1.ObservabilityService/AdminSetTunable"
+	// ConfigServiceGetConfigProcedure is the fully-qualified name of the ConfigService's GetConfig RPC.
+	ConfigServiceGetConfigProcedure = "/wavespan.v1.ConfigService/GetConfig"
 )
 
 // ObservabilityServiceClient is a client for the wavespan.v1.ObservabilityService service.
@@ -69,6 +79,13 @@ type ObservabilityServiceClient interface {
 	// AdminDelete writes a tombstone for a KV record from the node UI (Data Browser delete),
 	// coordinated by a chosen cluster member (target_member_id), mirroring AdminPut.
 	AdminDelete(context.Context, *connect.Request[v1.AdminDeleteRequest]) (*connect.Response[v1.AdminDeleteResponse], error)
+	// GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
+	// serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
+	// UI Config tab and cross-node config inspection.
+	GetNodeConfig(context.Context, *connect.Request[v1.GetNodeConfigRequest]) (*connect.Response[v1.NodeConfig], error)
+	// AdminSetTunable sets a runtime override for a tunable on this node and gossips it cluster-wide
+	// (LWW by version). Hot tunables apply live; static ones report requires_restart.
+	AdminSetTunable(context.Context, *connect.Request[v1.AdminSetTunableRequest]) (*connect.Response[v1.AdminSetTunableResponse], error)
 }
 
 // NewObservabilityServiceClient constructs a client for the wavespan.v1.ObservabilityService
@@ -124,18 +141,32 @@ func NewObservabilityServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(observabilityServiceMethods.ByName("AdminDelete")),
 			connect.WithClientOptions(opts...),
 		),
+		getNodeConfig: connect.NewClient[v1.GetNodeConfigRequest, v1.NodeConfig](
+			httpClient,
+			baseURL+ObservabilityServiceGetNodeConfigProcedure,
+			connect.WithSchema(observabilityServiceMethods.ByName("GetNodeConfig")),
+			connect.WithClientOptions(opts...),
+		),
+		adminSetTunable: connect.NewClient[v1.AdminSetTunableRequest, v1.AdminSetTunableResponse](
+			httpClient,
+			baseURL+ObservabilityServiceAdminSetTunableProcedure,
+			connect.WithSchema(observabilityServiceMethods.ByName("AdminSetTunable")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // observabilityServiceClient implements ObservabilityServiceClient.
 type observabilityServiceClient struct {
-	streamGossip   *connect.Client[v1.StreamGossipRequest, v1.GossipEvent]
-	inspectLocal   *connect.Client[v1.InspectLocalRequest, v1.InspectRow]
-	inspectGlobal  *connect.Client[v1.InspectGlobalRequest, v1.InspectRow]
-	getClusterView *connect.Client[v1.GetClusterViewRequest, v1.GetClusterViewResponse]
-	graphExplore   *connect.Client[v1.GraphExploreRequest, v1.GraphExploreResponse]
-	adminPut       *connect.Client[v1.AdminPutRequest, v1.AdminPutResponse]
-	adminDelete    *connect.Client[v1.AdminDeleteRequest, v1.AdminDeleteResponse]
+	streamGossip    *connect.Client[v1.StreamGossipRequest, v1.GossipEvent]
+	inspectLocal    *connect.Client[v1.InspectLocalRequest, v1.InspectRow]
+	inspectGlobal   *connect.Client[v1.InspectGlobalRequest, v1.InspectRow]
+	getClusterView  *connect.Client[v1.GetClusterViewRequest, v1.GetClusterViewResponse]
+	graphExplore    *connect.Client[v1.GraphExploreRequest, v1.GraphExploreResponse]
+	adminPut        *connect.Client[v1.AdminPutRequest, v1.AdminPutResponse]
+	adminDelete     *connect.Client[v1.AdminDeleteRequest, v1.AdminDeleteResponse]
+	getNodeConfig   *connect.Client[v1.GetNodeConfigRequest, v1.NodeConfig]
+	adminSetTunable *connect.Client[v1.AdminSetTunableRequest, v1.AdminSetTunableResponse]
 }
 
 // StreamGossip calls wavespan.v1.ObservabilityService.StreamGossip.
@@ -173,6 +204,16 @@ func (c *observabilityServiceClient) AdminDelete(ctx context.Context, req *conne
 	return c.adminDelete.CallUnary(ctx, req)
 }
 
+// GetNodeConfig calls wavespan.v1.ObservabilityService.GetNodeConfig.
+func (c *observabilityServiceClient) GetNodeConfig(ctx context.Context, req *connect.Request[v1.GetNodeConfigRequest]) (*connect.Response[v1.NodeConfig], error) {
+	return c.getNodeConfig.CallUnary(ctx, req)
+}
+
+// AdminSetTunable calls wavespan.v1.ObservabilityService.AdminSetTunable.
+func (c *observabilityServiceClient) AdminSetTunable(ctx context.Context, req *connect.Request[v1.AdminSetTunableRequest]) (*connect.Response[v1.AdminSetTunableResponse], error) {
+	return c.adminSetTunable.CallUnary(ctx, req)
+}
+
 // ObservabilityServiceHandler is an implementation of the wavespan.v1.ObservabilityService service.
 type ObservabilityServiceHandler interface {
 	StreamGossip(context.Context, *connect.Request[v1.StreamGossipRequest], *connect.ServerStream[v1.GossipEvent]) error
@@ -186,6 +227,13 @@ type ObservabilityServiceHandler interface {
 	// AdminDelete writes a tombstone for a KV record from the node UI (Data Browser delete),
 	// coordinated by a chosen cluster member (target_member_id), mirroring AdminPut.
 	AdminDelete(context.Context, *connect.Request[v1.AdminDeleteRequest]) (*connect.Response[v1.AdminDeleteResponse], error)
+	// GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
+	// serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
+	// UI Config tab and cross-node config inspection.
+	GetNodeConfig(context.Context, *connect.Request[v1.GetNodeConfigRequest]) (*connect.Response[v1.NodeConfig], error)
+	// AdminSetTunable sets a runtime override for a tunable on this node and gossips it cluster-wide
+	// (LWW by version). Hot tunables apply live; static ones report requires_restart.
+	AdminSetTunable(context.Context, *connect.Request[v1.AdminSetTunableRequest]) (*connect.Response[v1.AdminSetTunableResponse], error)
 }
 
 // NewObservabilityServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -237,6 +285,18 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 		connect.WithSchema(observabilityServiceMethods.ByName("AdminDelete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	observabilityServiceGetNodeConfigHandler := connect.NewUnaryHandler(
+		ObservabilityServiceGetNodeConfigProcedure,
+		svc.GetNodeConfig,
+		connect.WithSchema(observabilityServiceMethods.ByName("GetNodeConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
+	observabilityServiceAdminSetTunableHandler := connect.NewUnaryHandler(
+		ObservabilityServiceAdminSetTunableProcedure,
+		svc.AdminSetTunable,
+		connect.WithSchema(observabilityServiceMethods.ByName("AdminSetTunable")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.ObservabilityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ObservabilityServiceStreamGossipProcedure:
@@ -253,6 +313,10 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 			observabilityServiceAdminPutHandler.ServeHTTP(w, r)
 		case ObservabilityServiceAdminDeleteProcedure:
 			observabilityServiceAdminDeleteHandler.ServeHTTP(w, r)
+		case ObservabilityServiceGetNodeConfigProcedure:
+			observabilityServiceGetNodeConfigHandler.ServeHTTP(w, r)
+		case ObservabilityServiceAdminSetTunableProcedure:
+			observabilityServiceAdminSetTunableHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -288,4 +352,82 @@ func (UnimplementedObservabilityServiceHandler) AdminPut(context.Context, *conne
 
 func (UnimplementedObservabilityServiceHandler) AdminDelete(context.Context, *connect.Request[v1.AdminDeleteRequest]) (*connect.Response[v1.AdminDeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.AdminDelete is not implemented"))
+}
+
+func (UnimplementedObservabilityServiceHandler) GetNodeConfig(context.Context, *connect.Request[v1.GetNodeConfigRequest]) (*connect.Response[v1.NodeConfig], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.GetNodeConfig is not implemented"))
+}
+
+func (UnimplementedObservabilityServiceHandler) AdminSetTunable(context.Context, *connect.Request[v1.AdminSetTunableRequest]) (*connect.Response[v1.AdminSetTunableResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.AdminSetTunable is not implemented"))
+}
+
+// ConfigServiceClient is a client for the wavespan.v1.ConfigService service.
+type ConfigServiceClient interface {
+	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.NodeConfig], error)
+}
+
+// NewConfigServiceClient constructs a client for the wavespan.v1.ConfigService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewConfigServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ConfigServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	configServiceMethods := v1.File_wavespan_v1_observability_proto.Services().ByName("ConfigService").Methods()
+	return &configServiceClient{
+		getConfig: connect.NewClient[v1.GetConfigRequest, v1.NodeConfig](
+			httpClient,
+			baseURL+ConfigServiceGetConfigProcedure,
+			connect.WithSchema(configServiceMethods.ByName("GetConfig")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// configServiceClient implements ConfigServiceClient.
+type configServiceClient struct {
+	getConfig *connect.Client[v1.GetConfigRequest, v1.NodeConfig]
+}
+
+// GetConfig calls wavespan.v1.ConfigService.GetConfig.
+func (c *configServiceClient) GetConfig(ctx context.Context, req *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.NodeConfig], error) {
+	return c.getConfig.CallUnary(ctx, req)
+}
+
+// ConfigServiceHandler is an implementation of the wavespan.v1.ConfigService service.
+type ConfigServiceHandler interface {
+	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.NodeConfig], error)
+}
+
+// NewConfigServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewConfigServiceHandler(svc ConfigServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	configServiceMethods := v1.File_wavespan_v1_observability_proto.Services().ByName("ConfigService").Methods()
+	configServiceGetConfigHandler := connect.NewUnaryHandler(
+		ConfigServiceGetConfigProcedure,
+		svc.GetConfig,
+		connect.WithSchema(configServiceMethods.ByName("GetConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/wavespan.v1.ConfigService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ConfigServiceGetConfigProcedure:
+			configServiceGetConfigHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedConfigServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedConfigServiceHandler struct{}
+
+func (UnimplementedConfigServiceHandler) GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.NodeConfig], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ConfigService.GetConfig is not implemented"))
 }

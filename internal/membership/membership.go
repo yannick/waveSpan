@@ -67,6 +67,12 @@ func (s *Service) SetHolderHooks(provide func() HolderSummaryWire, consume func(
 	s.gossip.SetHolderHooks(provide, consume)
 }
 
+// SetConfigHooks installs the runtime config-override provider/consumer so tunable changes ride
+// gossip and converge cluster-wide (LWW). See internal/tunables.Overrides.
+func (s *Service) SetConfigHooks(provide func() []ConfigDeltaWire, consume func([]ConfigDeltaWire)) {
+	s.gossip.SetConfigHooks(provide, consume)
+}
+
 // Run joins the cluster via seeds, then gossips on the configured interval until ctx is done.
 func (s *Service) Run(ctx context.Context) {
 	s.gossip.Join(ctx)

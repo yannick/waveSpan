@@ -101,8 +101,30 @@ func summariesFromProto(ps []*wavespanv1.HolderSummary) []HolderSummaryWire {
 	return out
 }
 
+func configDeltasToProto(ds []ConfigDeltaWire) []*wavespanv1.ConfigDelta {
+	if len(ds) == 0 {
+		return nil
+	}
+	out := make([]*wavespanv1.ConfigDelta, 0, len(ds))
+	for _, d := range ds {
+		out = append(out, &wavespanv1.ConfigDelta{Key: d.Key, Value: d.Value, Version: d.Version, Origin: d.Origin})
+	}
+	return out
+}
+
+func configDeltasFromProto(ds []*wavespanv1.ConfigDelta) []ConfigDeltaWire {
+	if len(ds) == 0 {
+		return nil
+	}
+	out := make([]ConfigDeltaWire, 0, len(ds))
+	for _, d := range ds {
+		out = append(out, ConfigDeltaWire{Key: d.GetKey(), Value: d.GetValue(), Version: d.GetVersion(), Origin: d.GetOrigin()})
+	}
+	return out
+}
+
 func msgToReq(m *GossipMessage) *wavespanv1.GossipExchangeRequest {
-	req := &wavespanv1.GossipExchangeRequest{From: memberToProto(m.From), HolderSummaries: summariesToProto(m.Summaries)}
+	req := &wavespanv1.GossipExchangeRequest{From: memberToProto(m.From), HolderSummaries: summariesToProto(m.Summaries), ConfigDeltas: configDeltasToProto(m.ConfigDeltas)}
 	for _, mv := range m.Members {
 		req.Members = append(req.Members, MemberStateToProto(mv))
 	}
@@ -110,7 +132,7 @@ func msgToReq(m *GossipMessage) *wavespanv1.GossipExchangeRequest {
 }
 
 func reqToMsg(r *wavespanv1.GossipExchangeRequest) *GossipMessage {
-	m := &GossipMessage{From: memberFromProto(r.GetFrom()), Summaries: summariesFromProto(r.GetHolderSummaries())}
+	m := &GossipMessage{From: memberFromProto(r.GetFrom()), Summaries: summariesFromProto(r.GetHolderSummaries()), ConfigDeltas: configDeltasFromProto(r.GetConfigDeltas())}
 	for _, ms := range r.GetMembers() {
 		m.Members = append(m.Members, memberStateFromProto(ms))
 	}
@@ -118,7 +140,7 @@ func reqToMsg(r *wavespanv1.GossipExchangeRequest) *GossipMessage {
 }
 
 func msgToResp(m *GossipMessage) *wavespanv1.GossipExchangeResponse {
-	resp := &wavespanv1.GossipExchangeResponse{From: memberToProto(m.From), HolderSummaries: summariesToProto(m.Summaries)}
+	resp := &wavespanv1.GossipExchangeResponse{From: memberToProto(m.From), HolderSummaries: summariesToProto(m.Summaries), ConfigDeltas: configDeltasToProto(m.ConfigDeltas)}
 	for _, mv := range m.Members {
 		resp.Members = append(resp.Members, MemberStateToProto(mv))
 	}
@@ -126,7 +148,7 @@ func msgToResp(m *GossipMessage) *wavespanv1.GossipExchangeResponse {
 }
 
 func respToMsg(r *wavespanv1.GossipExchangeResponse) *GossipMessage {
-	m := &GossipMessage{From: memberFromProto(r.GetFrom()), Summaries: summariesFromProto(r.GetHolderSummaries())}
+	m := &GossipMessage{From: memberFromProto(r.GetFrom()), Summaries: summariesFromProto(r.GetHolderSummaries()), ConfigDeltas: configDeltasFromProto(r.GetConfigDeltas())}
 	for _, ms := range r.GetMembers() {
 		m.Members = append(m.Members, memberStateFromProto(ms))
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/cwire/wavespan/internal/latencygraph"
 	"github.com/cwire/wavespan/internal/membership"
 	"github.com/cwire/wavespan/internal/recordstore"
+	"github.com/cwire/wavespan/internal/tunables"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 )
 
@@ -52,6 +53,13 @@ type ObsService struct {
 	// Test/admin KV delete forwarder; nil disables AdminDelete. Forwards a Delete (tombstone) to a
 	// chosen member's data port, mirroring kvWriter.
 	kvDeleter KvDeleter
+
+	// Runtime config: the live tunables registry (this node's effective config), the override
+	// manager (applies + gossips runtime changes), and a forwarder to read a peer's config. All nil
+	// disables GetNodeConfig/AdminSetTunable.
+	tunables    *tunables.Registry
+	overrides   *tunables.Overrides
+	configFetch ConfigFetcher
 }
 
 // KvWriter forwards a KV Put to a target member's data-port KvService, returning the result. It lets

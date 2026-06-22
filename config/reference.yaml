@@ -137,17 +137,6 @@ tunables:
       # why: 10 lets flushes burst-buffer under load before slowing writers to protect memory.
       l0StallThreshold: 10
 
-      # [bytes, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_KLOG_BLOCK_SIZE
-      # Target key-log block size.
-      # why: 64KiB amortizes per-block overhead and matches typical read-ahead.
-      klogBlockSize: 64KiB
-
-      # [bytes, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_MIN_DISK_SPACE
-      # Minimum free disk space the engine requires before accepting writes.
-      # why: 100MiB headroom avoids wedging compaction (which needs scratch space) when a
-      # volume fills.
-      minDiskSpace: 100MiB
-
       # [bool, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_USE_B_TREE
       # Store the key log as a B-tree instead of sorted blocks (faster reads, slower writes).
       # why: false: the sorted-block layout suits the write-heavy KV path; enable for

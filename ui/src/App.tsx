@@ -5,6 +5,7 @@ import { MetricsSummary } from "./views/MetricsSummary";
 import { CypherConsole } from "./views/CypherConsole";
 import { NodeExplorer } from "./views/NodeExplorer";
 import { KvWriter } from "./views/KvWriter";
+import { Config } from "./views/Config";
 import { Documentation } from "./views/Documentation";
 import { Tabs, type TabItem, ThemeToggle } from "./components";
 import { DEFAULT_SCREEN, navigate, useEnsureScreen, useRoute } from "./router";
@@ -17,6 +18,7 @@ type Tab =
   | "write"
   | "topology"
   | "metrics"
+  | "config"
   | "docs";
 
 const tabs: TabItem<Tab>[] = [
@@ -27,6 +29,7 @@ const tabs: TabItem<Tab>[] = [
   { id: "write", label: "KV Writer" },
   { id: "topology", label: "Cluster Topology" },
   { id: "metrics", label: "Metrics" },
+  { id: "config", label: "Configuration" },
   { id: "docs", label: "Documentation" },
 ];
 
@@ -59,6 +62,7 @@ export function App() {
         {tab === "write" && <KvWriter />}
         {tab === "topology" && <ClusterTopology />}
         {tab === "metrics" && <MetricsSummary />}
+        {tab === "config" && <Config />}
         {tab === "docs" && <Documentation />}
       </main>
     </div>

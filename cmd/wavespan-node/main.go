@@ -63,13 +63,11 @@ func run() error {
 	}
 
 	// Performance/behaviour tunables (koanf: defaults < the same YAML file's `tunables:` block <
-	// WAVESPAN_TUNABLE_* env). Static tunables are read here; Hot ones are re-read live by their
-	// workers (and, later, mutated via gossip). See internal/tunables + config/reference.yaml.
+	// WAVESPAN_TUNABLE_* env < runtime override). See internal/tunables + config/reference.yaml.
 	tun, err := tunables.Load(*configPath, nil)
 	if err != nil {
 		return err
 	}
-	applyRuntimeTunables(tun)
 
 	logger := observability.NewLogger(cfg.Membership.Runtime, cfg.ClusterID, cfg.MemberID)
 	metrics := observability.NewMetrics()
@@ -79,6 +77,23 @@ func run() error {
 	if err := os.MkdirAll(cfg.Storage.Path, 0o755); err != nil {
 		return fmt.Errorf("create storage dir: %w", err)
 	}
+
+	// Runtime overrides (gossip-delta + persisted snapshot). The snapshot lives beside the data dir
+	// (not in a column family) so it is read BEFORE the engine opens — letting Static engine
+	// overrides take effect on restart. Applied at highest precedence over default/file/env.
+	ovPath := tunables.OverridesPath(cfg.Storage.Path)
+	overrides := tunables.NewOverrides(tun, cfg.MemberID, func(set []tunables.Override) {
+		if err := tunables.SaveOverridesFile(ovPath, set); err != nil {
+			logger.Warn("persist config overrides", "err", err)
+		}
+	})
+	if snap, err := tunables.LoadOverridesFile(ovPath); err != nil {
+		logger.Warn("load config overrides", "err", err)
+	} else {
+		overrides.LoadSnapshot(snap)
+	}
+	applyRuntimeTunables(tun) // gogc/memLimit after overrides so a persisted override applies
+
 	store, err := storage.OpenWavesdbWith(cfg.Storage.Path, engineOptions(tun))
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
@@ -153,6 +168,25 @@ func run() error {
 		},
 		func(s membership.HolderSummaryWire) {
 			cacheDir.ApplyPeerSummary(cache.HolderSummaryWire{MemberID: s.MemberID, Bloom: s.Bloom, GeneratedAtUnixMs: s.GeneratedAtUnixMs})
+		},
+	)
+	// Runtime tunable overrides ride gossip: each node advertises the override set it knows and
+	// LWW-merges peers' deltas into the registry, so a change made anywhere converges cluster-wide.
+	svc.SetConfigHooks(
+		func() []membership.ConfigDeltaWire {
+			set := overrides.List()
+			out := make([]membership.ConfigDeltaWire, 0, len(set))
+			for _, o := range set {
+				out = append(out, membership.ConfigDeltaWire{Key: o.Key, Value: o.Value, Version: o.Version, Origin: o.Origin})
+			}
+			return out
+		},
+		func(ds []membership.ConfigDeltaWire) {
+			in := make([]tunables.Override, 0, len(ds))
+			for _, d := range ds {
+				in = append(in, tunables.Override{Key: d.Key, Value: d.Value, Version: d.Version, Origin: d.Origin})
+			}
+			overrides.ApplyRemote(in)
 		},
 	)
 	onStored := func(ns string, key []byte) {
@@ -342,6 +376,7 @@ func run() error {
 	dataMux := http.NewServeMux()
 	dataMux.Handle(kvSvc.Handler())
 	dataMux.Handle(replicaSrv.Handler())
+	dataMux.Handle(observability.NewConfigServer(tun, cfg.ClusterID, cfg.MemberID).Handler()) // peer-reachable config reads
 	dataMux.Handle(cypherSvc.Handler())
 	dataMux.Handle(vectorSvc.Handler())
 	if globalSrv != nil {
@@ -389,6 +424,14 @@ func run() error {
 		WithKvDeleter(func(ctx context.Context, target membership.Member, req *wavespanv1.DeleteRequest) (*wavespanv1.DeleteResult, error) {
 			// Forward the Data Browser delete (tombstone) to the chosen coordinator's data port.
 			resp, err := wavespanv1connect.NewKvServiceClient(httpClient, "http://"+target.DataAddr).Delete(ctx, connect.NewRequest(req))
+			if err != nil {
+				return nil, err
+			}
+			return resp.Msg, nil
+		}).
+		WithTunables(tun, overrides, func(ctx context.Context, target membership.Member) (*wavespanv1.NodeConfig, error) {
+			// Read a peer's effective config over its data-port ConfigService (UI Config tab).
+			resp, err := wavespanv1connect.NewConfigServiceClient(httpClient, "http://"+target.DataAddr).GetConfig(ctx, connect.NewRequest(&wavespanv1.GetConfigRequest{}))
 			if err != nil {
 				return nil, err
 			}

@@ -22,6 +22,7 @@ enum GossipKind {
   GOSSIP_HOLDER_SUMMARY = 7;
   GOSSIP_LATENCY_EDGE = 8;
   GOSSIP_MEMBERSHIP_DELTA = 9;
+  GOSSIP_CONFIG_DELTA = 10;
 }
 
 // GossipDirection is the direction of a gossip event relative to this node.
@@ -230,6 +231,62 @@ service ObservabilityService {
   // AdminDelete writes a tombstone for a KV record from the node UI (Data Browser delete),
   // coordinated by a chosen cluster member (target_member_id), mirroring AdminPut.
   rpc AdminDelete(AdminDeleteRequest) returns (AdminDeleteResponse);
+  // GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
+  // serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
+  // UI Config tab and cross-node config inspection.
+  rpc GetNodeConfig(GetNodeConfigRequest) returns (NodeConfig);
+  // AdminSetTunable sets a runtime override for a tunable on this node and gossips it cluster-wide
+  // (LWW by version). Hot tunables apply live; static ones report requires_restart.
+  rpc AdminSetTunable(AdminSetTunableRequest) returns (AdminSetTunableResponse);
+}
+
+// TunableState is one tunable's effective state on a node (used by the Config tab).
+message TunableState {
+  string key = 1;            // dotted key, e.g. "ttl.sweepInterval"
+  string group = 2;          // subsystem group
+  string value = 3;          // current effective value, canonical string
+  string default_value = 4;  // built-in default
+  string source = 5;         // default | file | env | runtime
+  string kind = 6;           // duration | int | int64 | bytes | float | bool | string
+  string category = 7;       // static | hot
+  string doc = 8;            // what it controls
+  string why = 9;            // why it defaults to its value
+  uint64 version = 10;       // runtime-override version (0 if not runtime-set)
+  string env_var = 11;       // the WAVESPAN_TUNABLE_* override name
+}
+
+// NodeConfig is a node's full effective tunable set.
+message NodeConfig {
+  string cluster_id = 1;
+  string member_id = 2;
+  repeated TunableState tunables = 3;
+}
+
+// ConfigService is peer-reachable on the DATA port (unlike the admin-only ObservabilityService) so
+// any node can read another node's effective config. The admin GetNodeConfig forwards here.
+service ConfigService {
+  rpc GetConfig(GetConfigRequest) returns (NodeConfig);
+}
+
+message GetConfigRequest {}
+
+// GetNodeConfigRequest selects which node's config to read (empty = the serving node).
+message GetNodeConfigRequest {
+  string target_member_id = 1;
+}
+
+// AdminSetTunableRequest sets a runtime override for one tunable, cluster-wide via gossip.
+message AdminSetTunableRequest {
+  string key = 1;
+  string value = 2;
+}
+
+// AdminSetTunableResponse reports the outcome of a runtime tunable change.
+message AdminSetTunableResponse {
+  bool ok = 1;
+  string error = 2;
+  bool requires_restart = 3; // true for static tunables (stored as desired-state, applied on restart)
+  uint64 version = 4;
 }
 
 // AdminPutRequest is a test/admin KV write issued from the node UI (design/26). The write is

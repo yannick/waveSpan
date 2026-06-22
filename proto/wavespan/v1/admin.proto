@@ -63,16 +63,28 @@ message HolderSummary {
 
 // --- Gossip service (internal SWIM transport) ---
 
+// ConfigDelta is a runtime tunable override gossiped epidemically and merged last-write-wins by
+// (version, origin). Each node piggybacks the override set it knows on every gossip round, so a
+// change made on any node converges across the cluster in O(log N) rounds.
+message ConfigDelta {
+  string key = 1;     // tunable key, e.g. "ttl.sweepInterval"
+  string value = 2;   // canonical string value
+  uint64 version = 3; // monotonic version (unix-ms based) for LWW
+  string origin = 4;  // member id that set it (tie-break when versions are equal)
+}
+
 message GossipExchangeRequest {
   Member from = 1;
   repeated MemberState members = 2;
   repeated HolderSummary holder_summaries = 3;
+  repeated ConfigDelta config_deltas = 4;
 }
 
 message GossipExchangeResponse {
   Member from = 1;
   repeated MemberState members = 2;
   repeated HolderSummary holder_summaries = 3;
+  repeated ConfigDelta config_deltas = 4;
 }
 
 // IndirectExchangeRequest asks the receiver to relay a gossip exchange to target_gossip_addr

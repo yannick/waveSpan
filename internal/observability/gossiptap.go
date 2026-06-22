@@ -55,3 +55,8 @@ func (t *GossipTap) LatencyEdge(peer string, ewmaMs, p95Ms float64) {
 func (t *GossipTap) MembershipDelta(added, removed []string) {
 	t.emit(wavespanv1.GossipKind_GOSSIP_MEMBERSHIP_DELTA, wavespanv1.GossipDirection_GOSSIP_INTERNAL, "", &wavespanv1.GossipPayloadSummary{AddedMembers: added, RemovedMembers: removed})
 }
+
+// ConfigDelta records a gossiped runtime config-override exchange (key count + payload size only).
+func (t *GossipTap) ConfigDelta(peer string, dir wavespanv1.GossipDirection, keyCount, sizeBytes uint32) {
+	t.emit(wavespanv1.GossipKind_GOSSIP_CONFIG_DELTA, dir, peer, &wavespanv1.GossipPayloadSummary{ApproxCount: uint64(keyCount), PayloadSizeBytes: sizeBytes})
+}

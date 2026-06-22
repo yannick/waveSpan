@@ -28,8 +28,9 @@ func (s *ObsService) InspectLocal(ctx context.Context, req *connect.Request[wave
 		end = prefixEnd(m.GetPrefix())
 	}
 	limit := int(m.GetLimit())
-	if limit <= 0 || limit > inspectRowCap {
-		limit = inspectRowCap
+	maxCap := s.capFor("observability.inspectRowCap", inspectRowCap)
+	if limit <= 0 || limit > maxCap {
+		limit = maxCap
 	}
 
 	role := security.RoleFrom(ctx)

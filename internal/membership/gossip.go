@@ -27,12 +27,28 @@ type HolderSummaryWire struct {
 	GeneratedAtUnixMs int64
 }
 
+// ConfigDeltaWire is a gossiped runtime tunable override (key/value + LWW version + origin). Each
+// node piggybacks the override set it knows on every round so changes converge epidemically.
+type ConfigDeltaWire struct {
+	Key     string
+	Value   string
+	Version uint64
+	Origin  string
+}
+
+// ConfigDeltaObserver optionally taps gossiped config deltas for the UI Gossip Inspector. The
+// gossip observer implements it when available; absence simply disables the GOSSIP_CONFIG_DELTA tap.
+type ConfigDeltaObserver interface {
+	ConfigDelta(peer string, dir wavespanv1.GossipDirection, keyCount, sizeBytes uint32)
+}
+
 // GossipMessage is the payload exchanged on a gossip round: the sender's identity, its membership
-// delta, and its holder summary (piggybacked metadata, design/04 "Gossip protocol").
+// delta, its holder summary, and any runtime config overrides (piggybacked metadata, design/04).
 type GossipMessage struct {
-	From      Member
-	Members   []MemberView
-	Summaries []HolderSummaryWire
+	From         Member
+	Members      []MemberView
+	Summaries    []HolderSummaryWire
+	ConfigDeltas []ConfigDeltaWire
 }
 
 // Transport carries gossip between nodes. The in-memory transport drives deterministic tests;
@@ -65,6 +81,8 @@ type Gossip struct {
 
 	provideSummary func() HolderSummaryWire
 	consumeSummary func(HolderSummaryWire)
+	provideConfig  func() []ConfigDeltaWire
+	consumeConfig  func([]ConfigDeltaWire)
 	observer       GossipObserver
 }
 
@@ -73,6 +91,14 @@ type Gossip struct {
 func (g *Gossip) SetHolderHooks(provide func() HolderSummaryWire, consume func(HolderSummaryWire)) {
 	g.provideSummary = provide
 	g.consumeSummary = consume
+}
+
+// SetConfigHooks installs the runtime config-override provider (this node's known override set,
+// gossiped outbound) and consumer (peers' deltas, LWW-merged into the tunables registry). Either may
+// be nil. This is how a tunable change made on any node propagates across the cluster.
+func (g *Gossip) SetConfigHooks(provide func() []ConfigDeltaWire, consume func([]ConfigDeltaWire)) {
+	g.provideConfig = provide
+	g.consumeConfig = consume
 }
 
 // SetObserver installs the gossip-event tap (design/26). nil disables tapping.
@@ -86,6 +112,22 @@ func (g *Gossip) consumeSummaries(dir wavespanv1.GossipDirection, ss []HolderSum
 		if g.consumeSummary != nil {
 			g.consumeSummary(s)
 		}
+	}
+}
+
+func (g *Gossip) consumeConfigDeltas(peer string, dir wavespanv1.GossipDirection, ds []ConfigDeltaWire) {
+	if len(ds) == 0 {
+		return
+	}
+	if o, ok := g.observer.(ConfigDeltaObserver); ok {
+		var sz int
+		for _, d := range ds {
+			sz += len(d.Key) + len(d.Value)
+		}
+		o.ConfigDelta(peer, dir, uint32(len(ds)), uint32(sz))
+	}
+	if g.consumeConfig != nil {
+		g.consumeConfig(ds)
 	}
 }
 
@@ -114,6 +156,7 @@ func (g *Gossip) HandleGossip(in *GossipMessage) *GossipMessage {
 		g.roster.ApplyGossip(mv, now)
 	}
 	g.consumeSummaries(wavespanv1.GossipDirection_GOSSIP_RECV, in.Summaries)
+	g.consumeConfigDeltas(in.From.MemberID, wavespanv1.GossipDirection_GOSSIP_RECV, in.ConfigDeltas)
 	return g.outgoing()
 }
 
@@ -178,13 +221,17 @@ func (g *Gossip) merge(reply *GossipMessage) {
 		g.roster.ApplyGossip(mv, now)
 	}
 	g.consumeSummaries(wavespanv1.GossipDirection_GOSSIP_RECV, reply.Summaries)
+	g.consumeConfigDeltas(reply.From.MemberID, wavespanv1.GossipDirection_GOSSIP_RECV, reply.ConfigDeltas)
 }
 
-// outgoing builds the local gossip delta plus this node's holder summary.
+// outgoing builds the local gossip delta plus this node's holder summary and known config overrides.
 func (g *Gossip) outgoing() *GossipMessage {
 	msg := &GossipMessage{From: g.roster.Self(), Members: g.roster.Members()}
 	if g.provideSummary != nil {
 		msg.Summaries = []HolderSummaryWire{g.provideSummary()}
+	}
+	if g.provideConfig != nil {
+		msg.ConfigDeltas = g.provideConfig()
 	}
 	return msg
 }

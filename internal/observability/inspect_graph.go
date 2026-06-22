@@ -27,8 +27,9 @@ func (s *ObsService) GraphExplore(ctx context.Context, req *connect.Request[wave
 	m := req.Msg
 	graphID := m.GetGraphId()
 	limit := int(m.GetLimit())
-	if limit <= 0 || limit > graphExploreCap {
-		limit = graphExploreCap
+	maxCap := s.capFor("observability.graphExploreCap", graphExploreCap)
+	if limit <= 0 || limit > maxCap {
+		limit = maxCap
 	}
 	reveal := m.GetIncludeValue() && security.RoleFrom(ctx) == security.RoleAdmin
 
