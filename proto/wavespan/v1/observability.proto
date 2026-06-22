@@ -1,0 +1,188 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+option go_package = "github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1";
+
+import "wavespan/v1/common.proto";
+import "wavespan/v1/admin.proto";
+
+// --- Live gossip observability (design/26, design/11) ---
+
+// GossipKind classifies a gossip event.
+enum GossipKind {
+  GOSSIP_KIND_UNSPECIFIED = 0;
+  GOSSIP_PING = 1;
+  GOSSIP_ACK = 2;
+  GOSSIP_INDIRECT = 3;
+  GOSSIP_SUSPECT = 4;
+  GOSSIP_ALIVE = 5;
+  GOSSIP_UNREACHABLE = 6;
+  GOSSIP_HOLDER_SUMMARY = 7;
+  GOSSIP_LATENCY_EDGE = 8;
+  GOSSIP_MEMBERSHIP_DELTA = 9;
+}
+
+// GossipDirection is the direction of a gossip event relative to this node.
+enum GossipDirection {
+  GOSSIP_DIRECTION_UNSPECIFIED = 0;
+  GOSSIP_SEND = 1;
+  GOSSIP_RECV = 2;
+  GOSSIP_INTERNAL = 3; // a local state transition (no wire send)
+}
+
+// GossipFilter narrows the stream server-side (design/26).
+message GossipFilter {
+  repeated GossipKind kinds = 1;
+  repeated string peers = 2;
+  GossipDirection direction = 3;
+  string namespace = 4;
+}
+
+// GossipPayloadSummary is the DECODED summary of a gossip payload — never raw record bytes
+// (design/15 redaction).
+message GossipPayloadSummary {
+  double rtt_ms = 1;
+  string new_state = 2;
+  uint64 watermark = 3;
+  uint64 approx_count = 4;
+  double ewma_ms = 5;
+  double p95_ms = 6;
+  repeated string added_members = 7;
+  repeated string removed_members = 8;
+  uint32 payload_size_bytes = 9;
+}
+
+// GossipRecord is one observed gossip event.
+message GossipRecord {
+  GossipKind kind = 1;
+  GossipDirection direction = 2;
+  string peer = 3;
+  int64 at_unix_ms = 4;
+  uint64 seq = 5;
+  GossipPayloadSummary summary = 6;
+}
+
+// GapMarker signals dropped events when a subscriber falls behind.
+message GapMarker {
+  uint64 dropped_count = 1;
+  int64 since_unix_ms = 2;
+}
+
+// GossipEvent is a streamed record or a gap marker.
+message GossipEvent {
+  oneof event {
+    GossipRecord record = 1;
+    GapMarker gap = 2;
+  }
+}
+
+message StreamGossipRequest {
+  GossipFilter filter = 1;
+  bool backfill = 2; // replay the matching ring buffer before tailing live
+}
+
+// --- Data inspection (design/26, design/11) ---
+
+// Keyspace selects which logical keyspace to inspect.
+enum Keyspace {
+  KEYSPACE_UNSPECIFIED = 0;
+  KEYSPACE_KV = 1;
+  KEYSPACE_GRAPH = 2;
+  KEYSPACE_VECTOR = 3;
+}
+
+// HolderClass classifies why a member holds a key.
+enum HolderClass {
+  HOLDER_CLASS_UNSPECIFIED = 0;
+  HOLDER_ORIGIN = 1;
+  HOLDER_DURABLE = 2;
+  HOLDER_DYNAMIC_CACHE = 3;
+}
+
+message InspectHolder {
+  string member_id = 1;
+  HolderClass holder_class = 2;
+  Version version = 3;
+  ConflictState conflict = 4;
+  int64 replication_lag_ms = 5;
+  string peer_cluster_id = 6;
+  int64 global_repl_lag_ms = 7;
+}
+
+message InspectSibling {
+  Version version = 1;
+  bool tombstone = 2;
+  bytes value = 3; // redacted unless include_value + admin
+}
+
+message InspectKey {
+  string logical_path = 1;
+  string key_hash = 2; // base64url(blake3(namespace+key))
+  Version version = 3;
+  ConflictState conflict = 4;
+  bool tombstone = 5;
+  optional int64 expires_at_unix_ms = 6;
+  bytes value = 7; // redacted unless include_value + admin
+  repeated InspectSibling siblings = 8;
+  repeated InspectHolder holders = 9;
+}
+
+message InspectTrailer {
+  uint64 rows_returned = 1;
+  Completeness final_completeness = 2;
+  repeated string warnings = 3;
+}
+
+// InspectRow streams a header, then keys, then a trailer.
+message InspectRow {
+  oneof row {
+    ResponseMeta header = 1;
+    InspectKey key = 2;
+    InspectTrailer trailer = 3;
+  }
+}
+
+message InspectLocalRequest {
+  Keyspace keyspace = 1;
+  string namespace = 2;
+  bytes prefix = 3;
+  bytes start_key = 4;
+  bytes end_key = 5;
+  uint32 limit = 6;
+  bool include_value = 7;
+}
+
+message InspectGlobalRequest {
+  Keyspace keyspace = 1;
+  string namespace = 2;
+  bytes key = 3;
+  bool include_value = 4;
+  bool include_peer_clusters = 5;
+}
+
+// --- Cluster view ---
+
+message RangeRepairStatus {
+  bytes range_start = 1;
+  bytes range_end = 2;
+  uint32 under_replicated = 3;
+}
+
+message GetClusterViewRequest {}
+
+message GetClusterViewResponse {
+  repeated MemberState members = 1;
+  repeated LatencyEdge edges = 2;
+  repeated RangeRepairStatus repair = 3;
+  uint64 under_replicated_estimate = 4;
+}
+
+// ObservabilityService powers the embedded node UI and wavespanctl introspection (design/26).
+// Mounted on the admin port behind admin auth; values are redacted by default.
+service ObservabilityService {
+  rpc StreamGossip(StreamGossipRequest) returns (stream GossipEvent);
+  rpc InspectLocal(InspectLocalRequest) returns (stream InspectRow);
+  rpc InspectGlobal(InspectGlobalRequest) returns (stream InspectRow);
+  rpc GetClusterView(GetClusterViewRequest) returns (GetClusterViewResponse);
+}

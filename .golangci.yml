@@ -28,6 +28,10 @@ linters:
       # generated code
       - path: '\.pb\.go$'
         linters: [revive, staticcheck, misspell]
+      # test helpers/cases sometimes legitimately ignore the *testing.T parameter.
+      - path: '_test\.go$'
+        text: 'parameter .t. seems to be unused'
+        linters: [revive]
       # store implementations satisfy the fully-documented LocalStore interface;
       # per-method comments on the impls would be redundant.
       - path: 'internal/storage/.*_store\.go'
