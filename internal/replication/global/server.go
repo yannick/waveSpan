@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
@@ -23,7 +24,7 @@ func NewServer(applier *Applier, ae *AntiEntropy) *Server {
 
 // Handler returns the mountable Connect handler (path, handler) for the data port.
 func (s *Server) Handler() (string, http.Handler) {
-	return wavespanv1connect.NewGlobalReplicationHandler(s)
+	return wavespanv1connect.NewGlobalReplicationHandler(s, rpcopts.Handler()...)
 }
 
 // PushGlobal applies a batch of inbound mutations from a peer cluster.

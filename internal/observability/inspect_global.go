@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	"github.com/cwire/wavespan/internal/security"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
@@ -69,5 +70,5 @@ func (s *ObsService) InspectGlobal(ctx context.Context, req *connect.Request[wav
 
 // Handler returns the mountable ObservabilityService Connect handler for the admin port.
 func (s *ObsService) Handler() (string, http.Handler) {
-	return wavespanv1connect.NewObservabilityServiceHandler(s)
+	return wavespanv1connect.NewObservabilityServiceHandler(s, rpcopts.Handler()...)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/cwire/wavespan/internal/cypher/parser"
 	"github.com/cwire/wavespan/internal/cypher/planner"
 	"github.com/cwire/wavespan/internal/graph"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	"github.com/cwire/wavespan/internal/vector"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
@@ -51,7 +52,7 @@ func (s *Service) WithVectorScatter(scatter ScatterFunc) *Service {
 
 // Handler returns the mountable Connect handler for the data port.
 func (s *Service) Handler() (string, http.Handler) {
-	return wavespanv1connect.NewCypherHandler(s)
+	return wavespanv1connect.NewCypherHandler(s, rpcopts.Handler()...)
 }
 
 // Query parses, plans, executes, and streams the result of a Cypher query.

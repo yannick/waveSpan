@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
@@ -66,7 +67,7 @@ func (s *Service) SearchLocal(_ context.Context, req *connect.Request[wavespanv1
 
 // Handler returns the mountable Connect handler for the data port.
 func (s *Service) Handler() (string, http.Handler) {
-	return wavespanv1connect.NewVectorServiceHandler(s)
+	return wavespanv1connect.NewVectorServiceHandler(s, rpcopts.Handler()...)
 }
 
 // Put ingests a vector record, stamping a server version when absent and deriving dimensions.

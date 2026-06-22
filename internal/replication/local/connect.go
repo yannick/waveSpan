@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/cwire/wavespan/internal/membership"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
@@ -84,7 +85,7 @@ func NewReplicaServer(recv *Receiver, reader RecordReader, selfMemberID, selfDat
 
 // Handler returns the mountable Connect handler (path, handler) for the data port.
 func (s *ReplicaServer) Handler() (string, http.Handler) {
-	return wavespanv1connect.NewReplicationServiceHandler(s)
+	return wavespanv1connect.NewReplicationServiceHandler(s, rpcopts.Handler()...)
 }
 
 // StoreReplica handles an inbound replica write.
