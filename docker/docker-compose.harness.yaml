@@ -1,0 +1,60 @@
+# Dedicated cluster for the correctness harness (tests/harness, JEPSEN.md). Unlike the dev compose
+# (target=1), this sets targetNearbyReplicas=2 so in a 3-node cluster EVERY node is a durable holder
+# of every key. That makes full convergence the actual contract under test: after a healed partition
+# every replica must agree (with target<N-1 a non-target node can keep a stale local copy, since
+# WaveSpan has no intra-cluster read-repair — expected eventual behavior, not a convergence failure).
+# Distinct project/ports/containers so it does not clash with the dev or global compose clusters.
+name: wavespan-harness
+
+x-node: &node
+  build:
+    context: ../..
+    dockerfile: waveSpan/docker/Dockerfile
+  image: wavespan/node:dev
+  restart: unless-stopped
+
+services:
+  node1:
+    <<: *node
+    environment:
+      WAVESPAN_RUNTIME: docker
+      WAVESPAN_CLUSTER_ID: harness
+      WAVESPAN_SEEDS: node1:7700,node2:7700,node3:7700
+      WAVESPAN_MEMBER_ID: node1
+      WAVESPAN_ZONE: zone-a
+      WAVESPAN_STORAGE_PATH: /var/lib/wavespan
+      WAVESPAN_TARGET_NEARBY_REPLICAS: "2"
+      WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
+    ports: ["7911:7900", "7821:7800"]
+    volumes: ["h-node1-data:/var/lib/wavespan"]
+  node2:
+    <<: *node
+    environment:
+      WAVESPAN_RUNTIME: docker
+      WAVESPAN_CLUSTER_ID: harness
+      WAVESPAN_SEEDS: node1:7700,node2:7700,node3:7700
+      WAVESPAN_MEMBER_ID: node2
+      WAVESPAN_ZONE: zone-a
+      WAVESPAN_STORAGE_PATH: /var/lib/wavespan
+      WAVESPAN_TARGET_NEARBY_REPLICAS: "2"
+      WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
+    ports: ["7912:7900", "7822:7800"]
+    volumes: ["h-node2-data:/var/lib/wavespan"]
+  node3:
+    <<: *node
+    environment:
+      WAVESPAN_RUNTIME: docker
+      WAVESPAN_CLUSTER_ID: harness
+      WAVESPAN_SEEDS: node1:7700,node2:7700,node3:7700
+      WAVESPAN_MEMBER_ID: node3
+      WAVESPAN_ZONE: zone-b
+      WAVESPAN_STORAGE_PATH: /var/lib/wavespan
+      WAVESPAN_TARGET_NEARBY_REPLICAS: "2"
+      WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
+    ports: ["7913:7900", "7823:7800"]
+    volumes: ["h-node3-data:/var/lib/wavespan"]
+
+volumes:
+  h-node1-data:
+  h-node2-data:
+  h-node3-data:
