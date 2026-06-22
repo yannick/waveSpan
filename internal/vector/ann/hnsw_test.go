@@ -1,14 +1,27 @@
 package ann
 
 import (
+	"math"
 	"math/rand"
 	"testing"
-
-	"github.com/cwire/wavespan/internal/vector"
 )
 
+// cosineDist is a local cosine distance (1 - similarity); ann must not import the vector package.
+func cosineDist(a, b []float32) float64 {
+	var dot, na, nb float64
+	for i := range a {
+		dot += float64(a[i]) * float64(b[i])
+		na += float64(a[i]) * float64(a[i])
+		nb += float64(b[i]) * float64(b[i])
+	}
+	if na == 0 || nb == 0 {
+		return 1
+	}
+	return 1 - dot/(math.Sqrt(na)*math.Sqrt(nb))
+}
+
 func TestANNInterfaceContract(t *testing.T) {
-	var idx Index = NewBruteForce(vector.Cosine)
+	var idx Index = NewBruteForce(cosineDist)
 	idx.Insert("a", []float32{1, 0})
 	idx.Insert("b", []float32{0, 1})
 	idx.Insert("c", []float32{0.9, 0.1})
@@ -69,8 +82,8 @@ func recallAt(approx []Candidate, exact []Candidate, k int) float64 {
 func TestHNSWRecallVsExact(t *testing.T) {
 	const n, dim, k = 3000, 16, 10
 	ids, vecs := randVecs(n, dim, 7)
-	exact := NewBruteForce(vector.Cosine)
-	h := NewHNSW(vector.Cosine, Params{M: 16, EfConstruction: 200, EfSearchDefault: 128, Seed: 3})
+	exact := NewBruteForce(cosineDist)
+	h := NewHNSW(cosineDist, Params{M: 16, EfConstruction: 200, EfSearchDefault: 128, Seed: 3})
 	for i := range ids {
 		exact.Insert(ids[i], vecs[i])
 		h.Insert(ids[i], vecs[i])
@@ -90,8 +103,8 @@ func TestHNSWRecallVsExact(t *testing.T) {
 func TestHNSWParamsHonored(t *testing.T) {
 	const n, dim, k = 2000, 16, 10
 	ids, vecs := randVecs(n, dim, 11)
-	exact := NewBruteForce(vector.Cosine)
-	h := NewHNSW(vector.Cosine, Params{M: 8, EfConstruction: 100, EfSearchDefault: 16, Seed: 5})
+	exact := NewBruteForce(cosineDist)
+	h := NewHNSW(cosineDist, Params{M: 8, EfConstruction: 100, EfSearchDefault: 16, Seed: 5})
 	for i := range ids {
 		exact.Insert(ids[i], vecs[i])
 		h.Insert(ids[i], vecs[i])
@@ -111,7 +124,7 @@ func TestHNSWParamsHonored(t *testing.T) {
 }
 
 func TestHNSWDelete(t *testing.T) {
-	h := NewHNSW(vector.Cosine, DefaultParams())
+	h := NewHNSW(cosineDist, DefaultParams())
 	ids, vecs := randVecs(200, 8, 1)
 	for i := range ids {
 		h.Insert(ids[i], vecs[i])

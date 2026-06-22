@@ -5,8 +5,6 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-
-	"github.com/cwire/wavespan/internal/vector"
 )
 
 // HNSW is a pure-Go Hierarchical Navigable Small World index (ADR 0006). It is safe for concurrent
@@ -14,7 +12,7 @@ import (
 type HNSW struct {
 	mu sync.RWMutex
 
-	metric          vector.Metric
+	dist            DistanceFunc
 	m               int // neighbors per insert
 	mMax0           int // max neighbors at layer 0
 	efConstruction  int
@@ -47,8 +45,8 @@ type Params struct {
 // DefaultParams returns sensible HNSW parameters.
 func DefaultParams() Params { return Params{M: 16, EfConstruction: 200, EfSearchDefault: 64, Seed: 1} }
 
-// NewHNSW builds an empty HNSW index for a metric.
-func NewHNSW(metric vector.Metric, p Params) *HNSW {
+// NewHNSW builds an empty HNSW index over a distance function (smaller = closer).
+func NewHNSW(dist DistanceFunc, p Params) *HNSW {
 	if p.M <= 0 {
 		p.M = 16
 	}
@@ -59,14 +57,14 @@ func NewHNSW(metric vector.Metric, p Params) *HNSW {
 		p.EfSearchDefault = 64
 	}
 	return &HNSW{
-		metric: metric, m: p.M, mMax0: 2 * p.M, efConstruction: p.EfConstruction,
+		dist: dist, m: p.M, mMax0: 2 * p.M, efConstruction: p.EfConstruction,
 		efSearchDefault: p.EfSearchDefault, mL: 1 / math.Log(float64(p.M)),
 		idToIdx: map[string]int32{}, entryPoint: -1, rng: rand.New(rand.NewSource(p.Seed)),
 	}
 }
 
-func (h *HNSW) dist(q []float32, idx int32) float64 {
-	return vector.Distance(h.metric, q, h.nodes[idx].vec)
+func (h *HNSW) distTo(q []float32, idx int32) float64 {
+	return h.dist(q, h.nodes[idx].vec)
 }
 
 func (h *HNSW) randomLevel() int {
@@ -152,7 +150,7 @@ func (h *HNSW) pruneConns(e int32, lc, mmax int) {
 	}
 	cands := make([]elem, len(conns))
 	for i, c := range conns {
-		cands[i] = elem{idx: c, dist: vector.Distance(h.metric, h.nodes[e].vec, h.nodes[c].vec)}
+		cands[i] = elem{idx: c, dist: h.dist(h.nodes[e].vec, h.nodes[c].vec)}
 	}
 	h.nodes[e].conns[lc] = selectClosest(cands, mmax)
 }
@@ -160,7 +158,7 @@ func (h *HNSW) pruneConns(e int32, lc, mmax int) {
 // searchLayer returns up to ef nearest candidates to q at layer lc, sorted ascending by distance.
 func (h *HNSW) searchLayer(q []float32, ep int32, ef, lc int) []elem {
 	visited := map[int32]bool{ep: true}
-	d0 := h.dist(q, ep)
+	d0 := h.distTo(q, ep)
 	cand := &minHeap{{ep, d0}}
 	res := &maxHeap{{ep, d0}}
 	heap.Init(cand)
@@ -175,7 +173,7 @@ func (h *HNSW) searchLayer(q []float32, ep int32, ef, lc int) []elem {
 				continue
 			}
 			visited[nb] = true
-			d := h.dist(q, nb)
+			d := h.distTo(q, nb)
 			if res.Len() < ef || d < (*res)[0].dist {
 				heap.Push(cand, elem{nb, d})
 				heap.Push(res, elem{nb, d})
@@ -215,10 +213,7 @@ func (h *HNSW) Search(query []float32, k, efSearch int) []Candidate {
 		if h.nodes[e.idx].deleted {
 			continue
 		}
-		out = append(out, Candidate{
-			ID: h.nodes[e.idx].id, Distance: e.dist,
-			Score: vector.Score(h.metric, query, h.nodes[e.idx].vec),
-		})
+		out = append(out, Candidate{ID: h.nodes[e.idx].id, Distance: e.dist})
 		if len(out) >= k {
 			break
 		}
