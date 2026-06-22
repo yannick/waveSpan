@@ -119,6 +119,7 @@ security:
   transport:
     maxIdleConnsPerHost: 128
     idleConnTimeoutSeconds: 900
+    h2ReadIdleTimeoutSeconds: 45
 `
 	cfg, err := Load(writeTemp(t, body), nil)
 	if err != nil {
@@ -132,6 +133,9 @@ security:
 	}
 	if cfg.Security.Transport.IdleConnTimeoutSeconds == nil || *cfg.Security.Transport.IdleConnTimeoutSeconds != 900 {
 		t.Fatalf("idle timeout override not parsed: %+v", cfg.Security.Transport)
+	}
+	if cfg.Security.Transport.H2ReadIdleTimeoutSecond == nil || *cfg.Security.Transport.H2ReadIdleTimeoutSecond != 45 {
+		t.Fatalf("h2 read-idle override not parsed: %+v", cfg.Security.Transport)
 	}
 }
 

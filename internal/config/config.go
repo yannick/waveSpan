@@ -113,11 +113,13 @@ type SecurityConfig struct {
 // "unset" (defaults). Defaults live in security.DefaultTransportTuning(); ResolvedTuning applies any
 // overrides on top of those.
 type TransportTuningConfig struct {
-	MaxIdleConns           *int `yaml:"maxIdleConns"`
-	MaxIdleConnsPerHost    *int `yaml:"maxIdleConnsPerHost"`
-	IdleConnTimeoutSeconds *int `yaml:"idleConnTimeoutSeconds"`
-	TCPKeepAliveSeconds    *int `yaml:"tcpKeepAliveSeconds"`
-	DialTimeoutSeconds     *int `yaml:"dialTimeoutSeconds"`
+	MaxIdleConns            *int `yaml:"maxIdleConns"`
+	MaxIdleConnsPerHost     *int `yaml:"maxIdleConnsPerHost"`
+	IdleConnTimeoutSeconds  *int `yaml:"idleConnTimeoutSeconds"`
+	TCPKeepAliveSeconds     *int `yaml:"tcpKeepAliveSeconds"`
+	DialTimeoutSeconds      *int `yaml:"dialTimeoutSeconds"`
+	H2ReadIdleTimeoutSecond *int `yaml:"h2ReadIdleTimeoutSeconds"` // HTTP/2 PING when idle this long (0 disables)
+	H2PingTimeoutSeconds    *int `yaml:"h2PingTimeoutSeconds"`     // drop the conn if a PING is unanswered this long
 }
 
 // Defaults applied when fields are unset.

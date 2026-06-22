@@ -13,6 +13,10 @@ type TLSConfig struct {
 	KeyFile         string
 	CAFile          string
 	InsecureDevMode bool
+	// HandshakeObserver, when set, is invoked once per completed server-side TLS handshake with
+	// whether the session was resumed. It feeds the tls_handshakes_total metric (design/27) so the
+	// full-handshake vs resumption ratio — i.e. how well connections are being reused — is visible.
+	HandshakeObserver func(resumed bool)
 }
 
 // ErrPlaintextRequiresDevMode is returned when TLS material is absent and dev mode is off.
@@ -56,7 +60,7 @@ func (c TLSConfig) serverTLS(clientAuth tls.ClientAuthType) (*tls.Config, error)
 	if err != nil {
 		return nil, err
 	}
-	return &tls.Config{
+	cfg := &tls.Config{
 		Certificates:     []tls.Certificate{cert},
 		ClientCAs:        pool,
 		ClientAuth:       clientAuth,
@@ -66,7 +70,17 @@ func (c TLSConfig) serverTLS(clientAuth tls.ClientAuthType) (*tls.Config, error)
 		// has a TLSConfig, appending "h2" to NextProtos. SessionTicketsDisabled defaults to false, so
 		// the server issues TLS 1.3 session tickets and a returning client resumes without a full
 		// handshake. Both are left at their defaults deliberately.
-	}, nil
+	}
+	if obs := c.HandshakeObserver; obs != nil {
+		// VerifyConnection runs after the normal certificate checks on every completed handshake
+		// (full or resumed); returning nil never relaxes verification. cs.DidResume distinguishes a
+		// resumption (cheap) from a full handshake (expensive).
+		cfg.VerifyConnection = func(cs tls.ConnectionState) error {
+			obs(cs.DidResume)
+			return nil
+		}
+	}
+	return cfg, nil
 }
 
 // ClientTLS builds a client *tls.Config presenting the client cert and trusting the CA, tuned to

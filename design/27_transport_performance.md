@@ -61,6 +61,8 @@ security:
     idleConnTimeoutSeconds: 600 # 10m: keep connections warm across gossip ticks / bursts
     tcpKeepAliveSeconds: 30
     dialTimeoutSeconds: 5
+    h2ReadIdleTimeoutSeconds: 30 # send an HTTP/2 PING after this much idle (0 disables)
+    h2PingTimeoutSeconds: 15     # drop the connection if the PING is unanswered
 ```
 
 Environment overrides: `WAVESPAN_TLS_CERT_FILE`, `WAVESPAN_TLS_KEY_FILE`, `WAVESPAN_TLS_CA_FILE`,
@@ -75,8 +77,31 @@ Environment overrides: `WAVESPAN_TLS_CERT_FILE`, `WAVESPAN_TLS_KEY_FILE`, `WAVES
 | `idleConnTimeout` | 10m | survive idle gaps so the next RPC skips the handshake |
 | `tcpKeepAlive` | 30s | keep NAT/conntrack and the socket alive |
 | `dialTimeout` | 5s | bound on a new connection incl. handshake |
+| `h2ReadIdleTimeout` | 30s | send an HTTP/2 PING after this much idle to detect a dead conn |
+| `h2PingTimeout` | 15s | evict the connection if the PING goes unanswered |
 | TLS min version | 1.3 | fast handshake; modern AEAD only |
 | client `Client.Timeout` | unset | cache subscriptions are long-lived streams; rely on context |
+
+## HTTP/2 keepalive
+
+TCP keepalive keeps the socket and NAT mapping alive, but it cannot tell whether the multiplexed
+HTTP/2 connection on top is still healthy. Because we deliberately hold connections open for a long
+time (`idleConnTimeout` 10m), a silently dropped peer or a stale middlebox could leave a half-open
+connection that the next RPC blocks on. `configureH2KeepAlive` (`security.NewHTTPClient`, TLS path)
+enables application-level PING keepalive via `golang.org/x/net/http2`: after `h2ReadIdleTimeout` of
+silence the client sends a PING, and if it is unanswered within `h2PingTimeout` the connection is
+evicted so the next RPC dials a fresh, healthy one.
+
+## Metrics
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `tls_handshakes_total{resumed="true\|false"}` | counter | server-side handshakes, split by resumption. A high `false` rate means connections are *not* being reused — the thing to watch. |
+| `node_open_connections{server="data\|gossip\|admin"}` | gauge | currently open server connections. Small and stable under load = good pooling. |
+
+`tls_handshakes_total` is fed by `security.TLSConfig.HandshakeObserver` (a `VerifyConnection` hook
+that reads `tls.ConnectionState.DidResume`); `node_open_connections` is fed by each server's
+`http.Server.ConnState` callback.
 
 ## Validation rules
 
@@ -99,12 +124,15 @@ Environment overrides: `WAVESPAN_TLS_CERT_FILE`, `WAVESPAN_TLS_KEY_FILE`, `WAVES
 - `internal/security/tls.go` — `ServerTLS` (mTLS), `ServerTLSOptionalClient` (admin), `ClientTLS`
   (cheap-handshake settings + per-identity session cache).
 - `internal/security/transport.go` — `TransportTuning`, `DefaultTransportTuning`, `NewHTTPClient`
-  (shared pooled keepalive client).
-- `internal/config/config.go` — `SecurityConfig` (cert paths + `TransportTuningConfig`), env
-  overrides, incomplete-material validation.
+  (shared pooled keepalive client), `configureH2KeepAlive` (HTTP/2 PING keepalive via x/net/http2).
+- `internal/security/tls.go` — also `HandshakeObserver` (a `VerifyConnection` hook feeding the
+  handshake metric).
+- `internal/config/config.go` — `SecurityConfig` (cert paths + `TransportTuningConfig` incl. the h2
+  knobs), env overrides, incomplete-material validation.
 - `cmd/wavespan-node/main.go` — builds the shared client once and passes it to every transport;
   serves data/gossip under mTLS and admin under optional-client TLS; `serve()` picks
-  `ListenAndServeTLS` vs `ListenAndServe` from the presence of a `TLSConfig`.
+  `ListenAndServeTLS` vs `ListenAndServe` from the presence of a `TLSConfig`; registers
+  `tls_handshakes_total` (via the observer) and `node_open_connections` (via `ConnState`).
 
 ## Implementation checklist
 
@@ -112,5 +140,5 @@ Environment overrides: `WAVESPAN_TLS_CERT_FILE`, `WAVESPAN_TLS_KEY_FILE`, `WAVES
 - [x] TLS 1.3 + fast curves + session resumption on client and server.
 - [x] mTLS on data + gossip; optional-client TLS on admin (browser UI).
 - [x] Cert paths + transport tuning in config with env overrides and fail-fast validation.
-- [ ] HTTP/2 ping-based keepalive (`http2.Transport.ReadIdleTimeout`) — deferred; needs x/net/http2.
-- [ ] Handshake-rate / connection-reuse metrics (`tls_handshakes_total`, idle-conn gauge).
+- [x] HTTP/2 PING keepalive (`http2.Transport.ReadIdleTimeout`/`PingTimeout`) via x/net/http2.
+- [x] Handshake-rate / connection-reuse metrics (`tls_handshakes_total`, `node_open_connections`).

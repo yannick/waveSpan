@@ -122,3 +122,47 @@ func TestMTLSHandshake(t *testing.T) {
 		t.Fatal("client cert from an untrusted CA must be rejected by mTLS")
 	}
 }
+
+func TestHandshakeObserver(t *testing.T) {
+	dir := t.TempDir()
+	ca, caKey := genCA(t)
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})
+	srvCert, srvKey := genLeaf(t, ca, caKey, "server", true)
+	cliCert, cliKey := genLeaf(t, ca, caKey, "client", false)
+	writeFiles(t, dir, map[string][]byte{
+		"ca.pem": caPEM, "srv.pem": srvCert, "srv.key": srvKey, "cli.pem": cliCert, "cli.key": cliKey,
+	})
+
+	var full, resumed int
+	srvCfg, err := TLSConfig{
+		CertFile: filepath.Join(dir, "srv.pem"), KeyFile: filepath.Join(dir, "srv.key"), CAFile: filepath.Join(dir, "ca.pem"),
+		HandshakeObserver: func(r bool) {
+			if r {
+				resumed++
+			} else {
+				full++
+			}
+		},
+	}.ServerTLS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }))
+	ts.TLS = srvCfg
+	ts.StartTLS()
+	t.Cleanup(ts.Close)
+
+	cliCfg, err := TLSConfig{CertFile: filepath.Join(dir, "cli.pem"), KeyFile: filepath.Join(dir, "cli.key"), CAFile: filepath.Join(dir, "ca.pem")}.ClientTLS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: cliCfg}}
+	resp, err := client.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if full != 1 || resumed != 0 {
+		t.Fatalf("first handshake should be observed as full: full=%d resumed=%d", full, resumed)
+	}
+}

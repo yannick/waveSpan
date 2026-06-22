@@ -6,7 +6,26 @@ import (
 	"net/http"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestConfigureH2KeepAlive(t *testing.T) {
+	tr := &http.Transport{TLSClientConfig: &tls.Config{}}
+	tn := DefaultTransportTuning()
+	h2, err := configureH2KeepAlive(tr, tn)
+	if err != nil {
+		t.Fatalf("configure h2: %v", err)
+	}
+	if h2.ReadIdleTimeout != tn.H2ReadIdleTimeout {
+		t.Fatalf("ReadIdleTimeout=%v want %v", h2.ReadIdleTimeout, tn.H2ReadIdleTimeout)
+	}
+	if h2.PingTimeout != tn.H2PingTimeout {
+		t.Fatalf("PingTimeout=%v want %v", h2.PingTimeout, tn.H2PingTimeout)
+	}
+	if tn.H2ReadIdleTimeout != 30*time.Second {
+		t.Fatalf("default ReadIdleTimeout changed: %v", tn.H2ReadIdleTimeout)
+	}
+}
 
 func TestNewHTTPClientDevPlaintext(t *testing.T) {
 	// insecureDevMode + no certs -> a pooled plaintext client (no TLS config), same reachability as

@@ -9,9 +9,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -79,6 +81,18 @@ func run() error {
 	tlsCfg := security.TLSConfig{
 		CertFile: cfg.Security.CertFile, KeyFile: cfg.Security.KeyFile, CAFile: cfg.Security.CAFile,
 		InsecureDevMode: cfg.Security.InsecureDevMode,
+	}
+	// Transport metrics (design/27): handshakes split by resumption (full vs resumed = reuse signal)
+	// and a live open-connection gauge per server (few long-lived conns = good pooling).
+	tlsHandshakes := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "tls_handshakes_total", Help: "completed server-side TLS handshakes, by whether the session resumed",
+	}, []string{"resumed"})
+	openConns := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "node_open_connections", Help: "currently open server connections, by server",
+	}, []string{"server"})
+	metrics.Registry.MustRegister(tlsHandshakes, openConns)
+	tlsCfg.HandshakeObserver = func(resumed bool) {
+		tlsHandshakes.WithLabelValues(strconv.FormatBool(resumed)).Inc()
 	}
 	httpClient, err := tlsCfg.NewHTTPClient(transportTuning(cfg))
 	if err != nil {
@@ -291,12 +305,12 @@ func run() error {
 	// identity middleware grants admin (dev/compose); in production the role comes from the verified
 	// mTLS client certificate.
 	dataIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
-	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: dataIdentity.EnforceHTTP(dataMux), ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS}
+	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: dataIdentity.EnforceHTTP(dataMux), ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS, ConnState: connStateGauge(openConns.WithLabelValues("data"))}
 
 	// Gossip server on the gossip port.
 	gossipMux := http.NewServeMux()
 	gossipMux.Handle(svc.GossipHandler())
-	gossipSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Gossip), Handler: gossipMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS}
+	gossipSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Gossip), Handler: gossipMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS, ConnState: connStateGauge(openConns.WithLabelValues("gossip"))}
 
 	// Admin server: health/metrics + membership/latency introspection.
 	adminMux := observability.AdminMux(metrics, ready)
@@ -319,7 +333,7 @@ func run() error {
 	cypherPath, cypherHandler := cypherSvc.Handler()
 	adminMux.Handle(cypherPath, adminIdentity.EnforceHTTP(cypherHandler))     // Cypher console (same origin as the UI)
 	adminMux.Handle("/", adminIdentity.EnforceHTTP(ui.NewServer().Handler())) // SPA at root (health/metrics take precedence)
-	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: adminTLS}
+	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: adminTLS, ConnState: connStateGauge(openConns.WithLabelValues("admin"))}
 
 	errCh := make(chan error, 3)
 	go func() {
@@ -410,6 +424,20 @@ func run() error {
 	}
 }
 
+// connStateGauge tracks the number of currently open connections to a server: a new connection
+// increments the gauge, and a closed/hijacked one decrements it. A small, stable value under load
+// is the visible signature of connection reuse (design/27).
+func connStateGauge(g prometheus.Gauge) func(net.Conn, http.ConnState) {
+	return func(_ net.Conn, s http.ConnState) {
+		switch s {
+		case http.StateNew:
+			g.Inc()
+		case http.StateClosed, http.StateHijacked:
+			g.Dec()
+		}
+	}
+}
+
 // serve runs an HTTP server over mTLS when a TLSConfig is present (certs are embedded in it, so the
 // empty ListenAndServeTLS args are correct), and plaintext otherwise (insecureDevMode).
 func serve(srv *http.Server) error {
@@ -438,6 +466,12 @@ func transportTuning(cfg *config.Config) security.TransportTuning {
 	}
 	if o.DialTimeoutSeconds != nil {
 		t.DialTimeout = time.Duration(*o.DialTimeoutSeconds) * time.Second
+	}
+	if o.H2ReadIdleTimeoutSecond != nil {
+		t.H2ReadIdleTimeout = time.Duration(*o.H2ReadIdleTimeoutSecond) * time.Second
+	}
+	if o.H2PingTimeoutSeconds != nil {
+		t.H2PingTimeout = time.Duration(*o.H2PingTimeoutSeconds) * time.Second
 	}
 	return t
 }
