@@ -23,6 +23,8 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// ReplicationServiceName is the fully-qualified name of the ReplicationService service.
 	ReplicationServiceName = "wavespan.v1.ReplicationService"
+	// GlobalReplicationName is the fully-qualified name of the GlobalReplication service.
+	GlobalReplicationName = "wavespan.v1.GlobalReplication"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -45,6 +47,15 @@ const (
 	// ReplicationServiceScanLocalProcedure is the fully-qualified name of the ReplicationService's
 	// ScanLocal RPC.
 	ReplicationServiceScanLocalProcedure = "/wavespan.v1.ReplicationService/ScanLocal"
+	// GlobalReplicationPushGlobalProcedure is the fully-qualified name of the GlobalReplication's
+	// PushGlobal RPC.
+	GlobalReplicationPushGlobalProcedure = "/wavespan.v1.GlobalReplication/PushGlobal"
+	// GlobalReplicationRangeSummaryProcedure is the fully-qualified name of the GlobalReplication's
+	// RangeSummary RPC.
+	GlobalReplicationRangeSummaryProcedure = "/wavespan.v1.GlobalReplication/RangeSummary"
+	// GlobalReplicationFetchRangeProcedure is the fully-qualified name of the GlobalReplication's
+	// FetchRange RPC.
+	GlobalReplicationFetchRangeProcedure = "/wavespan.v1.GlobalReplication/FetchRange"
 )
 
 // ReplicationServiceClient is a client for the wavespan.v1.ReplicationService service.
@@ -193,4 +204,126 @@ func (UnimplementedReplicationServiceHandler) SubscribeKey(context.Context, *con
 
 func (UnimplementedReplicationServiceHandler) ScanLocal(context.Context, *connect.Request[v1.ScanLocalRequest]) (*connect.Response[v1.ScanLocalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ReplicationService.ScanLocal is not implemented"))
+}
+
+// GlobalReplicationClient is a client for the wavespan.v1.GlobalReplication service.
+type GlobalReplicationClient interface {
+	PushGlobal(context.Context) *connect.BidiStreamForClient[v1.GlobalMutation, v1.PushGlobalAck]
+	RangeSummary(context.Context, *connect.Request[v1.RangeSummaryRequest]) (*connect.Response[v1.RangeSummaryResponse], error)
+	FetchRange(context.Context, *connect.Request[v1.FetchRangeRequest]) (*connect.ServerStreamForClient[v1.GlobalMutation], error)
+}
+
+// NewGlobalReplicationClient constructs a client for the wavespan.v1.GlobalReplication service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewGlobalReplicationClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) GlobalReplicationClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	globalReplicationMethods := v1.File_wavespan_v1_replication_proto.Services().ByName("GlobalReplication").Methods()
+	return &globalReplicationClient{
+		pushGlobal: connect.NewClient[v1.GlobalMutation, v1.PushGlobalAck](
+			httpClient,
+			baseURL+GlobalReplicationPushGlobalProcedure,
+			connect.WithSchema(globalReplicationMethods.ByName("PushGlobal")),
+			connect.WithClientOptions(opts...),
+		),
+		rangeSummary: connect.NewClient[v1.RangeSummaryRequest, v1.RangeSummaryResponse](
+			httpClient,
+			baseURL+GlobalReplicationRangeSummaryProcedure,
+			connect.WithSchema(globalReplicationMethods.ByName("RangeSummary")),
+			connect.WithClientOptions(opts...),
+		),
+		fetchRange: connect.NewClient[v1.FetchRangeRequest, v1.GlobalMutation](
+			httpClient,
+			baseURL+GlobalReplicationFetchRangeProcedure,
+			connect.WithSchema(globalReplicationMethods.ByName("FetchRange")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// globalReplicationClient implements GlobalReplicationClient.
+type globalReplicationClient struct {
+	pushGlobal   *connect.Client[v1.GlobalMutation, v1.PushGlobalAck]
+	rangeSummary *connect.Client[v1.RangeSummaryRequest, v1.RangeSummaryResponse]
+	fetchRange   *connect.Client[v1.FetchRangeRequest, v1.GlobalMutation]
+}
+
+// PushGlobal calls wavespan.v1.GlobalReplication.PushGlobal.
+func (c *globalReplicationClient) PushGlobal(ctx context.Context) *connect.BidiStreamForClient[v1.GlobalMutation, v1.PushGlobalAck] {
+	return c.pushGlobal.CallBidiStream(ctx)
+}
+
+// RangeSummary calls wavespan.v1.GlobalReplication.RangeSummary.
+func (c *globalReplicationClient) RangeSummary(ctx context.Context, req *connect.Request[v1.RangeSummaryRequest]) (*connect.Response[v1.RangeSummaryResponse], error) {
+	return c.rangeSummary.CallUnary(ctx, req)
+}
+
+// FetchRange calls wavespan.v1.GlobalReplication.FetchRange.
+func (c *globalReplicationClient) FetchRange(ctx context.Context, req *connect.Request[v1.FetchRangeRequest]) (*connect.ServerStreamForClient[v1.GlobalMutation], error) {
+	return c.fetchRange.CallServerStream(ctx, req)
+}
+
+// GlobalReplicationHandler is an implementation of the wavespan.v1.GlobalReplication service.
+type GlobalReplicationHandler interface {
+	PushGlobal(context.Context, *connect.BidiStream[v1.GlobalMutation, v1.PushGlobalAck]) error
+	RangeSummary(context.Context, *connect.Request[v1.RangeSummaryRequest]) (*connect.Response[v1.RangeSummaryResponse], error)
+	FetchRange(context.Context, *connect.Request[v1.FetchRangeRequest], *connect.ServerStream[v1.GlobalMutation]) error
+}
+
+// NewGlobalReplicationHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewGlobalReplicationHandler(svc GlobalReplicationHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	globalReplicationMethods := v1.File_wavespan_v1_replication_proto.Services().ByName("GlobalReplication").Methods()
+	globalReplicationPushGlobalHandler := connect.NewBidiStreamHandler(
+		GlobalReplicationPushGlobalProcedure,
+		svc.PushGlobal,
+		connect.WithSchema(globalReplicationMethods.ByName("PushGlobal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	globalReplicationRangeSummaryHandler := connect.NewUnaryHandler(
+		GlobalReplicationRangeSummaryProcedure,
+		svc.RangeSummary,
+		connect.WithSchema(globalReplicationMethods.ByName("RangeSummary")),
+		connect.WithHandlerOptions(opts...),
+	)
+	globalReplicationFetchRangeHandler := connect.NewServerStreamHandler(
+		GlobalReplicationFetchRangeProcedure,
+		svc.FetchRange,
+		connect.WithSchema(globalReplicationMethods.ByName("FetchRange")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/wavespan.v1.GlobalReplication/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case GlobalReplicationPushGlobalProcedure:
+			globalReplicationPushGlobalHandler.ServeHTTP(w, r)
+		case GlobalReplicationRangeSummaryProcedure:
+			globalReplicationRangeSummaryHandler.ServeHTTP(w, r)
+		case GlobalReplicationFetchRangeProcedure:
+			globalReplicationFetchRangeHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedGlobalReplicationHandler returns CodeUnimplemented from all methods.
+type UnimplementedGlobalReplicationHandler struct{}
+
+func (UnimplementedGlobalReplicationHandler) PushGlobal(context.Context, *connect.BidiStream[v1.GlobalMutation, v1.PushGlobalAck]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.GlobalReplication.PushGlobal is not implemented"))
+}
+
+func (UnimplementedGlobalReplicationHandler) RangeSummary(context.Context, *connect.Request[v1.RangeSummaryRequest]) (*connect.Response[v1.RangeSummaryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.GlobalReplication.RangeSummary is not implemented"))
+}
+
+func (UnimplementedGlobalReplicationHandler) FetchRange(context.Context, *connect.Request[v1.FetchRangeRequest], *connect.ServerStream[v1.GlobalMutation]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.GlobalReplication.FetchRange is not implemented"))
 }

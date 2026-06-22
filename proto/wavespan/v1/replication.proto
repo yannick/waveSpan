@@ -96,3 +96,59 @@ service ReplicationService {
   rpc SubscribeKey(SubscribeKeyRequest) returns (stream CacheUpdate);
   rpc ScanLocal(ScanLocalRequest) returns (ScanLocalResponse);
 }
+
+// --- Global active-active replication (M7, design/06) ---
+
+// GlobalMutationId is the stable, idempotent identity of an originated mutation across clusters:
+// receivers ignore an id they have already applied (replay protection).
+message GlobalMutationId {
+  string cluster_id = 1;
+  string member_id = 2;
+  uint64 writer_sequence = 3;
+}
+
+// GlobalMutation is one mutation shipped to a peer cluster. The StoredRecord envelope carries the
+// version, tombstone flag, and origin expiry, so graph/vector records flow through unchanged.
+message GlobalMutation {
+  GlobalMutationId id = 1;
+  string namespace = 2;
+  bytes key = 3;
+  StoredRecord record = 4;
+  uint32 partition = 5;
+}
+
+message PushGlobalAck {
+  uint64 applied_through_seq = 1;
+  uint32 partition = 2;
+}
+
+message KeyRange {
+  string namespace = 1;
+  bytes start = 2;
+  bytes end = 3;
+}
+
+message RangeHash {
+  KeyRange range = 1;
+  bytes hash = 2;
+}
+
+message RangeSummaryRequest {
+  repeated KeyRange ranges = 1;
+}
+
+message RangeSummaryResponse {
+  repeated RangeHash hashes = 1;
+}
+
+message FetchRangeRequest {
+  KeyRange range = 1;
+}
+
+// GlobalReplication ships local mutations to peer clusters asynchronously and reconciles via
+// anti-entropy (design/06). No cross-cluster consensus on the hot path.
+service GlobalReplication {
+  rpc PushGlobal(stream GlobalMutation) returns (stream PushGlobalAck);
+  rpc RangeSummary(RangeSummaryRequest) returns (RangeSummaryResponse);
+  rpc FetchRange(FetchRangeRequest) returns (stream GlobalMutation);
+}

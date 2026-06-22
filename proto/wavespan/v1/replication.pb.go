@@ -757,6 +757,442 @@ func (x *ScanLocalResponse) GetRows() []*ScanLocalRow {
 	return nil
 }
 
+// GlobalMutationId is the stable, idempotent identity of an originated mutation across clusters:
+// receivers ignore an id they have already applied (replay protection).
+type GlobalMutationId struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ClusterId      string                 `protobuf:"bytes,1,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
+	MemberId       string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	WriterSequence uint64                 `protobuf:"varint,3,opt,name=writer_sequence,json=writerSequence,proto3" json:"writer_sequence,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GlobalMutationId) Reset() {
+	*x = GlobalMutationId{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GlobalMutationId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GlobalMutationId) ProtoMessage() {}
+
+func (x *GlobalMutationId) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GlobalMutationId.ProtoReflect.Descriptor instead.
+func (*GlobalMutationId) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GlobalMutationId) GetClusterId() string {
+	if x != nil {
+		return x.ClusterId
+	}
+	return ""
+}
+
+func (x *GlobalMutationId) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *GlobalMutationId) GetWriterSequence() uint64 {
+	if x != nil {
+		return x.WriterSequence
+	}
+	return 0
+}
+
+// GlobalMutation is one mutation shipped to a peer cluster. The StoredRecord envelope carries the
+// version, tombstone flag, and origin expiry, so graph/vector records flow through unchanged.
+type GlobalMutation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            *GlobalMutationId      `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Namespace     string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Key           []byte                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	Record        *StoredRecord          `protobuf:"bytes,4,opt,name=record,proto3" json:"record,omitempty"`
+	Partition     uint32                 `protobuf:"varint,5,opt,name=partition,proto3" json:"partition,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GlobalMutation) Reset() {
+	*x = GlobalMutation{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GlobalMutation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GlobalMutation) ProtoMessage() {}
+
+func (x *GlobalMutation) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GlobalMutation.ProtoReflect.Descriptor instead.
+func (*GlobalMutation) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GlobalMutation) GetId() *GlobalMutationId {
+	if x != nil {
+		return x.Id
+	}
+	return nil
+}
+
+func (x *GlobalMutation) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *GlobalMutation) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *GlobalMutation) GetRecord() *StoredRecord {
+	if x != nil {
+		return x.Record
+	}
+	return nil
+}
+
+func (x *GlobalMutation) GetPartition() uint32 {
+	if x != nil {
+		return x.Partition
+	}
+	return 0
+}
+
+type PushGlobalAck struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	AppliedThroughSeq uint64                 `protobuf:"varint,1,opt,name=applied_through_seq,json=appliedThroughSeq,proto3" json:"applied_through_seq,omitempty"`
+	Partition         uint32                 `protobuf:"varint,2,opt,name=partition,proto3" json:"partition,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *PushGlobalAck) Reset() {
+	*x = PushGlobalAck{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PushGlobalAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PushGlobalAck) ProtoMessage() {}
+
+func (x *PushGlobalAck) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PushGlobalAck.ProtoReflect.Descriptor instead.
+func (*PushGlobalAck) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *PushGlobalAck) GetAppliedThroughSeq() uint64 {
+	if x != nil {
+		return x.AppliedThroughSeq
+	}
+	return 0
+}
+
+func (x *PushGlobalAck) GetPartition() uint32 {
+	if x != nil {
+		return x.Partition
+	}
+	return 0
+}
+
+type KeyRange struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Start         []byte                 `protobuf:"bytes,2,opt,name=start,proto3" json:"start,omitempty"`
+	End           []byte                 `protobuf:"bytes,3,opt,name=end,proto3" json:"end,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyRange) Reset() {
+	*x = KeyRange{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyRange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyRange) ProtoMessage() {}
+
+func (x *KeyRange) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyRange.ProtoReflect.Descriptor instead.
+func (*KeyRange) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *KeyRange) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *KeyRange) GetStart() []byte {
+	if x != nil {
+		return x.Start
+	}
+	return nil
+}
+
+func (x *KeyRange) GetEnd() []byte {
+	if x != nil {
+		return x.End
+	}
+	return nil
+}
+
+type RangeHash struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Range         *KeyRange              `protobuf:"bytes,1,opt,name=range,proto3" json:"range,omitempty"`
+	Hash          []byte                 `protobuf:"bytes,2,opt,name=hash,proto3" json:"hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RangeHash) Reset() {
+	*x = RangeHash{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RangeHash) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RangeHash) ProtoMessage() {}
+
+func (x *RangeHash) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RangeHash.ProtoReflect.Descriptor instead.
+func (*RangeHash) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *RangeHash) GetRange() *KeyRange {
+	if x != nil {
+		return x.Range
+	}
+	return nil
+}
+
+func (x *RangeHash) GetHash() []byte {
+	if x != nil {
+		return x.Hash
+	}
+	return nil
+}
+
+type RangeSummaryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ranges        []*KeyRange            `protobuf:"bytes,1,rep,name=ranges,proto3" json:"ranges,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RangeSummaryRequest) Reset() {
+	*x = RangeSummaryRequest{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RangeSummaryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RangeSummaryRequest) ProtoMessage() {}
+
+func (x *RangeSummaryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RangeSummaryRequest.ProtoReflect.Descriptor instead.
+func (*RangeSummaryRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RangeSummaryRequest) GetRanges() []*KeyRange {
+	if x != nil {
+		return x.Ranges
+	}
+	return nil
+}
+
+type RangeSummaryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hashes        []*RangeHash           `protobuf:"bytes,1,rep,name=hashes,proto3" json:"hashes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RangeSummaryResponse) Reset() {
+	*x = RangeSummaryResponse{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RangeSummaryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RangeSummaryResponse) ProtoMessage() {}
+
+func (x *RangeSummaryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RangeSummaryResponse.ProtoReflect.Descriptor instead.
+func (*RangeSummaryResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RangeSummaryResponse) GetHashes() []*RangeHash {
+	if x != nil {
+		return x.Hashes
+	}
+	return nil
+}
+
+type FetchRangeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Range         *KeyRange              `protobuf:"bytes,1,opt,name=range,proto3" json:"range,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchRangeRequest) Reset() {
+	*x = FetchRangeRequest{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchRangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchRangeRequest) ProtoMessage() {}
+
+func (x *FetchRangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchRangeRequest.ProtoReflect.Descriptor instead.
+func (*FetchRangeRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *FetchRangeRequest) GetRange() *KeyRange {
+	if x != nil {
+		return x.Range
+	}
+	return nil
+}
+
 var File_wavespan_v1_replication_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_replication_proto_rawDesc = "" +
@@ -816,7 +1252,34 @@ const file_wavespan_v1_replication_proto_rawDesc = "" +
 	"\x12expires_at_unix_ms\x18\x04 \x01(\x03H\x00R\x0fexpiresAtUnixMs\x88\x01\x01B\x15\n" +
 	"\x13_expires_at_unix_ms\"B\n" +
 	"\x11ScanLocalResponse\x12-\n" +
-	"\x04rows\x18\x01 \x03(\v2\x19.wavespan.v1.ScanLocalRowR\x04rows*p\n" +
+	"\x04rows\x18\x01 \x03(\v2\x19.wavespan.v1.ScanLocalRowR\x04rows\"w\n" +
+	"\x10GlobalMutationId\x12\x1d\n" +
+	"\n" +
+	"cluster_id\x18\x01 \x01(\tR\tclusterId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12'\n" +
+	"\x0fwriter_sequence\x18\x03 \x01(\x04R\x0ewriterSequence\"\xc0\x01\n" +
+	"\x0eGlobalMutation\x12-\n" +
+	"\x02id\x18\x01 \x01(\v2\x1d.wavespan.v1.GlobalMutationIdR\x02id\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x10\n" +
+	"\x03key\x18\x03 \x01(\fR\x03key\x121\n" +
+	"\x06record\x18\x04 \x01(\v2\x19.wavespan.v1.StoredRecordR\x06record\x12\x1c\n" +
+	"\tpartition\x18\x05 \x01(\rR\tpartition\"]\n" +
+	"\rPushGlobalAck\x12.\n" +
+	"\x13applied_through_seq\x18\x01 \x01(\x04R\x11appliedThroughSeq\x12\x1c\n" +
+	"\tpartition\x18\x02 \x01(\rR\tpartition\"P\n" +
+	"\bKeyRange\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x14\n" +
+	"\x05start\x18\x02 \x01(\fR\x05start\x12\x10\n" +
+	"\x03end\x18\x03 \x01(\fR\x03end\"L\n" +
+	"\tRangeHash\x12+\n" +
+	"\x05range\x18\x01 \x01(\v2\x15.wavespan.v1.KeyRangeR\x05range\x12\x12\n" +
+	"\x04hash\x18\x02 \x01(\fR\x04hash\"D\n" +
+	"\x13RangeSummaryRequest\x12-\n" +
+	"\x06ranges\x18\x01 \x03(\v2\x15.wavespan.v1.KeyRangeR\x06ranges\"F\n" +
+	"\x14RangeSummaryResponse\x12.\n" +
+	"\x06hashes\x18\x01 \x03(\v2\x16.wavespan.v1.RangeHashR\x06hashes\"@\n" +
+	"\x11FetchRangeRequest\x12+\n" +
+	"\x05range\x18\x01 \x01(\v2\x15.wavespan.v1.KeyRangeR\x05range*p\n" +
 	"\fReplicaClass\x12\x1d\n" +
 	"\x19REPLICA_CLASS_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cREPLICA_CLASS_NEARBY_DURABLE\x10\x01\x12\x1f\n" +
@@ -825,7 +1288,13 @@ const file_wavespan_v1_replication_proto_rawDesc = "" +
 	"\fStoreReplica\x12 .wavespan.v1.StoreReplicaRequest\x1a!.wavespan.v1.StoreReplicaResponse\x12S\n" +
 	"\fFetchReplica\x12 .wavespan.v1.FetchReplicaRequest\x1a!.wavespan.v1.FetchReplicaResponse\x12L\n" +
 	"\fSubscribeKey\x12 .wavespan.v1.SubscribeKeyRequest\x1a\x18.wavespan.v1.CacheUpdate0\x01\x12J\n" +
-	"\tScanLocal\x12\x1d.wavespan.v1.ScanLocalRequest\x1a\x1e.wavespan.v1.ScanLocalResponseB\xa8\x01\n" +
+	"\tScanLocal\x12\x1d.wavespan.v1.ScanLocalRequest\x1a\x1e.wavespan.v1.ScanLocalResponse2\x80\x02\n" +
+	"\x11GlobalReplication\x12I\n" +
+	"\n" +
+	"PushGlobal\x12\x1b.wavespan.v1.GlobalMutation\x1a\x1a.wavespan.v1.PushGlobalAck(\x010\x01\x12S\n" +
+	"\fRangeSummary\x12 .wavespan.v1.RangeSummaryRequest\x1a!.wavespan.v1.RangeSummaryResponse\x12K\n" +
+	"\n" +
+	"FetchRange\x12\x1e.wavespan.v1.FetchRangeRequest\x1a\x1b.wavespan.v1.GlobalMutation0\x01B\xa8\x01\n" +
 	"\x0fcom.wavespan.v1B\x10ReplicationProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -841,7 +1310,7 @@ func file_wavespan_v1_replication_proto_rawDescGZIP() []byte {
 }
 
 var file_wavespan_v1_replication_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wavespan_v1_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_wavespan_v1_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_wavespan_v1_replication_proto_goTypes = []any{
 	(ReplicaClass)(0),            // 0: wavespan.v1.ReplicaClass
 	(*StoreReplicaRequest)(nil),  // 1: wavespan.v1.StoreReplicaRequest
@@ -854,35 +1323,55 @@ var file_wavespan_v1_replication_proto_goTypes = []any{
 	(*ScanLocalRequest)(nil),     // 8: wavespan.v1.ScanLocalRequest
 	(*ScanLocalRow)(nil),         // 9: wavespan.v1.ScanLocalRow
 	(*ScanLocalResponse)(nil),    // 10: wavespan.v1.ScanLocalResponse
-	(*StoredRecord)(nil),         // 11: wavespan.v1.StoredRecord
-	(*Version)(nil),              // 12: wavespan.v1.Version
-	(ConflictState)(0),           // 13: wavespan.v1.ConflictState
+	(*GlobalMutationId)(nil),     // 11: wavespan.v1.GlobalMutationId
+	(*GlobalMutation)(nil),       // 12: wavespan.v1.GlobalMutation
+	(*PushGlobalAck)(nil),        // 13: wavespan.v1.PushGlobalAck
+	(*KeyRange)(nil),             // 14: wavespan.v1.KeyRange
+	(*RangeHash)(nil),            // 15: wavespan.v1.RangeHash
+	(*RangeSummaryRequest)(nil),  // 16: wavespan.v1.RangeSummaryRequest
+	(*RangeSummaryResponse)(nil), // 17: wavespan.v1.RangeSummaryResponse
+	(*FetchRangeRequest)(nil),    // 18: wavespan.v1.FetchRangeRequest
+	(*StoredRecord)(nil),         // 19: wavespan.v1.StoredRecord
+	(*Version)(nil),              // 20: wavespan.v1.Version
+	(ConflictState)(0),           // 21: wavespan.v1.ConflictState
 }
 var file_wavespan_v1_replication_proto_depIdxs = []int32{
-	11, // 0: wavespan.v1.StoreReplicaRequest.record:type_name -> wavespan.v1.StoredRecord
+	19, // 0: wavespan.v1.StoreReplicaRequest.record:type_name -> wavespan.v1.StoredRecord
 	0,  // 1: wavespan.v1.StoreReplicaRequest.replica_class:type_name -> wavespan.v1.ReplicaClass
-	12, // 2: wavespan.v1.StoreReplicaResponse.applied_version:type_name -> wavespan.v1.Version
-	13, // 3: wavespan.v1.StoreReplicaResponse.conflict_state:type_name -> wavespan.v1.ConflictState
-	12, // 4: wavespan.v1.FetchReplicaRequest.min_version:type_name -> wavespan.v1.Version
-	11, // 5: wavespan.v1.FetchReplicaResponse.record:type_name -> wavespan.v1.StoredRecord
+	20, // 2: wavespan.v1.StoreReplicaResponse.applied_version:type_name -> wavespan.v1.Version
+	21, // 3: wavespan.v1.StoreReplicaResponse.conflict_state:type_name -> wavespan.v1.ConflictState
+	20, // 4: wavespan.v1.FetchReplicaRequest.min_version:type_name -> wavespan.v1.Version
+	19, // 5: wavespan.v1.FetchReplicaResponse.record:type_name -> wavespan.v1.StoredRecord
 	3,  // 6: wavespan.v1.FetchReplicaResponse.subscription_offer:type_name -> wavespan.v1.SubscriptionOffer
-	12, // 7: wavespan.v1.SubscribeKeyRequest.from_version:type_name -> wavespan.v1.Version
-	11, // 8: wavespan.v1.CacheUpdate.record:type_name -> wavespan.v1.StoredRecord
-	12, // 9: wavespan.v1.ScanLocalRow.version:type_name -> wavespan.v1.Version
+	20, // 7: wavespan.v1.SubscribeKeyRequest.from_version:type_name -> wavespan.v1.Version
+	19, // 8: wavespan.v1.CacheUpdate.record:type_name -> wavespan.v1.StoredRecord
+	20, // 9: wavespan.v1.ScanLocalRow.version:type_name -> wavespan.v1.Version
 	9,  // 10: wavespan.v1.ScanLocalResponse.rows:type_name -> wavespan.v1.ScanLocalRow
-	1,  // 11: wavespan.v1.ReplicationService.StoreReplica:input_type -> wavespan.v1.StoreReplicaRequest
-	4,  // 12: wavespan.v1.ReplicationService.FetchReplica:input_type -> wavespan.v1.FetchReplicaRequest
-	6,  // 13: wavespan.v1.ReplicationService.SubscribeKey:input_type -> wavespan.v1.SubscribeKeyRequest
-	8,  // 14: wavespan.v1.ReplicationService.ScanLocal:input_type -> wavespan.v1.ScanLocalRequest
-	2,  // 15: wavespan.v1.ReplicationService.StoreReplica:output_type -> wavespan.v1.StoreReplicaResponse
-	5,  // 16: wavespan.v1.ReplicationService.FetchReplica:output_type -> wavespan.v1.FetchReplicaResponse
-	7,  // 17: wavespan.v1.ReplicationService.SubscribeKey:output_type -> wavespan.v1.CacheUpdate
-	10, // 18: wavespan.v1.ReplicationService.ScanLocal:output_type -> wavespan.v1.ScanLocalResponse
-	15, // [15:19] is the sub-list for method output_type
-	11, // [11:15] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	11, // 11: wavespan.v1.GlobalMutation.id:type_name -> wavespan.v1.GlobalMutationId
+	19, // 12: wavespan.v1.GlobalMutation.record:type_name -> wavespan.v1.StoredRecord
+	14, // 13: wavespan.v1.RangeHash.range:type_name -> wavespan.v1.KeyRange
+	14, // 14: wavespan.v1.RangeSummaryRequest.ranges:type_name -> wavespan.v1.KeyRange
+	15, // 15: wavespan.v1.RangeSummaryResponse.hashes:type_name -> wavespan.v1.RangeHash
+	14, // 16: wavespan.v1.FetchRangeRequest.range:type_name -> wavespan.v1.KeyRange
+	1,  // 17: wavespan.v1.ReplicationService.StoreReplica:input_type -> wavespan.v1.StoreReplicaRequest
+	4,  // 18: wavespan.v1.ReplicationService.FetchReplica:input_type -> wavespan.v1.FetchReplicaRequest
+	6,  // 19: wavespan.v1.ReplicationService.SubscribeKey:input_type -> wavespan.v1.SubscribeKeyRequest
+	8,  // 20: wavespan.v1.ReplicationService.ScanLocal:input_type -> wavespan.v1.ScanLocalRequest
+	12, // 21: wavespan.v1.GlobalReplication.PushGlobal:input_type -> wavespan.v1.GlobalMutation
+	16, // 22: wavespan.v1.GlobalReplication.RangeSummary:input_type -> wavespan.v1.RangeSummaryRequest
+	18, // 23: wavespan.v1.GlobalReplication.FetchRange:input_type -> wavespan.v1.FetchRangeRequest
+	2,  // 24: wavespan.v1.ReplicationService.StoreReplica:output_type -> wavespan.v1.StoreReplicaResponse
+	5,  // 25: wavespan.v1.ReplicationService.FetchReplica:output_type -> wavespan.v1.FetchReplicaResponse
+	7,  // 26: wavespan.v1.ReplicationService.SubscribeKey:output_type -> wavespan.v1.CacheUpdate
+	10, // 27: wavespan.v1.ReplicationService.ScanLocal:output_type -> wavespan.v1.ScanLocalResponse
+	13, // 28: wavespan.v1.GlobalReplication.PushGlobal:output_type -> wavespan.v1.PushGlobalAck
+	17, // 29: wavespan.v1.GlobalReplication.RangeSummary:output_type -> wavespan.v1.RangeSummaryResponse
+	12, // 30: wavespan.v1.GlobalReplication.FetchRange:output_type -> wavespan.v1.GlobalMutation
+	24, // [24:31] is the sub-list for method output_type
+	17, // [17:24] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_replication_proto_init() }
@@ -900,9 +1389,9 @@ func file_wavespan_v1_replication_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_replication_proto_rawDesc), len(file_wavespan_v1_replication_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   10,
+			NumMessages:   18,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_wavespan_v1_replication_proto_goTypes,
 		DependencyIndexes: file_wavespan_v1_replication_proto_depIdxs,
