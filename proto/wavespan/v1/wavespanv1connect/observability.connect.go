@@ -48,6 +48,9 @@ const (
 	// ObservabilityServiceGraphExploreProcedure is the fully-qualified name of the
 	// ObservabilityService's GraphExplore RPC.
 	ObservabilityServiceGraphExploreProcedure = "/wavespan.v1.ObservabilityService/GraphExplore"
+	// ObservabilityServiceAdminPutProcedure is the fully-qualified name of the ObservabilityService's
+	// AdminPut RPC.
+	ObservabilityServiceAdminPutProcedure = "/wavespan.v1.ObservabilityService/AdminPut"
 )
 
 // ObservabilityServiceClient is a client for the wavespan.v1.ObservabilityService service.
@@ -57,6 +60,9 @@ type ObservabilityServiceClient interface {
 	InspectGlobal(context.Context, *connect.Request[v1.InspectGlobalRequest]) (*connect.ServerStreamForClient[v1.InspectRow], error)
 	GetClusterView(context.Context, *connect.Request[v1.GetClusterViewRequest]) (*connect.Response[v1.GetClusterViewResponse], error)
 	GraphExplore(context.Context, *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error)
+	// AdminPut writes a KV record for testing from the node UI, coordinated by a chosen cluster
+	// member (target_member_id) so the operator can pick which node originates the write.
+	AdminPut(context.Context, *connect.Request[v1.AdminPutRequest]) (*connect.Response[v1.AdminPutResponse], error)
 }
 
 // NewObservabilityServiceClient constructs a client for the wavespan.v1.ObservabilityService
@@ -100,6 +106,12 @@ func NewObservabilityServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(observabilityServiceMethods.ByName("GraphExplore")),
 			connect.WithClientOptions(opts...),
 		),
+		adminPut: connect.NewClient[v1.AdminPutRequest, v1.AdminPutResponse](
+			httpClient,
+			baseURL+ObservabilityServiceAdminPutProcedure,
+			connect.WithSchema(observabilityServiceMethods.ByName("AdminPut")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -110,6 +122,7 @@ type observabilityServiceClient struct {
 	inspectGlobal  *connect.Client[v1.InspectGlobalRequest, v1.InspectRow]
 	getClusterView *connect.Client[v1.GetClusterViewRequest, v1.GetClusterViewResponse]
 	graphExplore   *connect.Client[v1.GraphExploreRequest, v1.GraphExploreResponse]
+	adminPut       *connect.Client[v1.AdminPutRequest, v1.AdminPutResponse]
 }
 
 // StreamGossip calls wavespan.v1.ObservabilityService.StreamGossip.
@@ -137,6 +150,11 @@ func (c *observabilityServiceClient) GraphExplore(ctx context.Context, req *conn
 	return c.graphExplore.CallUnary(ctx, req)
 }
 
+// AdminPut calls wavespan.v1.ObservabilityService.AdminPut.
+func (c *observabilityServiceClient) AdminPut(ctx context.Context, req *connect.Request[v1.AdminPutRequest]) (*connect.Response[v1.AdminPutResponse], error) {
+	return c.adminPut.CallUnary(ctx, req)
+}
+
 // ObservabilityServiceHandler is an implementation of the wavespan.v1.ObservabilityService service.
 type ObservabilityServiceHandler interface {
 	StreamGossip(context.Context, *connect.Request[v1.StreamGossipRequest], *connect.ServerStream[v1.GossipEvent]) error
@@ -144,6 +162,9 @@ type ObservabilityServiceHandler interface {
 	InspectGlobal(context.Context, *connect.Request[v1.InspectGlobalRequest], *connect.ServerStream[v1.InspectRow]) error
 	GetClusterView(context.Context, *connect.Request[v1.GetClusterViewRequest]) (*connect.Response[v1.GetClusterViewResponse], error)
 	GraphExplore(context.Context, *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error)
+	// AdminPut writes a KV record for testing from the node UI, coordinated by a chosen cluster
+	// member (target_member_id) so the operator can pick which node originates the write.
+	AdminPut(context.Context, *connect.Request[v1.AdminPutRequest]) (*connect.Response[v1.AdminPutResponse], error)
 }
 
 // NewObservabilityServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -183,6 +204,12 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 		connect.WithSchema(observabilityServiceMethods.ByName("GraphExplore")),
 		connect.WithHandlerOptions(opts...),
 	)
+	observabilityServiceAdminPutHandler := connect.NewUnaryHandler(
+		ObservabilityServiceAdminPutProcedure,
+		svc.AdminPut,
+		connect.WithSchema(observabilityServiceMethods.ByName("AdminPut")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.ObservabilityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ObservabilityServiceStreamGossipProcedure:
@@ -195,6 +222,8 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 			observabilityServiceGetClusterViewHandler.ServeHTTP(w, r)
 		case ObservabilityServiceGraphExploreProcedure:
 			observabilityServiceGraphExploreHandler.ServeHTTP(w, r)
+		case ObservabilityServiceAdminPutProcedure:
+			observabilityServiceAdminPutHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -222,4 +251,8 @@ func (UnimplementedObservabilityServiceHandler) GetClusterView(context.Context, 
 
 func (UnimplementedObservabilityServiceHandler) GraphExplore(context.Context, *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.GraphExplore is not implemented"))
+}
+
+func (UnimplementedObservabilityServiceHandler) AdminPut(context.Context, *connect.Request[v1.AdminPutRequest]) (*connect.Response[v1.AdminPutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.AdminPut is not implemented"))
 }

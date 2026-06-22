@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/cwire/wavespan/internal/cache"
 	"github.com/cwire/wavespan/internal/config"
 	"github.com/cwire/wavespan/internal/conflict"
@@ -39,6 +40,7 @@ import (
 	"github.com/cwire/wavespan/internal/vector/ann"
 	"github.com/cwire/wavespan/internal/version"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -363,8 +365,16 @@ func run() error {
 	svc.SetGossipObserver(gossipTap)
 	obsSvc := observability.NewObsService(gossipRing, svc, self, rstore).
 		WithUnderReplicated(func() uint64 { return uint64(holders.UnderReplicatedEstimate(targetHolders, isAlive)) }).
-		WithGraph(graphStore).      // enables the visual node explorer (GraphExplore)
-		WithClusterScan(replicator) // cluster-wide Data Browser: fan InspectLocal out to all members
+		WithGraph(graphStore).       // enables the visual node explorer (GraphExplore)
+		WithClusterScan(replicator). // cluster-wide Data Browser: fan InspectLocal out to all members
+		WithKvWriter(func(ctx context.Context, target membership.Member, req *wavespanv1.PutRequest) (*wavespanv1.PutResult, error) {
+			// Forward the UI's test write to the chosen coordinator's data port over the shared client.
+			resp, err := wavespanv1connect.NewKvServiceClient(httpClient, "http://"+target.DataAddr).Put(ctx, connect.NewRequest(req))
+			if err != nil {
+				return nil, err
+			}
+			return resp.Msg, nil
+		})
 	adminIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
 	obsPath, obsHandler := obsSvc.Handler()
 	adminMux.Handle(obsPath, adminIdentity.EnforceHTTP(obsHandler)) // ObservabilityService (admin auth)

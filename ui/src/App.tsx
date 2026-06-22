@@ -5,14 +5,16 @@ import { ClusterTopology } from "./views/ClusterTopology";
 import { MetricsSummary } from "./views/MetricsSummary";
 import { CypherConsole } from "./views/CypherConsole";
 import { NodeExplorer } from "./views/NodeExplorer";
+import { KvWriter } from "./views/KvWriter";
 
-type Tab = "cypher" | "explorer" | "gossip" | "data" | "topology" | "metrics";
+type Tab = "cypher" | "explorer" | "gossip" | "data" | "write" | "topology" | "metrics";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "cypher", label: "Cypher Console" },
   { id: "explorer", label: "Node Explorer" },
   { id: "gossip", label: "Gossip Inspector" },
   { id: "data", label: "Data Browser" },
+  { id: "write", label: "Write KV" },
   { id: "topology", label: "Cluster Topology" },
   { id: "metrics", label: "Metrics" },
 ];
@@ -43,6 +45,7 @@ export function App() {
       {tab === "explorer" && <NodeExplorer />}
       {tab === "gossip" && <GossipInspector />}
       {tab === "data" && <DataBrowser />}
+      {tab === "write" && <KvWriter />}
       {tab === "topology" && <ClusterTopology />}
       {tab === "metrics" && <MetricsSummary />}
     </div>
