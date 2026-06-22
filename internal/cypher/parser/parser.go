@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 type parser struct {
@@ -93,7 +94,9 @@ func (p *parser) clause() (Clause, error) {
 		return p.withClause()
 	case p.acceptKeyword("UNWIND"):
 		return p.unwindClause()
-	case p.isKeyword("MERGE"), p.isKeyword("REMOVE"), p.isKeyword("DETACH"), p.isKeyword("LOAD"), p.isKeyword("CALL"):
+	case p.acceptKeyword("CALL"):
+		return p.callClause()
+	case p.isKeyword("MERGE"), p.isKeyword("REMOVE"), p.isKeyword("DETACH"), p.isKeyword("LOAD"):
 		return nil, fmt.Errorf("cypher: %s is recommended-after-core and unsupported in v1", p.peek().Val)
 	default:
 		return nil, fmt.Errorf("cypher: unexpected token %q at %d", p.peek().Val, p.peek().Pos)
@@ -163,6 +166,53 @@ func (p *parser) deleteClause(detach bool) (Clause, error) {
 		}
 	}
 	return dc, nil
+}
+
+func (p *parser) callClause() (Clause, error) {
+	if p.peek().Type != TokIdent {
+		return nil, fmt.Errorf("cypher: CALL expects a procedure name")
+	}
+	name := p.next().Val
+	for p.acceptPunct(".") {
+		if p.peek().Type != TokIdent {
+			return nil, fmt.Errorf("cypher: malformed procedure name")
+		}
+		name += "." + p.next().Val
+	}
+	if !strings.HasPrefix(name, "vector.") {
+		return nil, fmt.Errorf("cypher: procedure %s is unsupported in v1 (only vector.* procedures)", name)
+	}
+	if err := p.expectPunct("("); err != nil {
+		return nil, err
+	}
+	cc := &CallClause{Procedure: name}
+	if !p.isPunct(")") {
+		for {
+			arg, err := p.expr()
+			if err != nil {
+				return nil, err
+			}
+			cc.Args = append(cc.Args, arg)
+			if !p.acceptPunct(",") {
+				break
+			}
+		}
+	}
+	if err := p.expectPunct(")"); err != nil {
+		return nil, err
+	}
+	if p.acceptKeyword("YIELD") {
+		for {
+			if p.peek().Type != TokIdent {
+				return nil, fmt.Errorf("cypher: YIELD expects a column name")
+			}
+			cc.Yields = append(cc.Yields, p.next().Val)
+			if !p.acceptPunct(",") {
+				break
+			}
+		}
+	}
+	return cc, nil
 }
 
 func (p *parser) unwindClause() (Clause, error) {

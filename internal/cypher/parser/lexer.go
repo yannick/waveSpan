@@ -37,7 +37,7 @@ var keywords = map[string]bool{
 	"DELETE": true, "RETURN": true, "WITH": true, "UNWIND": true, "AS": true,
 	"ORDER": true, "BY": true, "SKIP": true, "LIMIT": true, "DISTINCT": true,
 	"AND": true, "OR": true, "NOT": true, "NULL": true, "TRUE": true, "FALSE": true,
-	"ASC": true, "DESC": true, "IN": true, "CALL": true,
+	"ASC": true, "DESC": true, "IN": true, "CALL": true, "YIELD": true,
 	// recognized-but-unsupported (reject explicitly in the parser)
 	"MERGE": true, "REMOVE": true, "DETACH": true, "LOAD": true,
 }

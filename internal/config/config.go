@@ -38,6 +38,7 @@ type Config struct {
 
 	GlobalReplication GlobalReplicationConfig `yaml:"globalReplication"`
 	Namespaces        []NamespaceConfig       `yaml:"namespaces"`
+	VectorIndexes     []VectorIndexConfig     `yaml:"vectorIndexes"`
 }
 
 // TopologyConfig holds the static topology labels (hints; the latency graph is authoritative,
@@ -192,6 +193,7 @@ func (c *Config) applyEnv(get func(string) (string, bool)) {
 		}
 	}
 	c.applyGlobalEnv(get)
+	c.applyVectorEnv(get)
 }
 
 func (c *Config) applyDefaults() {

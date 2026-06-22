@@ -71,9 +71,9 @@ membership:
 
 func TestEnvOverridesFile(t *testing.T) {
 	env := map[string]string{
-		"WAVESPAN_CLUSTER_ID": "prod",
-		"WAVESPAN_MEMBER_ID":  "nodeX",
-		"WAVESPAN_SEEDS":      "a:7700,b:7700,c:7700",
+		"WAVESPAN_CLUSTER_ID":   "prod",
+		"WAVESPAN_MEMBER_ID":    "nodeX",
+		"WAVESPAN_SEEDS":        "a:7700,b:7700,c:7700",
 		"WAVESPAN_ADMIN_LISTEN": ":9999",
 	}
 	cfg, err := Load(writeTemp(t, validYAML), env)

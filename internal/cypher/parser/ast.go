@@ -73,6 +73,13 @@ type WithClause struct {
 	Limit    Expr
 }
 
+// CallClause is CALL proc.name(args) [YIELD cols]. v1 only allows vector.* procedures.
+type CallClause struct {
+	Procedure string
+	Args      []Expr
+	Yields    []string
+}
+
 func (*MatchClause) isClause()  {}
 func (*CreateClause) isClause() {}
 func (*SetClause) isClause()    {}
@@ -80,6 +87,7 @@ func (*DeleteClause) isClause() {}
 func (*UnwindClause) isClause() {}
 func (*ReturnClause) isClause() {}
 func (*WithClause) isClause()   {}
+func (*CallClause) isClause()   {}
 
 // Direction of a relationship pattern.
 type Direction int

@@ -29,6 +29,7 @@ import (
 	local "github.com/cwire/wavespan/internal/replication/local"
 	"github.com/cwire/wavespan/internal/storage"
 	"github.com/cwire/wavespan/internal/ttl"
+	"github.com/cwire/wavespan/internal/vector"
 	"github.com/cwire/wavespan/internal/version"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -199,16 +200,33 @@ func run() error {
 		logger.Info("global replication enabled", "peers", len(peers))
 	}
 
-	// Graph + Cypher (M8): the Cypher service plans and executes against the local graph store.
-	cypherSvc := cypher.NewService(graph.NewStore(store), cfg.ClusterID, cfg.MemberID, func() *wavespanv1.Version {
-		return rstore.NextVersion().ToProto()
-	})
+	// Vector store + indexes (M9): exact search is exposed through the Cypher vector.searchExact
+	// procedure; raw vectors are ingested via VectorService.
+	vstore := vector.NewStore(store)
+	vectorIndexes := map[string]*vector.IndexMeta{}
+	for _, vi := range cfg.VectorIndexes {
+		meta, verr := vector.ParseVectorIndexSpec(vector.IndexSpec{
+			Name: vi.Name, Collection: vi.Collection, Metric: vi.Metric, Dimensions: vi.Dimensions,
+			Label: vi.Label, Property: vi.Property, ExactEnabled: vi.ExactEnabled,
+		})
+		if verr != nil {
+			return fmt.Errorf("vector index %q: %w", vi.Name, verr)
+		}
+		vectorIndexes[vi.Name] = meta
+	}
+	newGraphVersion := func() *wavespanv1.Version { return rstore.NextVersion().ToProto() }
+	vectorSvc := vector.NewService(vstore, newGraphVersion)
 
-	// Data server on the data port: public KvService + Cypher + internal ReplicationService.
+	// Graph + Cypher (M8/M9): plans and executes against the local graph store, with vector search.
+	cypherSvc := cypher.NewService(graph.NewStore(store), cfg.ClusterID, cfg.MemberID, newGraphVersion).
+		WithVector(vstore, func(name string) (*vector.IndexMeta, bool) { m, ok := vectorIndexes[name]; return m, ok })
+
+	// Data server on the data port: public KvService + Cypher + Vector + internal ReplicationService.
 	dataMux := http.NewServeMux()
 	dataMux.Handle(kvSvc.Handler())
 	dataMux.Handle(replicaSrv.Handler())
 	dataMux.Handle(cypherSvc.Handler())
+	dataMux.Handle(vectorSvc.Handler())
 	if globalSrv != nil {
 		dataMux.Handle(globalSrv.Handler())
 	}

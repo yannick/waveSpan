@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+option go_package = "github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1";
+
+import "wavespan/v1/common.proto";
+import "wavespan/v1/cypher.proto";
+
+// VectorRecord is a raw embedding vector, optionally attached to a graph node (design/08
+// "Vector record"). Stored in CFVectorRaw and versioned/replicated via the StoredRecord pipeline.
+message VectorRecord {
+  string collection = 1;
+  string vector_id = 2;
+  repeated float values = 3;
+  string dtype = 4; // "float32" in v1
+  uint32 dimensions = 5;
+  map<string, Value> metadata = 6;
+  string graph_node_id = 7; // optional graph attachment
+  Version version = 8;
+  bool tombstone = 9;
+}
+
+// VectorMeta is the lightweight metadata record at /vector/{collection}/meta/{vector_id}.
+message VectorMeta {
+  string collection = 1;
+  string vector_id = 2;
+  uint32 dimensions = 3;
+  string metric = 4;
+  string graph_node_id = 5;
+}
+
+message PutVectorRequest {
+  VectorRecord record = 1;
+}
+
+message PutVectorResponse {}
+
+// VectorService ingests raw vectors (design/08). Search is exposed via the Cypher
+// vector.searchExact procedure, not a dedicated RPC.
+service VectorService {
+  rpc Put(PutVectorRequest) returns (PutVectorResponse);
+}

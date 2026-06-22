@@ -10,22 +10,33 @@ import (
 	"github.com/cwire/wavespan/internal/cypher/parser"
 	"github.com/cwire/wavespan/internal/cypher/planner"
 	"github.com/cwire/wavespan/internal/graph"
+	"github.com/cwire/wavespan/internal/vector"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
-// Service is the Cypher Connect handler over the local graph store.
+// Service is the Cypher Connect handler over the local graph store, with optional vector search.
 type Service struct {
-	store      *graph.Store
-	clusterID  string
-	memberID   string
-	newVersion func() *wavespanv1.Version
+	store       *graph.Store
+	clusterID   string
+	memberID    string
+	newVersion  func() *wavespanv1.Version
+	vectorStore *vector.Store
+	vectorIndex func(name string) (*vector.IndexMeta, bool)
 }
 
 // NewService wires the Cypher service. newVersion supplies an HLC version for graph mutations
 // (shared with the node's clock).
 func NewService(store *graph.Store, clusterID, memberID string, newVersion func() *wavespanv1.Version) *Service {
 	return &Service{store: store, clusterID: clusterID, memberID: memberID, newVersion: newVersion}
+}
+
+// WithVector enables the vector.searchExact procedure over the given vector store and index
+// resolver (M9).
+func (s *Service) WithVector(vstore *vector.Store, index func(name string) (*vector.IndexMeta, bool)) *Service {
+	s.vectorStore = vstore
+	s.vectorIndex = index
+	return s
 }
 
 // Handler returns the mountable Connect handler for the data port.
@@ -43,6 +54,7 @@ func (s *Service) Query(_ context.Context, req *connect.Request[wavespanv1.Cyphe
 		Store: s.store, GraphID: req.Msg.GetGraphId(), Limits: planner.DefaultLimits(),
 		Router: planner.LocalRouter{Self: s.memberID}, SelfCluster: s.clusterID, SelfMember: s.memberID,
 		Params: req.Msg.GetParameters(), NewVersion: s.newVersion,
+		VectorStore: s.vectorStore, VectorIndex: s.vectorIndex,
 	}
 	res, err := exec.Execute(ast)
 	if err != nil {
