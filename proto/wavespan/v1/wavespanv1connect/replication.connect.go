@@ -47,6 +47,9 @@ const (
 	// ReplicationServiceScanLocalProcedure is the fully-qualified name of the ReplicationService's
 	// ScanLocal RPC.
 	ReplicationServiceScanLocalProcedure = "/wavespan.v1.ReplicationService/ScanLocal"
+	// ReplicationServiceBackfillProcedure is the fully-qualified name of the ReplicationService's
+	// Backfill RPC.
+	ReplicationServiceBackfillProcedure = "/wavespan.v1.ReplicationService/Backfill"
 	// GlobalReplicationPushGlobalProcedure is the fully-qualified name of the GlobalReplication's
 	// PushGlobal RPC.
 	GlobalReplicationPushGlobalProcedure = "/wavespan.v1.GlobalReplication/PushGlobal"
@@ -64,6 +67,7 @@ type ReplicationServiceClient interface {
 	FetchReplica(context.Context, *connect.Request[v1.FetchReplicaRequest]) (*connect.Response[v1.FetchReplicaResponse], error)
 	SubscribeKey(context.Context, *connect.Request[v1.SubscribeKeyRequest]) (*connect.ServerStreamForClient[v1.CacheUpdate], error)
 	ScanLocal(context.Context, *connect.Request[v1.ScanLocalRequest]) (*connect.Response[v1.ScanLocalResponse], error)
+	Backfill(context.Context, *connect.Request[v1.BackfillRequest]) (*connect.Response[v1.BackfillResponse], error)
 }
 
 // NewReplicationServiceClient constructs a client for the wavespan.v1.ReplicationService service.
@@ -101,6 +105,12 @@ func NewReplicationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(replicationServiceMethods.ByName("ScanLocal")),
 			connect.WithClientOptions(opts...),
 		),
+		backfill: connect.NewClient[v1.BackfillRequest, v1.BackfillResponse](
+			httpClient,
+			baseURL+ReplicationServiceBackfillProcedure,
+			connect.WithSchema(replicationServiceMethods.ByName("Backfill")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -110,6 +120,7 @@ type replicationServiceClient struct {
 	fetchReplica *connect.Client[v1.FetchReplicaRequest, v1.FetchReplicaResponse]
 	subscribeKey *connect.Client[v1.SubscribeKeyRequest, v1.CacheUpdate]
 	scanLocal    *connect.Client[v1.ScanLocalRequest, v1.ScanLocalResponse]
+	backfill     *connect.Client[v1.BackfillRequest, v1.BackfillResponse]
 }
 
 // StoreReplica calls wavespan.v1.ReplicationService.StoreReplica.
@@ -132,12 +143,18 @@ func (c *replicationServiceClient) ScanLocal(ctx context.Context, req *connect.R
 	return c.scanLocal.CallUnary(ctx, req)
 }
 
+// Backfill calls wavespan.v1.ReplicationService.Backfill.
+func (c *replicationServiceClient) Backfill(ctx context.Context, req *connect.Request[v1.BackfillRequest]) (*connect.Response[v1.BackfillResponse], error) {
+	return c.backfill.CallUnary(ctx, req)
+}
+
 // ReplicationServiceHandler is an implementation of the wavespan.v1.ReplicationService service.
 type ReplicationServiceHandler interface {
 	StoreReplica(context.Context, *connect.Request[v1.StoreReplicaRequest]) (*connect.Response[v1.StoreReplicaResponse], error)
 	FetchReplica(context.Context, *connect.Request[v1.FetchReplicaRequest]) (*connect.Response[v1.FetchReplicaResponse], error)
 	SubscribeKey(context.Context, *connect.Request[v1.SubscribeKeyRequest], *connect.ServerStream[v1.CacheUpdate]) error
 	ScanLocal(context.Context, *connect.Request[v1.ScanLocalRequest]) (*connect.Response[v1.ScanLocalResponse], error)
+	Backfill(context.Context, *connect.Request[v1.BackfillRequest]) (*connect.Response[v1.BackfillResponse], error)
 }
 
 // NewReplicationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -171,6 +188,12 @@ func NewReplicationServiceHandler(svc ReplicationServiceHandler, opts ...connect
 		connect.WithSchema(replicationServiceMethods.ByName("ScanLocal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	replicationServiceBackfillHandler := connect.NewUnaryHandler(
+		ReplicationServiceBackfillProcedure,
+		svc.Backfill,
+		connect.WithSchema(replicationServiceMethods.ByName("Backfill")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.ReplicationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ReplicationServiceStoreReplicaProcedure:
@@ -181,6 +204,8 @@ func NewReplicationServiceHandler(svc ReplicationServiceHandler, opts ...connect
 			replicationServiceSubscribeKeyHandler.ServeHTTP(w, r)
 		case ReplicationServiceScanLocalProcedure:
 			replicationServiceScanLocalHandler.ServeHTTP(w, r)
+		case ReplicationServiceBackfillProcedure:
+			replicationServiceBackfillHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -204,6 +229,10 @@ func (UnimplementedReplicationServiceHandler) SubscribeKey(context.Context, *con
 
 func (UnimplementedReplicationServiceHandler) ScanLocal(context.Context, *connect.Request[v1.ScanLocalRequest]) (*connect.Response[v1.ScanLocalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ReplicationService.ScanLocal is not implemented"))
+}
+
+func (UnimplementedReplicationServiceHandler) Backfill(context.Context, *connect.Request[v1.BackfillRequest]) (*connect.Response[v1.BackfillResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ReplicationService.Backfill is not implemented"))
 }
 
 // GlobalReplicationClient is a client for the wavespan.v1.GlobalReplication service.

@@ -25,6 +25,7 @@ services:
       WAVESPAN_STORAGE_PATH: /var/lib/wavespan
       WAVESPAN_TARGET_NEARBY_REPLICAS: "2"
       WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
+      WAVESPAN_REPLICATE_EVERYWHERE_NAMESPACES: ref
     ports: ["7911:7900", "7821:7800"]
     volumes: ["h-node1-data:/var/lib/wavespan"]
   node2:
@@ -38,6 +39,7 @@ services:
       WAVESPAN_STORAGE_PATH: /var/lib/wavespan
       WAVESPAN_TARGET_NEARBY_REPLICAS: "2"
       WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
+      WAVESPAN_REPLICATE_EVERYWHERE_NAMESPACES: ref
     ports: ["7912:7900", "7822:7800"]
     volumes: ["h-node2-data:/var/lib/wavespan"]
   node3:
@@ -51,6 +53,7 @@ services:
       WAVESPAN_STORAGE_PATH: /var/lib/wavespan
       WAVESPAN_TARGET_NEARBY_REPLICAS: "2"
       WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
+      WAVESPAN_REPLICATE_EVERYWHERE_NAMESPACES: ref
     ports: ["7913:7900", "7823:7800"]
     volumes: ["h-node3-data:/var/lib/wavespan"]
 

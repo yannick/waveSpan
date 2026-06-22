@@ -95,10 +95,11 @@ func kvCmd(args []string) error {
 	dur := fs.Duration("duration", 15*time.Second, "duration")
 	keys := fs.Int("keys", 10000, "key space size")
 	readRatio := fs.Float64("read-ratio", 0.5, "fraction of ops that are reads")
+	namespace := fs.String("namespace", "default", "namespace to target")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	res := bench.RunKV(*addr, bench.KVOptions{Concurrency: *conc, Keys: *keys, ReadRatio: *readRatio, Duration: *dur})
+	res := bench.RunKV(*addr, bench.KVOptions{Concurrency: *conc, Keys: *keys, ReadRatio: *readRatio, Duration: *dur, Namespace: *namespace})
 	fmt.Printf("# KV benchmark: concurrency=%d, duration=%s, read-ratio=%.0f%%\n", *conc, *dur, *readRatio*100)
 	fmt.Println(res.Get.Report("kv-get", *dur))
 	fmt.Println(res.Put.Report("kv-put", *dur))

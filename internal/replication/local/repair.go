@@ -19,6 +19,8 @@ import (
 type RecordReader interface {
 	GetRecord(namespace string, key []byte) (*wavespanv1.StoredRecord, bool, error)
 	ScanRange(namespace string, start, end []byte, limit int, nowMs int64) ([]recordstore.ScanRow, error)
+	// ScanRecordsFrom pages the full winning records of a namespace from a cursor (for backfill).
+	ScanRecordsFrom(namespace string, start []byte, limit int) ([]*wavespanv1.StoredRecord, []byte, error)
 }
 
 // RepairConfig tunes the repair engine (design/23_repair_engine.md).
@@ -46,10 +48,27 @@ type RepairEngine struct {
 	policy        placement.Policy
 	targetHolders int
 	cfg           RepairConfig
+	everywhere    func(namespace string) bool
 
 	mu      sync.Mutex
 	queue   repairQueue
 	pending map[string]bool
+}
+
+// SetEverywhere installs the predicate selecting namespaces replicated to all nodes (their repair
+// target is the full alive set, and repair pushes to every missing alive member).
+func (r *RepairEngine) SetEverywhere(fn func(namespace string) bool) { r.everywhere = fn }
+
+func (r *RepairEngine) isEverywhere(ns string) bool { return r.everywhere != nil && r.everywhere(ns) }
+
+func (r *RepairEngine) aliveMemberCount() int {
+	n := 0
+	for _, m := range r.cluster.Members() {
+		if m.State == membership.StateAlive {
+			n++
+		}
+	}
+	return n
 }
 
 // NewRepairEngine wires a repair engine.
@@ -76,6 +95,15 @@ func NewRepairEngine(self membership.Member, cluster Cluster, graph *latencygrap
 // effectiveTarget caps the target durable-holder count by the alive cluster size.
 func (r *RepairEngine) effectiveTarget() int {
 	return capTarget(r.targetHolders, r.cluster.Members())
+}
+
+// effectiveTargetFor is the target holder count for a namespace: every alive node for an
+// "everywhere" namespace, otherwise the capped nearby target.
+func (r *RepairEngine) effectiveTargetFor(ns string) int {
+	if r.isEverywhere(ns) {
+		return r.aliveMemberCount()
+	}
+	return r.effectiveTarget()
 }
 
 // aliveHolderCount counts a key's holders that are still alive.
@@ -146,7 +174,8 @@ func (r *RepairEngine) ProcessOne(ctx context.Context) bool {
 	if !ok {
 		return false
 	}
-	if r.aliveHolderCount(it.Namespace, it.Key) >= r.effectiveTarget() {
+	target := r.effectiveTargetFor(it.Namespace)
+	if r.aliveHolderCount(it.Namespace, it.Key) >= target {
 		return true // already healed
 	}
 	rec := it.Record
@@ -160,28 +189,45 @@ func (r *RepairEngine) ProcessOne(ctx context.Context) bool {
 	v := version.FromProto(rec.GetVersion())
 	req := BuildRequest(it.Namespace, it.Key, rec, r.self.MemberID)
 
-	cands, err := placement.Select(r.self, r.cluster.Members(), r.graph, r.policy)
-	if err == nil {
-		for _, c := range cands {
-			if r.isHolder(it.Namespace, it.Key, c.Member.MemberID) {
-				continue
-			}
-			callCtx, cancel := context.WithTimeout(ctx, r.cfg.WriteTimeout)
-			resp, rerr := r.replicator.StoreReplica(callCtx, c.Member, req)
-			cancel()
-			if rerr == nil && resp.GetDurable() {
-				r.holders.RecordHolder(it.Namespace, it.Key, c.Member.MemberID, v)
-				if r.aliveHolderCount(it.Namespace, it.Key) >= r.effectiveTarget() {
-					return true
-				}
+	cands := r.repairCandidates(it.Namespace)
+	for _, c := range cands {
+		if r.isHolder(it.Namespace, it.Key, c.Member.MemberID) {
+			continue
+		}
+		callCtx, cancel := context.WithTimeout(ctx, r.cfg.WriteTimeout)
+		resp, rerr := r.replicator.StoreReplica(callCtx, c.Member, req)
+		cancel()
+		if rerr == nil && resp.GetDurable() {
+			r.holders.RecordHolder(it.Namespace, it.Key, c.Member.MemberID, v)
+			if r.aliveHolderCount(it.Namespace, it.Key) >= target {
+				return true
 			}
 		}
 	}
 	// still short: re-enqueue for another pass (a future candidate may become available).
-	if r.aliveHolderCount(it.Namespace, it.Key) < r.effectiveTarget() {
+	if r.aliveHolderCount(it.Namespace, it.Key) < target {
 		r.Enqueue(RepairItem{Namespace: it.Namespace, Key: it.Key, Record: rec})
 	}
 	return true
+}
+
+// repairCandidates returns the members repair may push to: every alive member for an "everywhere"
+// namespace, otherwise the latency-graph-selected nearby candidates.
+func (r *RepairEngine) repairCandidates(ns string) []placement.Candidate {
+	if r.isEverywhere(ns) {
+		var cands []placement.Candidate
+		for _, m := range r.cluster.Members() {
+			if m.State == membership.StateAlive && m.Member.MemberID != r.self.MemberID {
+				cands = append(cands, placement.Candidate{Member: m.Member})
+			}
+		}
+		return cands
+	}
+	cands, err := placement.Select(r.self, r.cluster.Members(), r.graph, r.policy)
+	if err != nil {
+		return nil
+	}
+	return cands
 }
 
 func (r *RepairEngine) isHolder(namespace string, key []byte, member string) bool {

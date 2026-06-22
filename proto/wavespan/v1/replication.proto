@@ -89,12 +89,26 @@ message ScanLocalResponse {
   repeated ScanLocalRow rows = 1;
 }
 
+// BackfillRequest streams a holder's full records for a namespace, paginated by cursor, so a joining
+// node can bootstrap an "everywhere"-replicated namespace (design/05 node sync).
+message BackfillRequest {
+  string namespace = 1;
+  bytes cursor = 2; // empty starts at the beginning; echo back next_cursor to continue
+  uint32 limit = 3; // max records per page (server-capped)
+}
+
+message BackfillResponse {
+  repeated StoredRecord records = 1;
+  bytes next_cursor = 2; // empty => the end of the namespace was reached
+}
+
 // ReplicationService is the internal replica-write + cache API (mTLS-only in production, design/15).
 service ReplicationService {
   rpc StoreReplica(StoreReplicaRequest) returns (StoreReplicaResponse);
   rpc FetchReplica(FetchReplicaRequest) returns (FetchReplicaResponse);
   rpc SubscribeKey(SubscribeKeyRequest) returns (stream CacheUpdate);
   rpc ScanLocal(ScanLocalRequest) returns (ScanLocalResponse);
+  rpc Backfill(BackfillRequest) returns (BackfillResponse);
 }
 
 // --- Global active-active replication (M7, design/06) ---

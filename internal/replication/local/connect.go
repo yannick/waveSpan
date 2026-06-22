@@ -110,6 +110,22 @@ func (s *ReplicaServer) FetchReplica(_ context.Context, req *connect.Request[wav
 	return connect.NewResponse(resp), nil
 }
 
+const backfillMaxPage = 1024
+
+// Backfill streams this holder's full records for a namespace, paginated, so a joining node can
+// bootstrap an "everywhere"-replicated namespace (design/05 node sync).
+func (s *ReplicaServer) Backfill(_ context.Context, req *connect.Request[wavespanv1.BackfillRequest]) (*connect.Response[wavespanv1.BackfillResponse], error) {
+	limit := int(req.Msg.GetLimit())
+	if limit <= 0 || limit > backfillMaxPage {
+		limit = backfillMaxPage
+	}
+	recs, next, err := s.reader.ScanRecordsFrom(req.Msg.GetNamespace(), req.Msg.GetCursor(), limit)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&wavespanv1.BackfillResponse{Records: recs, NextCursor: next}), nil
+}
+
 // ScanLocal scans this holder's local store over a subrange (routed-eventual scan, M6).
 func (s *ReplicaServer) ScanLocal(_ context.Context, req *connect.Request[wavespanv1.ScanLocalRequest]) (*connect.Response[wavespanv1.ScanLocalResponse], error) {
 	rows, err := s.reader.ScanRange(req.Msg.GetNamespace(), req.Msg.GetStartKey(), req.Msg.GetEndKey(), int(req.Msg.GetLimit()), time.Now().UnixMilli())
