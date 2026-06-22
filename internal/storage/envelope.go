@@ -12,6 +12,27 @@ import (
 // authoritative wire/disk forms (design/02_storage_wavesdb.md). They are plain protobuf, so
 // encode/decode is proto marshal/unmarshal; these wrappers centralise it and the key layout.
 
+// marshalOpts is reused for the append-marshal helpers below.
+var marshalOpts = proto.MarshalOptions{}
+
+// AppendStoredRecord / AppendLatestPointer / AppendMutationEnvelope marshal onto an existing buffer
+// (proto MarshalAppend) so the caller can reuse one pooled buffer per write instead of allocating a
+// fresh slice per encode. The returned bytes are only valid until the buffer is next reused, so the
+// caller must copy them (the storage write path does, via the engine's per-commit copy).
+func AppendStoredRecord(buf []byte, r *wavespanv1.StoredRecord) ([]byte, error) {
+	return marshalOpts.MarshalAppend(buf, r)
+}
+
+// AppendLatestPointer marshals a LatestPointer onto buf.
+func AppendLatestPointer(buf []byte, p *wavespanv1.LatestPointer) ([]byte, error) {
+	return marshalOpts.MarshalAppend(buf, p)
+}
+
+// AppendMutationEnvelope marshals a MutationEnvelope onto buf.
+func AppendMutationEnvelope(buf []byte, m *wavespanv1.MutationEnvelope) ([]byte, error) {
+	return marshalOpts.MarshalAppend(buf, m)
+}
+
 // EncodeStoredRecord marshals a StoredRecord.
 func EncodeStoredRecord(r *wavespanv1.StoredRecord) ([]byte, error) { return proto.Marshal(r) }
 

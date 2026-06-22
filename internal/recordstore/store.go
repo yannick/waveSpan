@@ -1,6 +1,7 @@
 package recordstore
 
 import (
+	"sync"
 	"sync/atomic"
 
 	"github.com/cwire/wavespan/internal/storage"
@@ -98,17 +99,9 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 		}
 	}
 
-	recBytes, err := storage.EncodeStoredRecord(rec)
-	if err != nil {
-		return version.Version{}, err
-	}
 	lp := &wavespanv1.LatestPointer{Winner: winner.ToProto(), Tombstone: winnerTombstone}
 	if winnerExpiry != nil {
 		lp.ExpiresAtUnixMs = proto.Int64(*winnerExpiry)
-	}
-	lpBytes, err := storage.EncodeLatestPointer(lp)
-	if err != nil {
-		return version.Version{}, err
 	}
 	env := &wavespanv1.MutationEnvelope{
 		MutationId: recVer.MutationID(), Kind: kind, LogicalKey: key, Value: rec.GetValue(),
@@ -119,10 +112,30 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 	if rec.ExpiresAtUnixMs != nil {
 		env.ExpiresAtUnixMs = proto.Int64(rec.GetExpiresAtUnixMs())
 	}
-	envBytes, err := storage.EncodeMutationEnvelope(env)
-	if err != nil {
+
+	// Marshal the three records into ONE pooled buffer (MarshalAppend), then slice out each section.
+	// The storage layer copies each value on commit, so the buffer is transient and recycled. Offsets
+	// are captured first, then sliced after all appends, since appending may reallocate the buffer.
+	bp := encBufPool.Get().(*[]byte)
+	buf := (*bp)[:0]
+	var off1, off2, off3 int
+	var err error
+	if buf, err = storage.AppendStoredRecord(buf, rec); err != nil {
+		encBufPool.Put(bp)
 		return version.Version{}, err
 	}
+	off1 = len(buf)
+	if buf, err = storage.AppendLatestPointer(buf, lp); err != nil {
+		encBufPool.Put(bp)
+		return version.Version{}, err
+	}
+	off2 = len(buf)
+	if buf, err = storage.AppendMutationEnvelope(buf, env); err != nil {
+		encBufPool.Put(bp)
+		return version.Version{}, err
+	}
+	off3 = len(buf)
+	recBytes, lpBytes, envBytes := buf[:off1], buf[off1:off2], buf[off2:off3]
 
 	ops := []storage.StoreOp{
 		{CF: storage.CFKVData, Key: dataKey(ns, key, recVer), Value: recBytes},
@@ -135,11 +148,18 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 			CF: storage.CFKVMeta, Key: ttlKey(rec.GetExpiresAtUnixMs(), ns, key), Value: encodeVersion(recVer),
 		})
 	}
-	if err := s.local.Batch(ops); err != nil {
+	err = s.local.Batch(ops)
+	*bp = buf
+	encBufPool.Put(bp) // safe: Batch has copied every value
+	if err != nil {
 		return version.Version{}, err
 	}
 	return winner, nil
 }
+
+// encBufPool recycles the per-write proto-encode buffer (StoredRecord + LatestPointer +
+// MutationEnvelope marshaled together), keeping the hot write path allocation-light.
+var encBufPool = sync.Pool{New: func() any { b := make([]byte, 0, 1024); return &b }}
 
 // ScanRow is one row returned by a local range scan.
 type ScanRow struct {
@@ -241,6 +261,49 @@ func (s *Store) ScanRecords(namespace string, start, end []byte) ([]*wavespanv1.
 		it.Next()
 	}
 	return out, it.Err()
+}
+
+// ScanRecordsFrom scans up to limit winning records whose user key is >= start, returning them and
+// the cursor to resume strictly after the last one (nil when the namespace end is reached). It bounds
+// per-call work + allocation for incremental sweeps (e.g. intra-cluster anti-entropy) instead of
+// materializing the whole namespace.
+func (s *Store) ScanRecordsFrom(namespace string, start []byte, limit int) (recs []*wavespanv1.StoredRecord, next []byte, err error) {
+	lo := latestKey(namespace, start)
+	if start == nil {
+		lo = namespacePrefix(namespace)
+	}
+	hi := prefixEnd(namespacePrefix(namespace))
+	it, err := s.local.Scan(storage.CFKVMeta, lo, hi, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = it.Close() }()
+	nsPrefixLen := len(namespacePrefix(namespace))
+	var lastKey []byte
+	count := 0
+	for it.Valid() {
+		k := it.Key()
+		userKey := append([]byte(nil), k[nsPrefixLen:]...)
+		lastKey = userKey
+		count++
+		if lp, derr := storage.DecodeLatestPointer(it.Value()); derr == nil {
+			win := version.FromProto(lp.GetWinner())
+			if rb, found, gerr := s.local.Get(storage.CFKVData, dataKey(namespace, userKey, win)); gerr == nil && found {
+				if rec, rerr := storage.DecodeStoredRecord(rb); rerr == nil {
+					recs = append(recs, rec)
+				}
+			}
+		}
+		it.Next()
+	}
+	if ierr := it.Err(); ierr != nil {
+		return nil, nil, ierr
+	}
+	// A short page means we reached the end of the namespace — resume from the top next sweep.
+	if limit > 0 && count >= limit && lastKey != nil {
+		next = append(append([]byte(nil), lastKey...), 0x00) // strictly after lastKey
+	}
+	return recs, next, nil
 }
 
 // ExpiredEntry is a ttl-indexed key whose bucket is due, for the sweeper. IndexKey is the raw
