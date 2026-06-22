@@ -97,8 +97,9 @@ backend signatures differ from `KVAccess`, and that is exactly its job:
 - **`Get`** → `reader.Get(ctx, namespace, key, /*hideExpired*/ true)`. Real signature is
   `func (r *Reader) Get(ctx, namespace string, key []byte, hideExpired bool) (*wavespanv1.GetResult, error)`
   (`read.go:91`). The adapter unpacks `GetResult.GetFound()` / `GetResult.GetValue()` into
-  `(value, found)`. `read.go:130` already sets `Found:false` for tombstoned/expired records,
-  so the "→ null" behavior falls out naturally. This routed read is local-first with a
+  `(value, found)`. `GetResult.Found` is already false for tombstoned records (propagated
+  from the store as `out.Found`) and is force-set false for expired records
+  (`read.go:140-141`), so the "→ null" behavior falls out naturally. This routed read is local-first with a
   closest-holder cache fetch, so `kv.get` is correct cluster-wide.
 - **`Put`** → `Coordinator.Put(ctx, namespace, key, value, ttlMs, /*idemKey*/ "")`. Real
   signature returns `(PutOutcome, error)` where `PutOutcome.Version` is a `version.Version`
