@@ -55,6 +55,12 @@ func (s *Service) SetStateObserver(fn func(memberID string, newState State)) {
 	s.roster.SetStateObserver(fn)
 }
 
+// SetGossipObserver installs the gossip-event tap so probes, latency-edge updates, and holder
+// summaries surface in the gossip inspector (design/26).
+func (s *Service) SetGossipObserver(o GossipObserver) {
+	s.gossip.SetObserver(o)
+}
+
 // SetHolderHooks installs the holder-summary provider/consumer so the cache directory's bloom
 // rides gossip (design/04 "Holder summaries").
 func (s *Service) SetHolderHooks(provide func() HolderSummaryWire, consume func(HolderSummaryWire)) {

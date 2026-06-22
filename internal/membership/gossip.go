@@ -6,7 +6,18 @@ import (
 	"time"
 
 	"github.com/cwire/wavespan/internal/latencygraph"
+	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 )
+
+// GossipObserver receives decoded gossip-agent events for the observability tap (design/26). Each
+// gossip round reports its probe (with measured RTT), the resulting latency-graph edge, and any
+// piggybacked holder summaries, so the gossip inspector shows live traffic rather than only the rare
+// liveness transition. Implemented by *observability.GossipTap; nil disables tapping.
+type GossipObserver interface {
+	Ping(peer string, dir wavespanv1.GossipDirection, rttMs float64, sizeBytes uint32)
+	HolderSummary(peer string, dir wavespanv1.GossipDirection, watermark, approxCount uint64, sizeBytes uint32)
+	LatencyEdge(peer string, ewmaMs, p95Ms float64)
+}
 
 // HolderSummaryWire is a gossiped compact holder advertisement (design/04 "Holder summaries"):
 // a bloom filter over the keys a member holds. The cache directory provides/consumes these.
@@ -54,6 +65,7 @@ type Gossip struct {
 
 	provideSummary func() HolderSummaryWire
 	consumeSummary func(HolderSummaryWire)
+	observer       GossipObserver
 }
 
 // SetHolderHooks installs the holder-summary provider (this node's summary, gossiped outbound)
@@ -63,12 +75,17 @@ func (g *Gossip) SetHolderHooks(provide func() HolderSummaryWire, consume func(H
 	g.consumeSummary = consume
 }
 
-func (g *Gossip) consumeSummaries(ss []HolderSummaryWire) {
-	if g.consumeSummary == nil {
-		return
-	}
+// SetObserver installs the gossip-event tap (design/26). nil disables tapping.
+func (g *Gossip) SetObserver(o GossipObserver) { g.observer = o }
+
+func (g *Gossip) consumeSummaries(dir wavespanv1.GossipDirection, ss []HolderSummaryWire) {
 	for _, s := range ss {
-		g.consumeSummary(s)
+		if g.observer != nil {
+			g.observer.HolderSummary(s.MemberID, dir, uint64(s.GeneratedAtUnixMs), 0, uint32(len(s.Bloom)))
+		}
+		if g.consumeSummary != nil {
+			g.consumeSummary(s)
+		}
 	}
 }
 
@@ -90,10 +107,13 @@ func (g *Gossip) HandleGossip(in *GossipMessage) *GossipMessage {
 	now := g.now()
 	g.roster.Upsert(in.From, now)
 	g.roster.ObserveAck(in.From.MemberID, now)
+	if g.observer != nil {
+		g.observer.Ping(in.From.MemberID, wavespanv1.GossipDirection_GOSSIP_RECV, 0, 0)
+	}
 	for _, mv := range in.Members {
 		g.roster.ApplyGossip(mv, now)
 	}
-	g.consumeSummaries(in.Summaries)
+	g.consumeSummaries(wavespanv1.GossipDirection_GOSSIP_RECV, in.Summaries)
 	return g.outgoing()
 }
 
@@ -122,8 +142,15 @@ func (g *Gossip) probe(ctx context.Context, peer MemberView) {
 	start := time.Now()
 	reply, err := g.transport.Ping(ctx, peer.Member.GossipAddr, msg)
 	if err == nil {
-		g.graph.AddSample(peer.Member.MemberID, time.Since(start), true, g.now())
+		rtt := time.Since(start)
+		g.graph.AddSample(peer.Member.MemberID, rtt, true, g.now())
 		g.roster.ObserveAck(peer.Member.MemberID, g.now())
+		if g.observer != nil {
+			g.observer.Ping(peer.Member.MemberID, wavespanv1.GossipDirection_GOSSIP_SEND, float64(rtt.Microseconds())/1000.0, 0)
+			if e, ok := g.graph.Edge(peer.Member.MemberID); ok {
+				g.observer.LatencyEdge(peer.Member.MemberID, e.EWMARttMs, e.P95RttMs)
+			}
+		}
 		g.merge(reply)
 		return
 	}
@@ -150,7 +177,7 @@ func (g *Gossip) merge(reply *GossipMessage) {
 	for _, mv := range reply.Members {
 		g.roster.ApplyGossip(mv, now)
 	}
-	g.consumeSummaries(reply.Summaries)
+	g.consumeSummaries(wavespanv1.GossipDirection_GOSSIP_RECV, reply.Summaries)
 }
 
 // outgoing builds the local gossip delta plus this node's holder summary.
