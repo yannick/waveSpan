@@ -1,0 +1,55 @@
+# WaveSpan Prometheus alert rules (design/14). Validate with:
+#   promtool check rules observability/alerts/wavespan_alerts.yaml
+# Every expr references a metric exported by the data node (see internal/*/metrics).
+groups:
+  - name: wavespan-replication
+    rules:
+      - alert: SustainedUnderReplication
+        expr: kv_under_replicated_keys_estimate > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Keys under the target replica count for 10m"
+          description: "kv_under_replicated_keys_estimate has been > 0 for 10m; repair is not keeping up."
+
+      - alert: RepairQueueBacklog
+        expr: kv_repair_queue_depth > 1000
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Repair queue backlog"
+          description: "kv_repair_queue_depth has exceeded 1000 for 15m."
+
+      - alert: GlobalReplicationLagHigh
+        expr: global_repl_out_lag_seconds > 60
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Outbound global replication lag high"
+          description: "global_repl_out_lag_seconds > 60 for 5m; a peer cluster is falling behind."
+
+      - alert: GlobalApplyErrors
+        expr: increase(global_repl_apply_errors_total[5m]) > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Inbound global replication apply errors"
+          description: "global_repl_apply_errors_total increased; inbound mutations are failing to apply."
+
+      - alert: AntiEntropyDivergence
+        expr: increase(global_repl_anti_entropy_divergent_ranges_total[30m]) > 0
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "Anti-entropy keeps finding divergent ranges"
+          description: "global_repl_anti_entropy_divergent_ranges_total keeps rising; convergence may be stalled."
+
+  - name: wavespan-ttl
+    rules:
+      - alert: TTLSweeperStalled
+        expr: rate(kv_ttl_tombstones_written_total[1h]) == 0 and kv_under_replicated_keys_estimate >= 0
+        for: 2h
+        labels: { severity: info }
+        annotations:
+          summary: "TTL sweeper has emitted no tombstones in 2h"
+          description: "kv_ttl_tombstones_written_total is flat; expected if no TTL keys exist."

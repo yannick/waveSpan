@@ -1,0 +1,43 @@
+{
+  "title": "WaveSpan Overview",
+  "uid": "wavespan-overview",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "id": 1, "title": "Under-replicated keys (repair signal)", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [ { "expr": "kv_under_replicated_keys_estimate", "legendFormat": "{{instance}}" } ]
+    },
+    {
+      "id": 2, "title": "Repair queue depth", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [ { "expr": "kv_repair_queue_depth", "legendFormat": "{{instance}}" } ]
+    },
+    {
+      "id": 3, "title": "Global replication lag (out/in)", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "global_repl_out_lag_seconds", "legendFormat": "out {{instance}}" },
+        { "expr": "global_repl_in_lag_seconds", "legendFormat": "in {{instance}}" }
+      ]
+    },
+    {
+      "id": 4, "title": "Global bytes sent/received", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "rate(global_repl_bytes_sent_total[5m])", "legendFormat": "sent" },
+        { "expr": "rate(global_repl_bytes_received_total[5m])", "legendFormat": "received" }
+      ]
+    },
+    {
+      "id": 5, "title": "Anti-entropy divergent ranges", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [ { "expr": "rate(global_repl_anti_entropy_divergent_ranges_total[15m])", "legendFormat": "divergent" } ]
+    },
+    {
+      "id": 6, "title": "TTL tombstones written", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [ { "expr": "rate(kv_ttl_tombstones_written_total[5m])", "legendFormat": "{{instance}}" } ]
+    }
+  ]
+}
