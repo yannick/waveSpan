@@ -29,16 +29,50 @@ type NamespaceConfig struct {
 	Name                     string `yaml:"name"`
 	ConflictPolicy           string `yaml:"conflictPolicy"` // "" => hlc-last-write-wins
 	GlobalDurabilityRequired bool   `yaml:"globalDurabilityRequired"`
-	// ReplicationFactor selects how widely writes in this namespace are replicated: "" (default) uses
-	// the cluster's nearby target-N; "all" replicates every record to EVERY alive node (reference /
-	// "everywhere" data), and a joining node streams the existing records on bootstrap; a positive
-	// integer overrides the target holder count for this namespace.
+	// ReplicationFactor selects how widely writes in this namespace are replicated:
+	//   ""       => the cluster's nearby target-N (default);
+	//   "N"      => override the target holder count for this namespace;
+	//   "all"    => every node of the CURRENT cluster (does NOT cross to peer clusters);
+	//   "global" => every node of EVERY cluster (current cluster + shipped to all peers).
+	// "all"/"global" also stream existing records to a joining node on bootstrap.
 	ReplicationFactor string `yaml:"replicationFactor"`
 }
 
-// ReplicateEverywhere reports whether this namespace replicates to all nodes.
+// GlobalScope says whether a namespace crosses the global (cross-cluster) boundary — orthogonal to
+// how widely it replicates WITHIN a cluster.
+type GlobalScope int
+
+const (
+	// GlobalScopeDefault follows the cluster's global-replication config (ships to peers iff global
+	// replication is enabled) — the historical behaviour for unmarked namespaces.
+	GlobalScopeDefault GlobalScope = iota
+	// GlobalScopeLocalOnly never ships to peer clusters ("all" = the CURRENT cluster only).
+	GlobalScopeLocalOnly
+	// GlobalScopeGlobal always ships to peer clusters ("global" = every node of every cluster).
+	GlobalScopeGlobal
+)
+
+// ReplicateEverywhere reports whether this namespace replicates to every node of a cluster (true for
+// both "all" — local cluster only — and "global" — every cluster).
 func (n NamespaceConfig) ReplicateEverywhere() bool {
-	return strings.EqualFold(strings.TrimSpace(n.ReplicationFactor), "all")
+	switch strings.ToLower(strings.TrimSpace(n.ReplicationFactor)) {
+	case "all", "global":
+		return true
+	default:
+		return false
+	}
+}
+
+// Scope maps the replication factor to its cross-cluster behaviour.
+func (n NamespaceConfig) Scope() GlobalScope {
+	switch strings.ToLower(strings.TrimSpace(n.ReplicationFactor)) {
+	case "all":
+		return GlobalScopeLocalOnly
+	case "global":
+		return GlobalScopeGlobal
+	default:
+		return GlobalScopeDefault
+	}
 }
 
 // applyGlobalEnv layers WAVESPAN_GLOBAL_* overrides.
@@ -61,11 +95,20 @@ func (c *Config) applyGlobalEnv(get func(string) (string, bool)) {
 		}
 	}
 	// WAVESPAN_REPLICATE_EVERYWHERE_NAMESPACES=ref,config marks namespaces whose records live on
-	// every node (and are streamed to a joining node on bootstrap).
+	// every node of the LOCAL cluster (current cluster only; streamed to a joining node on bootstrap).
 	if v, ok := get("WAVESPAN_REPLICATE_EVERYWHERE_NAMESPACES"); ok {
 		for _, ns := range strings.Split(v, ",") {
 			if ns = strings.TrimSpace(ns); ns != "" {
 				c.setNamespaceReplication(ns, "all")
+			}
+		}
+	}
+	// WAVESPAN_REPLICATE_GLOBAL_NAMESPACES=ref marks namespaces that live on every node of EVERY
+	// cluster (local everywhere + shipped to all peers).
+	if v, ok := get("WAVESPAN_REPLICATE_GLOBAL_NAMESPACES"); ok {
+		for _, ns := range strings.Split(v, ",") {
+			if ns = strings.TrimSpace(ns); ns != "" {
+				c.setNamespaceReplication(ns, "global")
 			}
 		}
 	}
@@ -82,11 +125,24 @@ func (c *Config) setNamespaceReplication(name, factor string) {
 	c.Namespaces = append(c.Namespaces, NamespaceConfig{Name: name, ReplicationFactor: factor})
 }
 
-// EverywhereNamespaces returns the set of namespaces that replicate to all nodes.
+// EverywhereNamespaces returns the set of namespaces that replicate to every node of a cluster
+// (both "all" and "global"); they share the intra-cluster fanout + join-time backfill.
 func (c *Config) EverywhereNamespaces() map[string]bool {
 	out := map[string]bool{}
 	for _, n := range c.Namespaces {
 		if n.ReplicateEverywhere() {
+			out[n.Name] = true
+		}
+	}
+	return out
+}
+
+// LocalOnlyNamespaces returns namespaces that must NOT cross the global boundary ("all"), so the
+// global tap skips them even when cross-cluster replication is enabled.
+func (c *Config) LocalOnlyNamespaces() map[string]bool {
+	out := map[string]bool{}
+	for _, n := range c.Namespaces {
+		if n.Scope() == GlobalScopeLocalOnly {
 			out[n.Name] = true
 		}
 	}

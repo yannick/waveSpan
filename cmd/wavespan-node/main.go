@@ -273,7 +273,11 @@ func run() error {
 		globalSrv = global.NewServer(applier, ae)
 		outlog := global.NewOutLog(store, cfg.GlobalReplication.OutLogDiskBudgetBytes)
 		peers := cfg.GlobalReplication.Peers
+		localOnly := cfg.LocalOnlyNamespaces() // "all" namespaces never cross to peer clusters
 		appendToPeers := func(ns string, key []byte, rec *wavespanv1.StoredRecord) {
+			if localOnly[ns] {
+				return // replicate-everywhere-in-THIS-cluster only; do not ship globally
+			}
 			m := &wavespanv1.GlobalMutation{
 				Id:        &wavespanv1.GlobalMutationId{ClusterId: self.ClusterID, MemberId: self.MemberID, WriterSequence: rec.GetVersion().GetWriterSequence()},
 				Namespace: ns, Key: key, Record: rec, Partition: global.Partition(ns, key),
@@ -354,6 +358,9 @@ func run() error {
 	svc.SetStateObserver(func(memberID string, st membership.State) {
 		gossipTap.StateChange(memberID, livenessKind(st), st.String())
 	})
+	// Tap the live gossip traffic (probes, latency edges, holder summaries) so the inspector shows
+	// continuous activity, not just the rare liveness transition.
+	svc.SetGossipObserver(gossipTap)
 	obsSvc := observability.NewObsService(gossipRing, svc, self, rstore).
 		WithUnderReplicated(func() uint64 { return uint64(holders.UnderReplicatedEstimate(targetHolders, isAlive)) }).
 		WithGraph(graphStore).      // enables the visual node explorer (GraphExplore)

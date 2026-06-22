@@ -22,13 +22,19 @@ namespaces:
 WAVESPAN_REPLICATE_EVERYWHERE_NAMESPACES=ref,config
 ```
 
-| factor | meaning |
-|---|---|
-| `""` (unset) | origin + `targetNearbyReplicas` nearby holders (the default) |
-| `"N"` | override the target holder count for this namespace |
-| `"all"` | **every alive node** holds every record |
+| factor | intra-cluster spread | crosses to peer clusters? |
+|---|---|---|
+| `""` (unset) | origin + `targetNearbyReplicas` nearby holders | follows the cluster's global config |
+| `"N"` | override the target holder count | follows the cluster's global config |
+| `"all"` | **every node of the current cluster** | **no** — current cluster only |
+| `"global"` | **every node of every cluster** | **yes** — shipped to all peers |
 
-### How "all" works on the write path
+`all` and `global` make the two axes explicit: both spread to every node *within* a cluster (and both
+backfill a joining node), but **`all` is local-only** (the write never leaves the cluster) while
+**`global` crosses the boundary** to every peer cluster. Env: `WAVESPAN_REPLICATE_EVERYWHERE_NAMESPACES`
+(=`all`) and `WAVESPAN_REPLICATE_GLOBAL_NAMESPACES` (=`global`).
+
+### How "all"/"global" work on the write path
 
 - **Fanout** (`Fanout.fillEverywhere`): after the origin+1 ack, the async fanout replicates the record
   to **every alive member**, not just nearby candidates.
