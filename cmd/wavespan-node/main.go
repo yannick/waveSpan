@@ -74,7 +74,8 @@ func run() error {
 	rstore := recordstore.NewStore(store, cfg.ClusterID, cfg.MemberID, version.NewClock(nil, 500), version.NewSequencer(0))
 	idem := local.NewIdempotency(0)
 	receiver := local.NewReceiver(rstore, cfg.MemberID, idem)
-	replicaSrv := local.NewReplicaServer(receiver, rstore, cfg.MemberID, self.DataAddr, nil)
+	subSource := cache.NewSubscriptionSource(rstore)
+	replicaSrv := local.NewReplicaServer(receiver, rstore, cfg.MemberID, self.DataAddr, subSource)
 
 	// Dynamic cache (M5): gossiped holder directory + closest-holder fetch + cache store.
 	nowMs := func() int64 { return time.Now().UnixMilli() }
@@ -88,7 +89,11 @@ func run() error {
 			cacheDir.ApplyPeerSummary(cache.HolderSummaryWire{MemberID: s.MemberID, Bloom: s.Bloom, GeneratedAtUnixMs: s.GeneratedAtUnixMs})
 		},
 	)
-	receiver.SetOnStored(cacheDir.AddHeldKey) // advertise replicas we durably store
+	onStored := func(ns string, key []byte) {
+		cacheDir.AddHeldKey(ns, key) // advertise via the gossiped holder bloom
+		subSource.Notify(ns, key)    // push the update to live cache subscribers
+	}
+	receiver.SetOnStored(onStored)
 	policy := placement.Policy{
 		TargetNearbyReplicas: cfg.Replication.TargetNearbyReplicas,
 		MinAckNearbyReplicas: cfg.Replication.MinAckNearbyReplicas,
@@ -130,15 +135,17 @@ func run() error {
 	targetHolders := policy.TargetNearbyReplicas + 1
 
 	coord := kv.NewCoordinator(rstore, self, svc, svc.Graph(), replicator, policy, idem, holders, fanout, 2*time.Second)
-	coord.SetOnStored(cacheDir.AddHeldKey) // advertise keys we originate
+	coord.SetOnStored(onStored) // advertise + notify on keys we originate
 	cacheStore := cache.NewStore(rstore, nowMs)
 	evictor := cache.NewEvictor(cacheStore, 10*time.Minute, nowMs)
 	fetcher := cache.NewFetcher(self, cacheDir, svc, svc.Graph(), http.DefaultClient)
-	reader := kv.NewReader(rstore, self).WithCache(fetcher, cacheStore)
+	subscriber := cache.NewSubscriber(self, cacheStore, fetcher, http.DefaultClient)
+	reader := kv.NewReader(rstore, self).WithCache(fetcher, cacheStore).WithSubscriber(subscriber)
 	kvSvc := kv.NewService(coord, reader, self)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	subscriber.SetBaseContext(ctx) // subscriptions live for the node lifetime, not per-request
 
 	// Data server on the data port: public KvService + internal ReplicationService.
 	dataMux := http.NewServeMux()

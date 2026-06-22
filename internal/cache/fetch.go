@@ -22,6 +22,7 @@ type FetchResult struct {
 	Found  bool
 	Record *wavespanv1.StoredRecord
 	Source string // member id that served the record
+	Offer  *wavespanv1.SubscriptionOffer
 }
 
 // Fetcher resolves the closest holder of a key from the gossiped directory and the latency
@@ -96,7 +97,7 @@ func (f *Fetcher) Fetch(ctx context.Context, namespace string, key []byte) (Fetc
 			continue // try the next holder
 		}
 		if resp.Msg.GetFound() {
-			return FetchResult{Found: true, Record: resp.Msg.GetRecord(), Source: m.MemberID}, nil
+			return FetchResult{Found: true, Record: resp.Msg.GetRecord(), Source: m.MemberID, Offer: resp.Msg.GetSubscriptionOffer()}, nil
 		}
 		// holder did not have it: follow alternate holder hints if any
 		for _, alt := range resp.Msg.GetAlternateHolderMemberIds() {
