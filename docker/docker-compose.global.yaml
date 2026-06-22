@@ -25,6 +25,7 @@ services:
       WAVESPAN_ZONE: zone-a
       WAVESPAN_STORAGE_PATH: /var/lib/wavespan
       WAVESPAN_TARGET_NEARBY_REPLICAS: "1"
+      WAVESPAN_VECTOR_INDEXES: "docs:docs:cosine:8"
       WAVESPAN_GLOBAL_MODE: active-active-async
       WAVESPAN_GLOBAL_PEERS: test-b@b1:7800,test-b@b2:7800
       WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
@@ -41,6 +42,7 @@ services:
       WAVESPAN_ZONE: zone-a
       WAVESPAN_STORAGE_PATH: /var/lib/wavespan
       WAVESPAN_TARGET_NEARBY_REPLICAS: "1"
+      WAVESPAN_VECTOR_INDEXES: "docs:docs:cosine:8"
       WAVESPAN_GLOBAL_MODE: active-active-async
       WAVESPAN_GLOBAL_PEERS: test-b@b1:7800,test-b@b2:7800
       WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
@@ -57,6 +59,7 @@ services:
       WAVESPAN_ZONE: zone-b
       WAVESPAN_STORAGE_PATH: /var/lib/wavespan
       WAVESPAN_TARGET_NEARBY_REPLICAS: "1"
+      WAVESPAN_VECTOR_INDEXES: "docs:docs:cosine:8"
       WAVESPAN_GLOBAL_MODE: active-active-async
       WAVESPAN_GLOBAL_PEERS: test-a@a1:7800,test-a@a2:7800
       WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
@@ -73,6 +76,7 @@ services:
       WAVESPAN_ZONE: zone-b
       WAVESPAN_STORAGE_PATH: /var/lib/wavespan
       WAVESPAN_TARGET_NEARBY_REPLICAS: "1"
+      WAVESPAN_VECTOR_INDEXES: "docs:docs:cosine:8"
       WAVESPAN_GLOBAL_MODE: active-active-async
       WAVESPAN_GLOBAL_PEERS: test-a@a1:7800,test-a@a2:7800
       WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
