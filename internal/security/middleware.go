@@ -93,6 +93,35 @@ func (id Identity) HTTPMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// EnforceHTTP wraps a handler with identity + authorization at the HTTP layer: it derives the
+// caller's role (from the verified client cert, or a dev header in dev mode) and authorizes the
+// Connect procedure named by the request path, rejecting unauthorized calls before the handler.
+// This is the single integration point for the data server.
+func (id Identity) EnforceHTTP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		role := RoleNone
+		switch {
+		case r.TLS != nil && len(r.TLS.PeerCertificates) > 0:
+			role = id.roleForCert(r.TLS.PeerCertificates[0])
+		case id.DevMode:
+			if h := r.Header.Get("X-WaveSpan-Role"); h != "" {
+				role = Role(h)
+			} else {
+				role = RoleAdmin // insecure dev mode without an explicit role: full access
+			}
+		}
+		if !Allowed(role, SurfaceForProcedure(r.URL.Path)) {
+			if role == RoleNone {
+				http.Error(w, "unauthenticated", http.StatusUnauthorized)
+			} else {
+				http.Error(w, "forbidden", http.StatusForbidden)
+			}
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(WithRole(r.Context(), role)))
+	})
+}
+
 func (id Identity) roleForCert(cert *x509.Certificate) Role {
 	if id.CertRole == nil {
 		return RoleNone

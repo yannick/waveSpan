@@ -41,6 +41,10 @@ func run(args []string) error {
 		return kvCmd(args[1:])
 	case "members":
 		return membersCmd(args[1:])
+	case "backup":
+		return backupCmd(args[1:])
+	case "restore":
+		return restoreCmd(args[1:])
 	case "-h", "--help", "help":
 		usage()
 		return nil

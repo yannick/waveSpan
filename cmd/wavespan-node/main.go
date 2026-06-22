@@ -27,6 +27,7 @@ import (
 	"github.com/cwire/wavespan/internal/recordstore"
 	global "github.com/cwire/wavespan/internal/replication/global"
 	local "github.com/cwire/wavespan/internal/replication/local"
+	"github.com/cwire/wavespan/internal/security"
 	"github.com/cwire/wavespan/internal/storage"
 	"github.com/cwire/wavespan/internal/ttl"
 	"github.com/cwire/wavespan/internal/vector"
@@ -241,7 +242,11 @@ func run() error {
 	if globalSrv != nil {
 		dataMux.Handle(globalSrv.Handler())
 	}
-	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: dataMux, ReadHeaderTimeout: 5 * time.Second}
+	// Authorization (M12): enforce the role/surface matrix at the HTTP layer. In insecureDevMode the
+	// identity middleware grants admin (dev/compose); in production the role comes from the verified
+	// mTLS client certificate.
+	dataIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
+	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: dataIdentity.EnforceHTTP(dataMux), ReadHeaderTimeout: 5 * time.Second}
 
 	// Gossip server on the gossip port.
 	gossipMux := http.NewServeMux()
