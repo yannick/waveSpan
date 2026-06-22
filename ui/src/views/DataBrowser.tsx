@@ -10,7 +10,7 @@ export function DataBrowser() {
   const [scope, setScope] = useState<Scope>("cluster");
   const [namespace, setNamespace] = useState("default");
   const [query, setQuery] = useState("");
-  const [includeValue, setIncludeValue] = useState(false);
+  const [includeValue, setIncludeValue] = useState(true);
   const [keys, setKeys] = useState<InspectKey[]>([]);
   const [completeness, setCompleteness] = useState<Completeness | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
