@@ -17,7 +17,7 @@ func TestServesEmbeddedIndex(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "WaveSpan") {
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `id="root"`) {
 		t.Fatalf("index not served: status=%d body=%q", resp.StatusCode, body)
 	}
 	if resp.Header.Get("Cache-Control") != "no-cache" {
@@ -35,7 +35,7 @@ func TestSPAFallback(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "WaveSpan") {
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `id="root"`) {
 		t.Fatalf("SPA fallback failed: status=%d", resp.StatusCode)
 	}
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useUrlNumber, useUrlState } from "../router";
 import { obs } from "../transport";
 import { type GraphEdge, type GraphNode } from "../gen/wavespan/v1/observability_pb";
 import { Button, Card, FieldLabel, InlineMessage, Input, Table, Toolbar, Badge } from "../components";
@@ -68,9 +69,9 @@ function forceLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Pt> {
 }
 
 export function NodeExplorer() {
-  const [graphId, setGraphId] = useState("g");
-  const [seed, setSeed] = useState("");
-  const [depth, setDepth] = useState(2);
+  const [graphId, setGraphId] = useUrlState("graph", "g");
+  const [seed, setSeed] = useUrlState("seed", "");
+  const [depth, setDepth] = useUrlNumber("depth", 2);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [selected, setSelected] = useState<GraphNode | null>(null);
@@ -91,7 +92,8 @@ export function NodeExplorer() {
   };
 
   useEffect(() => {
-    explore("");
+    // Restore exactly what the URL describes: re-run the explore from the (possibly seeded) graph.
+    explore(seed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

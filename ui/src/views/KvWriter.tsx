@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useUrlState } from "../router";
 import { obs } from "../transport";
 import { MemberLiveness, type MemberState } from "../gen/wavespan/v1/admin_pb";
 import { type AdminPutResponse } from "../gen/wavespan/v1/observability_pb";
@@ -9,9 +10,11 @@ import { Badge, Button, InlineMessage, Input, Select, Spinner, Textarea } from "
 // admin endpoint (AdminPut), so the selected node becomes the origin and replicates from there.
 export function KvWriter() {
   const [members, setMembers] = useState<MemberState[]>([]);
-  const [target, setTarget] = useState(""); // "" = the node serving this UI
-  const [namespace, setNamespace] = useState("default");
-  const [key, setKey] = useState("");
+  // Addressing (which node + namespace + key) lives in the URL so a reload restores the same target;
+  // the value/ttl draft is intentionally local (not echoed into a shareable URL).
+  const [target, setTarget] = useUrlState("target", ""); // "" = the node serving this UI
+  const [namespace, setNamespace] = useUrlState("ns", "default");
+  const [key, setKey] = useUrlState("key", "");
   const [value, setValue] = useState("");
   const [ttl, setTtl] = useState("");
   const [busy, setBusy] = useState(false);

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { GossipInspector } from "./views/GossipInspector";
 import { DataBrowser } from "./views/DataBrowser";
 import { ClusterTopology } from "./views/ClusterTopology";
@@ -8,6 +7,7 @@ import { NodeExplorer } from "./views/NodeExplorer";
 import { KvWriter } from "./views/KvWriter";
 import { Documentation } from "./views/Documentation";
 import { Tabs, type TabItem, ThemeToggle } from "./components";
+import { DEFAULT_SCREEN, navigate, useEnsureScreen, useRoute } from "./router";
 
 type Tab =
   | "cypher"
@@ -30,8 +30,13 @@ const tabs: TabItem<Tab>[] = [
   { id: "docs", label: "Documentation" },
 ];
 
+const screens = new Set<string>(tabs.map((t) => t.id));
+
 export function App() {
-  const [tab, setTab] = useState<Tab>("cypher");
+  useEnsureScreen();
+  const { screen } = useRoute();
+  // The active screen comes from the URL hash (#/<screen>?…) so a reload or pasted URL restores it.
+  const tab = (screens.has(screen) ? screen : DEFAULT_SCREEN) as Tab;
   return (
     <div className="ws-app">
       <header className="ws-appbar">
@@ -44,7 +49,7 @@ export function App() {
         <ThemeToggle />
       </header>
 
-      <Tabs items={tabs} value={tab} onChange={setTab} />
+      <Tabs items={tabs} value={tab} onChange={(t) => navigate(t)} />
 
       <main className="ws-view">
         {tab === "cypher" && <CypherConsole />}

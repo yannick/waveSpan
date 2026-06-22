@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useUrlState } from "../router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
@@ -9,7 +10,8 @@ import { Button } from "../components";
 import "../docs/docs.css";
 
 export function Documentation() {
-  const [slug, setSlug] = useState(FIRST_DOC);
+  // The open doc lives in the URL so a reload / shared link opens the same page.
+  const [slug, setSlug] = useUrlState("doc", FIRST_DOC);
   const page = getDoc(slug) ?? DOC_PAGES[0];
 
   // Intercept `doc:<slug>` links so cross-references navigate within the browser.

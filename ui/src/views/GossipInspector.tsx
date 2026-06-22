@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useUrlBool, useUrlState } from "../router";
 import { obs } from "../transport";
 import { GossipDirection, GossipKind } from "../gen/wavespan/v1/observability_pb";
 import { Badge, Button, Checkbox, Table, Toolbar, type Tone } from "../components";
@@ -49,8 +50,14 @@ const DIR_NAMES: Record<number, string> = {
 
 export function GossipInspector() {
   const [rows, setRows] = useState<Row[]>([]);
-  const [paused, setPaused] = useState(false);
-  const [kinds, setKinds] = useState<Set<GossipKind>>(new Set());
+  // Pause + kind filter live in the URL so a reload restores the exact filtered live view.
+  const [paused, setPaused] = useUrlBool("paused", false);
+  const [kindsStr, setKindsStr] = useUrlState("kinds", "");
+  // Stable Set identity per filter string so the stream effect does not restart every render.
+  const kinds = useMemo(
+    () => new Set<GossipKind>(kindsStr ? kindsStr.split(",").filter(Boolean).map(Number) : []),
+    [kindsStr],
+  );
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -83,14 +90,13 @@ export function GossipInspector() {
       }
     })();
     return () => ac.abort();
-  }, [paused, kinds]);
+  }, [paused, kindsStr]);
 
-  const toggle = (k: GossipKind) =>
-    setKinds((prev) => {
-      const next = new Set(prev);
-      next.has(k) ? next.delete(k) : next.add(k);
-      return next;
-    });
+  const toggle = (k: GossipKind) => {
+    const next = new Set(kinds);
+    next.has(k) ? next.delete(k) : next.add(k);
+    setKindsStr([...next].map(String).sort().join(","));
+  };
 
   return (
     <div>
@@ -101,7 +107,7 @@ export function GossipInspector() {
       </p>
 
       <Toolbar style={{ marginBottom: "var(--ws-space-md)" }}>
-        <Button variant={paused ? "primary" : "secondary"} onClick={() => setPaused((p) => !p)}>
+        <Button variant={paused ? "primary" : "secondary"} onClick={() => setPaused(!paused)}>
           {paused ? "Resume" : "Pause"}
         </Button>
         {FILTERABLE.map((f) => (
