@@ -1,0 +1,476 @@
+/*
+ * Component classes for the WaveSpan primitive library. Each React primitive in
+ * ui/src/components applies one or more of these `.ws-*` classes. Keeping the
+ * interactive states (hover / focus / active) in CSS lets the components stay
+ * thin and theme-switching stay automatic through the CSS custom properties.
+ */
+
+/* =====================================================================
+ * Buttons
+ * ===================================================================== */
+.ws-btn {
+  --_bg: var(--ws-color-surface);
+  --_fg: var(--ws-color-ink);
+  --_bd: var(--ws-color-border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ws-space-sm);
+  font-family: var(--ws-font-sans);
+  font-size: var(--ws-text-body-sm-size);
+  font-weight: 700;
+  line-height: 1;
+  padding: var(--ws-space-sm) var(--ws-space-lg);
+  background: var(--_bg);
+  color: var(--_fg);
+  border: var(--ws-stroke-regular) solid var(--_bd);
+  border-radius: var(--ws-radius-sm);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: transform var(--ws-dur-fast) var(--ws-ease),
+    background var(--ws-dur-fast) var(--ws-ease),
+    box-shadow var(--ws-dur-fast) var(--ws-ease),
+    border-color var(--ws-dur-fast) var(--ws-ease);
+}
+.ws-btn:hover {
+  background: color-mix(in srgb, var(--_bg) 88%, var(--ws-color-ink));
+}
+.ws-btn:active {
+  transform: translateY(1px);
+}
+.ws-btn:focus-visible {
+  outline: var(--ws-stroke-strong) solid
+    color-mix(in srgb, var(--ws-color-teal) 55%, transparent);
+  outline-offset: 2px;
+}
+.ws-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ws-btn--primary {
+  --_bg: var(--ws-color-accent);
+  --_fg: var(--ws-color-on-accent);
+  --_bd: var(--ws-color-accent);
+}
+.ws-btn--primary:hover {
+  background: color-mix(in srgb, var(--ws-color-accent) 86%, var(--ws-color-ink));
+}
+.ws-btn--teal {
+  --_bg: var(--ws-color-teal);
+  --_fg: var(--ws-color-on-accent);
+  --_bd: var(--ws-color-teal);
+}
+.ws-btn--secondary {
+  --_bg: transparent;
+  --_fg: var(--ws-color-ink);
+  --_bd: var(--ws-color-border-strong);
+}
+.ws-btn--ghost {
+  --_bg: transparent;
+  --_fg: var(--ws-color-ink-muted);
+  --_bd: transparent;
+  padding-inline: var(--ws-space-md);
+}
+.ws-btn--ghost:hover {
+  background: color-mix(in srgb, var(--ws-color-ink) 8%, transparent);
+  color: var(--ws-color-ink);
+}
+.ws-btn--danger {
+  --_bg: transparent;
+  --_fg: var(--ws-color-danger);
+  --_bd: var(--ws-color-danger);
+}
+.ws-btn--sm {
+  font-size: var(--ws-text-caption-size);
+  padding: var(--ws-space-xs) var(--ws-space-md);
+}
+.ws-btn--icon {
+  padding: var(--ws-space-sm);
+  aspect-ratio: 1;
+}
+
+/* chip — a small selectable pill used for example queries / quick picks */
+.ws-chip {
+  font-family: var(--ws-font-mono);
+  font-size: var(--ws-text-caption-size);
+  padding: var(--ws-space-xs) var(--ws-space-md);
+  background: var(--ws-color-surface-alt);
+  color: var(--ws-color-ink);
+  border: var(--ws-stroke-hairline) solid var(--ws-color-border);
+  border-radius: var(--ws-radius-pill);
+  cursor: pointer;
+  transition: background var(--ws-dur-fast) var(--ws-ease);
+}
+.ws-chip:hover {
+  background: color-mix(in srgb, var(--ws-color-orange) 18%, var(--ws-color-surface-alt));
+  border-color: var(--ws-color-orange);
+}
+
+/* =====================================================================
+ * Tabs
+ * ===================================================================== */
+.ws-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ws-space-xs);
+  padding: var(--ws-space-xs);
+  background: var(--ws-color-surface-alt);
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-md);
+}
+.ws-tab {
+  font-family: var(--ws-font-sans);
+  font-size: var(--ws-text-body-sm-size);
+  font-weight: 700;
+  padding: var(--ws-space-sm) var(--ws-space-md);
+  background: transparent;
+  color: var(--ws-color-ink-muted);
+  border: none;
+  border-radius: var(--ws-radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--ws-dur-fast) var(--ws-ease),
+    color var(--ws-dur-fast) var(--ws-ease);
+}
+.ws-tab:hover {
+  color: var(--ws-color-ink);
+  background: color-mix(in srgb, var(--ws-color-ink) 6%, transparent);
+}
+.ws-tab[aria-selected="true"] {
+  background: var(--ws-color-ink);
+  color: var(--ws-color-paper);
+}
+
+/* =====================================================================
+ * Surfaces — cards & panels
+ * ===================================================================== */
+.ws-card {
+  position: relative;
+  background: var(--ws-color-surface);
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-md);
+  padding: var(--ws-space-lg);
+  overflow: hidden;
+}
+.ws-card--flat {
+  border-width: var(--ws-stroke-hairline);
+  border-color: var(--ws-color-border);
+}
+.ws-card--accent {
+  border-left-width: var(--ws-stroke-accent);
+  border-left-color: var(--_accent, var(--ws-color-accent));
+  padding-left: calc(var(--ws-space-lg) - var(--ws-stroke-accent) + var(--ws-stroke-regular));
+}
+
+.ws-panel {
+  background: var(--ws-color-surface);
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-md);
+  overflow: hidden;
+}
+.ws-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ws-space-md);
+  padding: var(--ws-space-md) var(--ws-space-lg);
+  background: var(--ws-color-surface-alt);
+  border-bottom: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+}
+.ws-panel__body {
+  padding: var(--ws-space-lg);
+}
+
+/* toolbar — a horizontal control strip */
+.ws-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ws-space-sm);
+}
+
+/* =====================================================================
+ * Form controls
+ * ===================================================================== */
+.ws-field {
+  font-family: var(--ws-font-sans);
+  font-size: var(--ws-text-body-sm-size);
+  color: var(--ws-color-ink);
+  background: var(--ws-color-paper);
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-sm);
+  padding: var(--ws-space-sm) var(--ws-space-md);
+  transition: border-color var(--ws-dur-fast) var(--ws-ease),
+    box-shadow var(--ws-dur-fast) var(--ws-ease);
+}
+.ws-field::placeholder {
+  color: color-mix(in srgb, var(--ws-color-ink-muted) 75%, transparent);
+}
+.ws-field:focus,
+.ws-field:focus-visible {
+  outline: none;
+  border-color: var(--ws-color-teal);
+  box-shadow: 0 0 0 var(--ws-stroke-strong)
+    color-mix(in srgb, var(--ws-color-teal) 28%, transparent);
+}
+.ws-field--mono {
+  font-family: var(--ws-font-mono);
+}
+textarea.ws-field {
+  resize: vertical;
+  line-height: 1.5;
+}
+select.ws-field {
+  cursor: pointer;
+  appearance: none;
+  padding-right: var(--ws-space-xl);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 14px) calc(50% - 2px),
+    calc(100% - 9px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.ws-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ws-space-xs);
+  font-size: var(--ws-text-caption-size);
+  color: var(--ws-color-ink-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.ws-checkbox input {
+  accent-color: var(--ws-color-teal);
+  width: 15px;
+  height: 15px;
+}
+
+.ws-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ws-space-xs);
+  font-size: var(--ws-text-caption-size);
+  color: var(--ws-color-ink-muted);
+}
+
+/* =====================================================================
+ * Badges & pills
+ * ===================================================================== */
+.ws-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ws-space-xs);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  line-height: 1;
+  padding: var(--ws-space-xs) var(--ws-space-sm);
+  border-radius: var(--ws-radius-pill);
+  background: color-mix(in srgb, var(--_tone, var(--ws-color-ink-muted)) 16%, var(--ws-color-paper));
+  color: color-mix(in srgb, var(--_tone, var(--ws-color-ink-muted)) 78%, var(--ws-color-ink));
+  border: var(--ws-stroke-hairline) solid
+    color-mix(in srgb, var(--_tone, var(--ws-color-ink-muted)) 45%, transparent);
+  white-space: nowrap;
+}
+.ws-badge--solid {
+  background: var(--_tone, var(--ws-color-ink));
+  color: var(--ws-color-on-accent);
+  border-color: var(--_tone, var(--ws-color-ink));
+}
+.ws-badge__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--_tone, var(--ws-color-ink-muted));
+}
+
+/* =====================================================================
+ * Tables
+ * ===================================================================== */
+.ws-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-md);
+}
+.ws-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ws-text-body-sm-size);
+}
+.ws-table thead th {
+  text-align: left;
+  font-size: var(--ws-text-label-size);
+  font-weight: 800;
+  letter-spacing: var(--ws-text-label-tracking);
+  text-transform: uppercase;
+  color: var(--ws-color-ink-muted);
+  background: var(--ws-color-surface-alt);
+  padding: var(--ws-space-sm) var(--ws-space-md);
+  border-bottom: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+}
+.ws-table tbody td {
+  padding: var(--ws-space-sm) var(--ws-space-md);
+  border-bottom: var(--ws-stroke-hairline) solid var(--ws-color-border);
+  vertical-align: top;
+}
+.ws-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.ws-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--ws-color-orange) 7%, transparent);
+}
+.ws-table--mono tbody td {
+  font-family: var(--ws-font-mono);
+  font-size: var(--ws-text-caption-size);
+}
+
+/* =====================================================================
+ * Code & keys
+ * ===================================================================== */
+.ws-code-inline {
+  font-family: var(--ws-font-mono);
+  font-size: 0.88em;
+  padding: 0.1em 0.4em;
+  background: var(--ws-color-surface-alt);
+  border: var(--ws-stroke-hairline) solid var(--ws-color-border);
+  border-radius: var(--ws-radius-xs);
+}
+.ws-kbd {
+  font-family: var(--ws-font-mono);
+  font-size: 0.82em;
+  padding: 0.15em 0.5em;
+  background: var(--ws-color-surface);
+  border: var(--ws-stroke-hairline) solid var(--ws-color-border-strong);
+  border-bottom-width: var(--ws-stroke-strong);
+  border-radius: var(--ws-radius-xs);
+}
+.ws-code-block {
+  font-family: var(--ws-font-mono);
+  font-size: var(--ws-text-caption-size);
+  line-height: 1.6;
+  background: var(--ws-color-surface-alt);
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-sm);
+  padding: var(--ws-space-md) var(--ws-space-lg);
+  overflow-x: auto;
+}
+
+/* =====================================================================
+ * Stat cards
+ * ===================================================================== */
+.ws-stat {
+  position: relative;
+  background: var(--ws-color-surface);
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-left: var(--ws-stroke-accent) solid var(--_accent, var(--ws-color-teal));
+  border-radius: var(--ws-radius-md);
+  padding: var(--ws-space-lg);
+  min-width: 160px;
+}
+.ws-stat__label {
+  font-size: var(--ws-text-label-size);
+  font-weight: 800;
+  letter-spacing: var(--ws-text-label-tracking);
+  text-transform: uppercase;
+  color: var(--ws-color-ink-muted);
+}
+.ws-stat__value {
+  font-size: 40px;
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -1px;
+  margin-top: var(--ws-space-xs);
+}
+.ws-stat__hint {
+  font-size: var(--ws-text-caption-size);
+  color: var(--ws-color-ink-muted);
+  margin-top: var(--ws-space-xs);
+}
+
+/* =====================================================================
+ * Misc — empty state, spinner, divider
+ * ===================================================================== */
+.ws-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ws-space-sm);
+  text-align: center;
+  padding: var(--ws-space-3xl) var(--ws-space-lg);
+  color: var(--ws-color-ink-muted);
+}
+
+.ws-spinner {
+  width: 18px;
+  height: 18px;
+  border: var(--ws-stroke-strong) solid
+    color-mix(in srgb, var(--ws-color-ink) 18%, transparent);
+  border-top-color: var(--ws-color-orange);
+  border-radius: 50%;
+  animation: ws-spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes ws-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ws-divider {
+  height: var(--ws-stroke-regular);
+  background: var(--ws-color-border);
+  border: none;
+  margin: var(--ws-space-lg) 0;
+}
+
+/* =====================================================================
+ * App shell
+ * ===================================================================== */
+.ws-app {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: var(--ws-space-xl);
+}
+.ws-appbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--ws-space-lg);
+  margin-bottom: var(--ws-space-xl);
+}
+.ws-wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ws-space-sm);
+}
+.ws-wordmark__glyph {
+  color: var(--ws-color-orange);
+}
+.ws-wordmark__sub {
+  font-size: var(--ws-text-caption-size);
+  font-weight: 800;
+  letter-spacing: var(--ws-text-label-tracking);
+  text-transform: uppercase;
+  color: var(--ws-color-ink-muted);
+}
+.ws-view {
+  margin-top: var(--ws-space-xl);
+}
+.ws-view__title {
+  margin-bottom: var(--ws-space-xs);
+}
+.ws-view__intro {
+  color: var(--ws-color-ink-muted);
+  margin: 0 0 var(--ws-space-lg);
+  max-width: 70ch;
+}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { obs } from "../transport";
 import { MemberLiveness, type MemberState } from "../gen/wavespan/v1/admin_pb";
 import { type AdminPutResponse } from "../gen/wavespan/v1/observability_pb";
+import { Badge, Button, InlineMessage, Input, Select, Spinner, Textarea } from "../components";
 
 // KvWriter is a small KV write client for testing: pick which cluster node coordinates the write
 // (origin), enter a record, and submit. The write is forwarded to the chosen node's data port by the
@@ -60,15 +61,19 @@ export function KvWriter() {
   const fmtVer = (v: AdminPutResponse["version"]) =>
     v ? `${v.hlcPhysicalMs}.${v.hlcLogical}@${v.writerMemberId}` : "";
 
+  const labelStyle = { fontWeight: 700 as const, fontSize: "var(--ws-text-body-sm-size)" };
+
   return (
-    <div style={{ maxWidth: 640 }}>
-      <p style={{ fontSize: 12, color: "#666" }}>
-        Write a KV record for testing. Choose which node coordinates the write (it becomes the origin
-        and replicates via origin+1). Reads in the Data Browser will then show it across the cluster.
+    <div style={{ maxWidth: 680 }}>
+      <h2 className="ws-title ws-view__title">KV Writer</h2>
+      <p className="ws-view__intro">
+        Write a KV record for testing. Choose which node coordinates the write — it becomes the origin
+        and replicates via origin+1. Reads in the Data Browser will then show it across the cluster.
       </p>
-      <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 8, alignItems: "center" }}>
-        <label>Coordinator</label>
-        <select value={target} onChange={(e) => setTarget(e.target.value)}>
+
+      <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: "var(--ws-space-md)", alignItems: "center" }}>
+        <label style={labelStyle}>Coordinator</label>
+        <Select value={target} onChange={(e) => setTarget(e.target.value)}>
           <option value="">This node (auto)</option>
           {members.map((m, i) => {
             const id = m.member?.memberId ?? "?";
@@ -79,39 +84,52 @@ export function KvWriter() {
               </option>
             );
           })}
-        </select>
+        </Select>
 
-        <label>Namespace</label>
-        <input value={namespace} onChange={(e) => setNamespace(e.target.value)} />
+        <label style={labelStyle}>Namespace</label>
+        <Input value={namespace} onChange={(e) => setNamespace(e.target.value)} mono />
 
-        <label>Key</label>
-        <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="e.g. user/42" />
+        <label style={labelStyle}>Key</label>
+        <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder="e.g. user/42" mono />
 
-        <label>Value</label>
-        <textarea value={value} onChange={(e) => setValue(e.target.value)} rows={3} placeholder="some text" />
+        <label style={labelStyle}>Value</label>
+        <Textarea value={value} onChange={(e) => setValue(e.target.value)} rows={3} placeholder="some text" />
 
-        <label>TTL (ms)</label>
-        <input value={ttl} onChange={(e) => setTtl(e.target.value)} placeholder="optional, blank = none" />
+        <label style={labelStyle}>TTL (ms)</label>
+        <Input value={ttl} onChange={(e) => setTtl(e.target.value)} placeholder="optional, blank = none" mono />
       </div>
 
-      <div style={{ marginTop: 12 }}>
-        <button onClick={submit} disabled={!canSubmit}>{busy ? "Writing…" : "Write record"}</button>
+      <div style={{ marginTop: "var(--ws-space-lg)" }}>
+        <Button variant="primary" onClick={submit} disabled={!canSubmit}>
+          {busy ? <Spinner /> : null}
+          {busy ? "Writing…" : "Write record"}
+        </Button>
       </div>
 
       {err && (
-        <div style={{ marginTop: 12, padding: 8, background: "#ffe9e9", fontSize: 13 }}>request failed: {err}</div>
+        <div style={{ marginTop: "var(--ws-space-lg)" }}>
+          <InlineMessage tone="danger">request failed: <span className="ws-mono">{err}</span></InlineMessage>
+        </div>
       )}
       {result && (
-        <div style={{ marginTop: 12, padding: 8, background: result.ok ? "#e9ffe9" : "#fff3cd", fontSize: 13 }}>
-          {result.ok ? (
-            <>
-              <div><b>written</b> via coordinator <b>{result.coordinatorMemberId}</b></div>
-              <div>version: {fmtVer(result.version)}</div>
-              <div>acked nearby replicas: {result.ackedNearbyReplicas}</div>
-            </>
-          ) : (
-            <div>write failed{result.coordinatorMemberId ? ` (coordinator ${result.coordinatorMemberId})` : ""}: {result.error}</div>
-          )}
+        <div style={{ marginTop: "var(--ws-space-lg)" }}>
+          <InlineMessage tone={result.ok ? "success" : "warning"}>
+            {result.ok ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--ws-space-xs)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--ws-space-sm)" }}>
+                  <Badge tone="success" dot>written</Badge>
+                  via coordinator <span className="ws-mono">{result.coordinatorMemberId}</span>
+                </div>
+                <div>version: <span className="ws-mono">{fmtVer(result.version)}</span></div>
+                <div>acked nearby replicas: <span className="ws-mono">{result.ackedNearbyReplicas}</span></div>
+              </div>
+            ) : (
+              <div>
+                write failed{result.coordinatorMemberId ? ` (coordinator ${result.coordinatorMemberId})` : ""}:{" "}
+                <span className="ws-mono">{result.error}</span>
+              </div>
+            )}
+          </InlineMessage>
         </div>
       )}
     </div>

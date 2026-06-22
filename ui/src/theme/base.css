@@ -1,0 +1,124 @@
+/*
+ * Global base styles for the WaveSpan UI. Applies the design tokens to the
+ * document, resets the box model, and defines the type-scale utility classes.
+ */
+
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/inter/800.css";
+@import "@fontsource/inter/900.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ws-color-paper);
+  color: var(--ws-color-ink);
+  font-family: var(--ws-font-sans);
+  font-size: var(--ws-text-body-size);
+  line-height: var(--ws-text-body-leading);
+  font-feature-settings: "cv05" 1, "ss01" 1; /* Inter: friendlier l / a */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background var(--ws-dur-normal) var(--ws-ease),
+    color var(--ws-dur-normal) var(--ws-ease);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--ws-color-teal);
+  text-decoration: none;
+  border-bottom: var(--ws-stroke-hairline) solid
+    color-mix(in srgb, var(--ws-color-teal) 40%, transparent);
+  transition: color var(--ws-dur-fast) var(--ws-ease);
+}
+a:hover {
+  color: var(--ws-color-orange);
+  border-bottom-color: color-mix(in srgb, var(--ws-color-orange) 60%, transparent);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--ws-color-orange) 30%, transparent);
+}
+
+/* ---- typography utilities ------------------------------------------- */
+.ws-headline {
+  font-size: var(--ws-text-headline-size);
+  font-weight: var(--ws-text-headline-weight);
+  line-height: var(--ws-text-headline-leading);
+  letter-spacing: var(--ws-text-headline-tracking);
+  margin: 0;
+}
+.ws-title {
+  font-size: var(--ws-text-title-size);
+  font-weight: var(--ws-text-title-weight);
+  line-height: var(--ws-text-title-leading);
+  margin: 0;
+}
+.ws-title-sm {
+  font-size: var(--ws-text-title-sm-size);
+  font-weight: var(--ws-text-title-sm-weight);
+  line-height: var(--ws-text-title-sm-leading);
+  margin: 0;
+}
+.ws-body {
+  font-size: var(--ws-text-body-size);
+  font-weight: var(--ws-text-body-weight);
+  line-height: var(--ws-text-body-leading);
+}
+.ws-body-sm {
+  font-size: var(--ws-text-body-sm-size);
+  line-height: var(--ws-text-body-sm-leading);
+}
+.ws-caption {
+  font-size: var(--ws-text-caption-size);
+  font-weight: var(--ws-text-caption-weight);
+  line-height: var(--ws-text-caption-leading);
+  color: var(--ws-color-ink-muted);
+}
+.ws-label {
+  font-size: var(--ws-text-label-size);
+  font-weight: var(--ws-text-label-weight);
+  letter-spacing: var(--ws-text-label-tracking);
+  text-transform: uppercase;
+}
+.ws-mono {
+  font-family: var(--ws-font-mono);
+}
+.ws-muted {
+  color: var(--ws-color-ink-muted);
+}
+
+/* ---- scrollbars ----------------------------------------------------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ws-color-border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ws-color-ink) 28%, transparent);
+  border-radius: var(--ws-radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ws-color-ink) 45%, transparent);
+  background-clip: padding-box;
+}

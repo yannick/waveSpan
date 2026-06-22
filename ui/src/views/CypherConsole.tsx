@@ -2,6 +2,19 @@ import { useState } from "react";
 import { cypher } from "../transport";
 import { Completeness } from "../gen/wavespan/v1/common_pb";
 import { type QueryMeta, type Value } from "../gen/wavespan/v1/cypher_pb";
+import {
+  Badge,
+  Button,
+  Chip,
+  FieldLabel,
+  InlineMessage,
+  Input,
+  Spinner,
+  Table,
+  Textarea,
+  Toolbar,
+  Kbd,
+} from "../components";
 
 function valueToString(v: Value | undefined): string {
   if (!v || !v.value) return "";
@@ -72,55 +85,81 @@ export function CypherConsole() {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
-        <label style={{ fontSize: 12 }}>
-          graph <input value={graphId} onChange={(e) => setGraphId(e.target.value)} style={{ width: 80 }} />
-        </label>
-        <select value="" onChange={(e) => e.target.value && setQuery(e.target.value)} style={{ fontSize: 12 }}>
-          <option value="">examples…</option>
-          {EXAMPLES.map((q) => (
-            <option key={q} value={q}>
-              {q.length > 50 ? q.slice(0, 50) + "…" : q}
-            </option>
-          ))}
-        </select>
-        <button onClick={run} disabled={running}>
+      <h2 className="ws-title ws-view__title">Cypher Console</h2>
+      <p className="ws-view__intro">
+        Run graph &amp; vector queries against this node. Results stream back eventually-consistent —
+        the trailer declares completeness. Press <Kbd>⌘</Kbd> <Kbd>↵</Kbd> to run.
+      </p>
+
+      <Toolbar style={{ marginBottom: "var(--ws-space-sm)" }}>
+        <FieldLabel>
+          graph
+          <Input value={graphId} onChange={(e) => setGraphId(e.target.value)} style={{ width: 80 }} mono />
+        </FieldLabel>
+        <Button variant="primary" onClick={run} disabled={running}>
+          {running ? <Spinner /> : null}
           {running ? "Running…" : "Run (⌘↵)"}
-        </button>
+        </Button>
+      </Toolbar>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--ws-space-xs)", marginBottom: "var(--ws-space-sm)" }}>
+        {EXAMPLES.map((q) => (
+          <Chip key={q} onClick={() => setQuery(q)} title={q}>
+            {q.length > 46 ? q.slice(0, 46) + "…" : q}
+          </Chip>
+        ))}
       </div>
-      <textarea
+
+      <Textarea
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={onKeyDown}
-        spellCheck={false}
-        style={{ width: "100%", height: 100, fontFamily: "ui-monospace, monospace", fontSize: 13, padding: 8, boxSizing: "border-box" }}
+        mono
+        style={{ width: "100%", height: 110, boxSizing: "border-box" }}
       />
-      {error && <div style={{ color: "#c62828", fontFamily: "monospace", fontSize: 12, padding: 8, background: "#ffebee", marginTop: 8 }}>{error}</div>}
+
+      {error && (
+        <div style={{ marginTop: "var(--ws-space-md)" }}>
+          <InlineMessage tone="danger">
+            <span className="ws-mono">{error}</span>
+          </InlineMessage>
+        </div>
+      )}
+
       {columns.length > 0 && (
-        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", marginTop: 8 }}>
-          <thead>
-            <tr style={{ textAlign: "left", borderBottom: "1px solid #ccc" }}>
-              {columns.map((c) => (
-                <th key={c}>{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
+        <div style={{ marginTop: "var(--ws-space-md)" }}>
+          <Table mono>
+            <thead>
+              <tr>
                 {columns.map((c) => (
-                  <td key={c}>{r[c] ?? ""}</td>
+                  <th key={c}>{c}</th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i}>
+                  {columns.map((c) => (
+                    <td key={c}>{r[c] ?? ""}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
       )}
+
       {meta && (
-        <div style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
-          {rows.length} rows · consistency=eventual · completeness={Completeness[meta.completeness]}
-          {meta.partialGraphPossible && " · partial graph possible"}
-          {meta.warnings.length > 0 && ` · warnings: ${meta.warnings.join("; ")}`}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--ws-space-sm)", alignItems: "center", marginTop: "var(--ws-space-md)" }}>
+          <Badge tone="neutral">{rows.length} rows</Badge>
+          <Badge tone="info">consistency: eventual</Badge>
+          <Badge tone={meta.completeness === Completeness.COMPLETE ? "success" : "warning"}>
+            completeness: {Completeness[meta.completeness]}
+          </Badge>
+          {meta.partialGraphPossible && <Badge tone="warning">partial graph possible</Badge>}
+          {meta.warnings.length > 0 && (
+            <span className="ws-caption">warnings: {meta.warnings.join("; ")}</span>
+          )}
         </div>
       )}
     </div>

@@ -1,0 +1,265 @@
+/*
+ * Styling for the in-app documentation browser: two-pane layout, prose
+ * typography bound to the design tokens, and a Linea-flavoured highlight.js
+ * theme (offline, no external CSS).
+ */
+
+.ws-docs {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: var(--ws-space-xl);
+  align-items: start;
+}
+
+/* ---- sidebar -------------------------------------------------------- */
+.ws-docs__nav {
+  position: sticky;
+  top: var(--ws-space-lg);
+  background: var(--ws-color-surface);
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-md);
+  padding: var(--ws-space-md);
+  max-height: calc(100vh - 2 * var(--ws-space-lg));
+  overflow-y: auto;
+}
+.ws-docs__section {
+  margin-bottom: var(--ws-space-md);
+}
+.ws-docs__section-title {
+  font-size: var(--ws-text-label-size);
+  font-weight: 800;
+  letter-spacing: var(--ws-text-label-tracking);
+  text-transform: uppercase;
+  color: var(--ws-color-ink-muted);
+  padding: var(--ws-space-xs) var(--ws-space-sm);
+  margin-bottom: var(--ws-space-xxs);
+}
+.ws-docs__link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: var(--ws-text-body-sm-size);
+  font-weight: 600;
+  color: var(--ws-color-ink);
+  background: transparent;
+  border: none;
+  border-radius: var(--ws-radius-sm);
+  padding: var(--ws-space-sm) var(--ws-space-sm);
+  cursor: pointer;
+  transition: background var(--ws-dur-fast) var(--ws-ease), color var(--ws-dur-fast) var(--ws-ease);
+}
+.ws-docs__link:hover {
+  background: color-mix(in srgb, var(--ws-color-ink) 7%, transparent);
+}
+.ws-docs__link[aria-current="true"] {
+  background: var(--ws-color-ink);
+  color: var(--ws-color-paper);
+}
+
+/* ---- prose ---------------------------------------------------------- */
+.ws-prose {
+  max-width: 78ch;
+  font-size: var(--ws-text-body-size);
+  line-height: 1.65;
+  color: var(--ws-color-ink);
+}
+.ws-prose > :first-child {
+  margin-top: 0;
+}
+.ws-prose h1 {
+  font-size: 36px;
+  font-weight: 900;
+  letter-spacing: -1px;
+  line-height: 1.05;
+  margin: 0 0 var(--ws-space-md);
+}
+.ws-prose h2 {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.15;
+  margin: var(--ws-space-xxl) 0 var(--ws-space-sm);
+  padding-bottom: var(--ws-space-xs);
+  border-bottom: var(--ws-stroke-regular) solid var(--ws-color-border);
+}
+.ws-prose h3 {
+  font-size: 18px;
+  font-weight: 800;
+  margin: var(--ws-space-xl) 0 var(--ws-space-xs);
+}
+.ws-prose h4 {
+  font-size: var(--ws-text-label-size);
+  font-weight: 800;
+  letter-spacing: var(--ws-text-label-tracking);
+  text-transform: uppercase;
+  color: var(--ws-color-ink-muted);
+  margin: var(--ws-space-lg) 0 var(--ws-space-xs);
+}
+.ws-prose p {
+  margin: 0 0 var(--ws-space-md);
+}
+.ws-prose ul,
+.ws-prose ol {
+  margin: 0 0 var(--ws-space-md);
+  padding-left: var(--ws-space-xl);
+}
+.ws-prose li {
+  margin-bottom: var(--ws-space-xs);
+}
+.ws-prose li::marker {
+  color: var(--ws-color-orange);
+}
+.ws-prose strong {
+  font-weight: 800;
+}
+.ws-prose hr {
+  height: var(--ws-stroke-regular);
+  background: var(--ws-color-border);
+  border: none;
+  margin: var(--ws-space-xl) 0;
+}
+.ws-prose blockquote {
+  margin: var(--ws-space-md) 0;
+  padding: var(--ws-space-sm) var(--ws-space-lg);
+  border-left: var(--ws-stroke-accent) solid var(--ws-color-teal);
+  background: color-mix(in srgb, var(--ws-color-teal) 9%, var(--ws-color-paper));
+  border-radius: var(--ws-radius-sm);
+  color: var(--ws-color-ink);
+}
+.ws-prose blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* anchored headings */
+.ws-prose :is(h1, h2, h3) {
+  scroll-margin-top: var(--ws-space-lg);
+}
+
+/* tables inside prose reuse the component look */
+.ws-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 var(--ws-space-md);
+  font-size: var(--ws-text-body-sm-size);
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-md);
+  overflow: hidden;
+}
+.ws-prose thead th {
+  text-align: left;
+  background: var(--ws-color-surface-alt);
+  font-weight: 800;
+  padding: var(--ws-space-sm) var(--ws-space-md);
+  border-bottom: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+}
+.ws-prose tbody td {
+  padding: var(--ws-space-sm) var(--ws-space-md);
+  border-bottom: var(--ws-stroke-hairline) solid var(--ws-color-border);
+  vertical-align: top;
+}
+.ws-prose tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ws-prose__lead {
+  font-size: var(--ws-text-title-sm-size);
+  line-height: 1.5;
+  color: var(--ws-color-ink-muted);
+  margin-bottom: var(--ws-space-lg);
+}
+
+/* ---- code ----------------------------------------------------------- */
+.ws-prose :not(pre) > code {
+  font-family: var(--ws-font-mono);
+  font-size: 0.86em;
+  padding: 0.12em 0.4em;
+  background: var(--ws-color-surface-alt);
+  border: var(--ws-stroke-hairline) solid var(--ws-color-border);
+  border-radius: var(--ws-radius-xs);
+  white-space: nowrap;
+}
+.ws-prose pre {
+  font-family: var(--ws-font-mono);
+  font-size: var(--ws-text-body-sm-size);
+  line-height: 1.6;
+  background: var(--ws-color-surface-alt);
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-md);
+  padding: var(--ws-space-md) var(--ws-space-lg);
+  overflow-x: auto;
+  margin: 0 0 var(--ws-space-md);
+}
+.ws-prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* highlight.js — Linea / Olivetti palette */
+.hljs-comment,
+.hljs-quote {
+  color: var(--ws-color-ink-muted);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name,
+.hljs-tag {
+  color: var(--ws-color-orange);
+  font-weight: 700;
+}
+.hljs-string,
+.hljs-title,
+.hljs-section,
+.hljs-attribute,
+.hljs-literal,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-addition {
+  color: var(--ws-color-teal);
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link,
+.hljs-meta,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--ws-color-mustard);
+}
+.hljs-attr,
+.hljs-variable,
+.hljs-params {
+  color: var(--ws-color-olive);
+}
+.hljs-deletion {
+  color: var(--ws-color-red);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
+}
+
+/* page footer nav */
+.ws-docs__pager {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ws-space-md);
+  margin-top: var(--ws-space-xxl);
+  padding-top: var(--ws-space-lg);
+  border-top: var(--ws-stroke-regular) solid var(--ws-color-border);
+}
+
+@media (max-width: 820px) {
+  .ws-docs {
+    grid-template-columns: 1fr;
+  }
+  .ws-docs__nav {
+    position: static;
+    max-height: none;
+  }
+}

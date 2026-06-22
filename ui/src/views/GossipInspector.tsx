@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { obs } from "../transport";
 import { GossipDirection, GossipKind } from "../gen/wavespan/v1/observability_pb";
+import { Badge, Button, Checkbox, Table, Toolbar, type Tone } from "../components";
 
 interface Row {
   seq: bigint;
@@ -21,6 +22,19 @@ const KIND_NAMES: Record<number, string> = {
   [GossipKind.GOSSIP_HOLDER_SUMMARY]: "holder-summary",
   [GossipKind.GOSSIP_LATENCY_EDGE]: "latency-edge",
   [GossipKind.GOSSIP_MEMBERSHIP_DELTA]: "membership-delta",
+};
+
+// Map each gossip kind to a semantic badge tone.
+const KIND_TONE: Record<string, Tone> = {
+  ping: "info",
+  ack: "neutral",
+  indirect: "info",
+  suspect: "warning",
+  alive: "success",
+  unreachable: "danger",
+  "holder-summary": "olive",
+  "latency-edge": "purple",
+  "membership-delta": "accent",
 };
 
 const FILTERABLE: { kind: GossipKind; label: string }[] = Object.entries(KIND_NAMES).map(
@@ -80,29 +94,50 @@ export function GossipInspector() {
 
   return (
     <div>
-      <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <button onClick={() => setPaused((p) => !p)}>{paused ? "Resume" : "Pause"}</button>
+      <h2 className="ws-title ws-view__title">Gossip Inspector</h2>
+      <p className="ws-view__intro">
+        Live SWIM gossip traffic on this node — pings, acks, suspicions and the piggybacked latency
+        edges &amp; holder summaries. Filter by kind; dropped events surface as gaps.
+      </p>
+
+      <Toolbar style={{ marginBottom: "var(--ws-space-md)" }}>
+        <Button variant={paused ? "primary" : "secondary"} onClick={() => setPaused((p) => !p)}>
+          {paused ? "Resume" : "Pause"}
+        </Button>
         {FILTERABLE.map((f) => (
-          <label key={f.kind} style={{ fontSize: 12 }}>
-            <input type="checkbox" checked={kinds.has(f.kind)} onChange={() => toggle(f.kind)} /> {f.label}
-          </label>
+          <Checkbox key={f.kind} checked={kinds.has(f.kind)} onChange={() => toggle(f.kind)} label={f.label} />
         ))}
-        <span style={{ fontSize: 12, color: "#888" }}>{rows.length} events</span>
-      </div>
-      <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+        <Badge tone="neutral">{rows.length} events</Badge>
+      </Toolbar>
+
+      <Table>
         <thead>
-          <tr style={{ textAlign: "left", borderBottom: "1px solid #ccc" }}>
-            <th>seq</th><th>kind</th><th>dir</th><th>peer</th><th>summary</th>
+          <tr>
+            <th>seq</th>
+            <th>kind</th>
+            <th>dir</th>
+            <th>peer</th>
+            <th>summary</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} style={{ background: r.gap ? "#ffe9e9" : undefined }}>
-              <td>{r.gap ? "" : String(r.seq)}</td><td>{r.kind}</td><td>{r.direction}</td><td>{r.peer}</td><td>{r.detail}</td>
+            <tr key={i} style={r.gap ? { background: "color-mix(in srgb, var(--ws-color-red) 12%, transparent)" } : undefined}>
+              <td className="ws-mono">{r.gap ? "" : String(r.seq)}</td>
+              <td>
+                {r.gap ? (
+                  <Badge tone="danger">GAP</Badge>
+                ) : (
+                  <Badge tone={KIND_TONE[r.kind] ?? "neutral"}>{r.kind}</Badge>
+                )}
+              </td>
+              <td className="ws-mono ws-muted">{r.direction}</td>
+              <td className="ws-mono">{r.peer}</td>
+              <td className="ws-mono ws-muted">{r.detail}</td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </Table>
     </div>
   );
 }

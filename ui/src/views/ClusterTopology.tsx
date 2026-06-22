@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { obs } from "../transport";
 import { MemberLiveness } from "../gen/wavespan/v1/admin_pb";
 import { type GetClusterViewResponse } from "../gen/wavespan/v1/observability_pb";
+import { Badge, Card, EmptyState, Table, type Tone } from "../components";
+import { color } from "../theme/tokens";
 
-const LIVENESS: Record<number, { label: string; color: string }> = {
-  [MemberLiveness.MEMBER_ALIVE]: { label: "alive", color: "#2e7d32" },
-  [MemberLiveness.MEMBER_SUSPECT]: { label: "suspect", color: "#f9a825" },
-  [MemberLiveness.MEMBER_UNREACHABLE]: { label: "unreachable", color: "#e53935" },
-  [MemberLiveness.MEMBER_DEAD]: { label: "dead", color: "#757575" },
-  [MemberLiveness.MEMBER_FORGOTTEN]: { label: "forgotten", color: "#bdbdbd" },
+const LIVENESS: Record<number, { label: string; tone: Tone; accent: string }> = {
+  [MemberLiveness.MEMBER_ALIVE]: { label: "alive", tone: "success", accent: color.teal },
+  [MemberLiveness.MEMBER_SUSPECT]: { label: "suspect", tone: "warning", accent: color.mustard },
+  [MemberLiveness.MEMBER_UNREACHABLE]: { label: "unreachable", tone: "danger", accent: color.red },
+  [MemberLiveness.MEMBER_DEAD]: { label: "dead", tone: "neutral", accent: color.inkMuted },
+  [MemberLiveness.MEMBER_FORGOTTEN]: { label: "forgotten", tone: "neutral", accent: color.inkMuted },
 };
 
 export function ClusterTopology() {
@@ -32,43 +34,71 @@ export function ClusterTopology() {
     };
   }, []);
 
-  if (!view) return <div>loading cluster view…</div>;
+  if (!view) {
+    return (
+      <div>
+        <h2 className="ws-title ws-view__title">Cluster Topology</h2>
+        <EmptyState title="Loading cluster view…" icon="◴" />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div style={{ marginBottom: 8 }}>
-        under-replicated estimate: <b>{String(view.underReplicatedEstimate)}</b>
+      <h2 className="ws-title ws-view__title">Cluster Topology</h2>
+      <p className="ws-view__intro">
+        Membership and the measured latency graph that drives replica placement. Member liveness
+        flows ALIVE → SUSPECT → UNREACHABLE → DEAD as gossip detects failures.
+      </p>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--ws-space-sm)", marginBottom: "var(--ws-space-lg)" }}>
+        <span className="ws-label ws-muted">under-replicated estimate</span>
+        <Badge tone={Number(view.underReplicatedEstimate) > 0 ? "warning" : "olive"}>
+          {String(view.underReplicatedEstimate)}
+        </Badge>
       </div>
-      <h3 style={{ fontSize: 14 }}>Members</h3>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+
+      <h3 className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>Members</h3>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--ws-space-md)", marginBottom: "var(--ws-space-xl)" }}>
         {view.members.map((m, i) => {
-          const l = LIVENESS[m.state] ?? { label: "?", color: "#999" };
+          const l = LIVENESS[m.state] ?? { label: "?", tone: "neutral" as Tone, accent: color.inkMuted };
           return (
-            <div key={i} style={{ border: `2px solid ${l.color}`, borderRadius: 6, padding: 8, minWidth: 120 }}>
-              <div style={{ fontWeight: 600 }}>{m.member?.memberId}</div>
-              <div style={{ fontSize: 12, color: l.color }}>{l.label}</div>
-              <div style={{ fontSize: 11, color: "#888" }}>{m.member?.zone}</div>
-            </div>
+            <Card key={i} accent={l.accent} style={{ minWidth: 150, padding: "var(--ws-space-md)" }}>
+              <div className="ws-title-sm" style={{ marginBottom: "var(--ws-space-xs)" }}>{m.member?.memberId}</div>
+              <Badge tone={l.tone} dot>{l.label}</Badge>
+              {m.member?.zone && <div className="ws-caption" style={{ marginTop: "var(--ws-space-xs)" }}>{m.member.zone}</div>}
+            </Card>
           );
         })}
       </div>
-      <h3 style={{ fontSize: 14 }}>Latency edges</h3>
-      <table style={{ fontSize: 12, borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "1px solid #ccc" }}>
-            <th>from → to</th><th>ewma (ms)</th><th>p95 (ms)</th><th>loss</th>
-          </tr>
-        </thead>
-        <tbody>
-          {view.edges.map((e, i) => (
-            <tr key={i}>
-              <td>{e.fromMemberId} → {e.toMemberId}</td>
-              <td>{e.ewmaRttMs.toFixed(2)}</td>
-              <td>{e.p95RttMs.toFixed(2)}</td>
-              <td>{(e.packetLoss * 100).toFixed(1)}%</td>
+
+      <h3 className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>Latency edges</h3>
+      {view.edges.length === 0 ? (
+        <EmptyState title="No edges yet" icon="↔">
+          Latency probes populate as gossip exchanges RTT samples between members.
+        </EmptyState>
+      ) : (
+        <Table mono>
+          <thead>
+            <tr>
+              <th>from → to</th>
+              <th>ewma (ms)</th>
+              <th>p95 (ms)</th>
+              <th>loss</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {view.edges.map((e, i) => (
+              <tr key={i}>
+                <td>{e.fromMemberId} → {e.toMemberId}</td>
+                <td>{e.ewmaRttMs.toFixed(2)}</td>
+                <td>{e.p95RttMs.toFixed(2)}</td>
+                <td>{(e.packetLoss * 100).toFixed(1)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
     </div>
   );
 }
