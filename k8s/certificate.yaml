@@ -1,0 +1,28 @@
+# mTLS material for the data + gossip links (security.insecureDevMode=false in config.yaml).
+# cert-manager issues the wavespan-tls Secret (tls.crt / tls.key / ca.crt) that the DaemonSet mounts.
+# Requires cert-manager + a ClusterIssuer named "wavespan-ca" (an internal CA). For a quick insecure
+# trial instead, set insecureDevMode: true in config.yaml and delete this file from the kustomization.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wavespan-tls
+  labels:
+    app.kubernetes.io/name: wavespan
+spec:
+  secretName: wavespan-tls
+  duration: 2160h      # 90d
+  renewBefore: 360h    # 15d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  usages:
+    - server auth
+    - client auth      # nodes are both server and client on the inter-node links
+  # SANs cover the headless Service DNS + per-pod DNS so peers validate each other.
+  dnsNames:
+    - wavespan-peer.wavespan.svc.cluster.local
+    - "*.wavespan-peer.wavespan.svc.cluster.local"
+  issuerRef:
+    name: wavespan-ca
+    kind: ClusterIssuer
+    group: cert-manager.io

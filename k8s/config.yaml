@@ -1,0 +1,84 @@
+# WaveSpan node configuration — COMPLETE reference (every option written out, even at its default).
+# Fed to Kustomize's configMapGenerator, so this file is content-hashed into the ConfigMap name
+# (e.g. wavespan-config-abc123) and a change rolls the DaemonSet automatically.
+#
+# Per-pod values (memberId, nodeName, advertiseHost) are intentionally left blank here and injected
+# per-pod from the Downward API in the DaemonSet (env overrides this file). Everything shared lives
+# here.
+
+# --- identity (per-pod fields injected via env in the DaemonSet) ---
+clusterId: wavespan-prod          # logical cluster name; all nodes of one cluster share it
+memberId: ""                      # injected: WAVESPAN_MEMBER_ID = node name (unique, 1 pod/node)
+nodeName: ""                      # injected: WAVESPAN_NODE_NAME  = node name (human label)
+advertiseHost: ""                 # injected: WAVESPAN_ADVERTISE_HOST = pod IP (how peers reach us)
+
+# --- topology (placement / latency-graph hints) ---
+topology:
+  zone: ""                        # injected if you map node topology labels to env; "" = unzoned
+  region: ""
+  geo: ""                         # compliance/geo tag; "" = none
+
+# --- local storage (wavesdb) ---
+storage:
+  path: /var/lib/wavespan         # node-local data dir (a hostPath volume in the DaemonSet)
+  engine: wavesdb                 # the only engine in v1
+
+# --- membership / gossip discovery ---
+membership:
+  # "docker" = static-seed discovery (the implemented mode); "kubernetes" (native API discovery) is
+  # a stub today (design/09), so we seed from the peer headless Service below.
+  runtime: docker
+  seeds:
+    - wavespan-peer.wavespan.svc.cluster.local:7700   # headless Service DNS -> all node gossip ports
+
+# --- local replication (origin+1 / target-N) ---
+replication:
+  policyRef: ""                   # named placement policy ref; "" = inline policy
+  targetNearbyReplicas: 3         # durable nearby replicas beyond the origin (default 3)
+  minAckNearbyReplicas: 1         # nearby durable ACKs required before the write returns (origin+1)
+
+# --- admin server (health / readiness / metrics / UI) ---
+admin:
+  listen: ":7900"
+
+# --- advertised ports ---
+ports:
+  gossip: 7700
+  data: 7800
+
+# --- transport security (mTLS) + connection tuning ---
+security:
+  insecureDevMode: false          # false = require mTLS on the data + gossip links
+  certFile: /etc/wavespan/tls/tls.crt   # mounted from the wavespan-tls Secret (cert-manager)
+  keyFile: /etc/wavespan/tls/tls.key
+  caFile: /etc/wavespan/tls/ca.crt
+  transport:                      # shared inter-node connection pool (design/27); all defaults shown
+    maxIdleConns: 512
+    maxIdleConnsPerHost: 64
+    idleConnTimeoutSeconds: 600
+    tcpKeepAliveSeconds: 30
+    dialTimeoutSeconds: 5
+    h2ReadIdleTimeoutSeconds: 30  # HTTP/2 keepalive PING when idle this long (0 disables)
+    h2PingTimeoutSeconds: 15      # drop the connection if a PING goes unanswered this long
+
+# --- global active-active (cross-cluster) — OFF: single cluster for now ---
+globalReplication:
+  mode: "off"                     # "off" | "active-active-async"
+  peers: []                       # e.g. [{clusterId: dr, gossipAddr: ..., dataAddr: ...}]
+  readPolicy: ""                  # "" = local-first
+  antiEntropyIntervalSeconds: 30
+  outLogDiskBudgetBytes: 1073741824   # 1 GiB per-peer out-log budget (ignored while mode=off)
+
+# --- per-namespace policy (conflict resolver + replication factor) ---
+namespaces:
+  - name: default
+    conflictPolicy: hlc-last-write-wins   # "" also means hlc-last-write-wins
+    globalDurabilityRequired: false
+    replicationFactor: ""                 # "" => nearby target-N (above)
+  - name: ref                             # example reference data on every node of THIS cluster
+    conflictPolicy: hlc-last-write-wins
+    globalDurabilityRequired: false
+    replicationFactor: all                # every node of the current cluster (does not cross clusters)
+
+# --- vector indexes (none configured) ---
+vectorIndexes: []

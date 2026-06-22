@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# All app resources land in this namespace.
+namespace: wavespan
+
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - services.yaml
+  - certificate.yaml      # remove if not using cert-manager (and set insecureDevMode: true)
+  - daemonset.yaml
+
+# Hash-suffixed config: the ConfigMap is named wavespan-config-<contentHash>, and every reference
+# (the DaemonSet volume) is rewritten to that name. Editing config.yaml changes the hash, which rolls
+# the DaemonSet — config and workload stay in lockstep. (Hash suffix is ON by default; do NOT set
+# disableNameSuffixHash.)
+configMapGenerator:
+  - name: wavespan-config
+    files:
+      - config.yaml
+
+# Pin the image in one place (Flux image automation can bump newTag here).
+images:
+  - name: ghcr.io/cwire/wavespan-node
+    newTag: v0.1.0

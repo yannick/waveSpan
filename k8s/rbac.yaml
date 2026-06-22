@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wavespan
+  labels:
+    app.kubernetes.io/name: wavespan
+---
+# Minimal read access to endpoints/pods. Not required for static-seed (headless Service) discovery
+# today, but in place for the native Kubernetes API discovery seam (design/09).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: wavespan-discovery
+  labels:
+    app.kubernetes.io/name: wavespan
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: wavespan-discovery
+  labels:
+    app.kubernetes.io/name: wavespan
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: wavespan-discovery
+subjects:
+  - kind: ServiceAccount
+    name: wavespan

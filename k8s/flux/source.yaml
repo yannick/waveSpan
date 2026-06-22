@@ -1,0 +1,12 @@
+# Flux source: the Git repo Flux reconciles from. Lives in flux-system (applied at bootstrap, not by
+# the app kustomization). Adjust url/ref to your repo.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: wavespan
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/cwire/wavespan
+  ref:
+    branch: main

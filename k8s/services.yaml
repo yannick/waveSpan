@@ -1,0 +1,44 @@
+# Headless Service: gives every node pod a DNS A record and lets the gossip seed
+# (wavespan-peer.<ns>.svc.cluster.local:7700) resolve to the cluster's nodes for membership
+# bootstrap. publishNotReadyAddresses so pods are discoverable while they are still forming.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wavespan-peer
+  labels:
+    app.kubernetes.io/name: wavespan
+    app.kubernetes.io/component: node
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: wavespan
+    app.kubernetes.io/component: node
+  ports:
+    - name: gossip
+      port: 7700
+      targetPort: gossip
+      protocol: TCP
+    - name: data
+      port: 7800
+      targetPort: data
+      protocol: TCP
+---
+# Admin Service: stable ClusterIP for scraping /metrics and reaching /healthz, /readyz, and the UI.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wavespan-admin
+  labels:
+    app.kubernetes.io/name: wavespan
+    app.kubernetes.io/component: admin
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: wavespan
+    app.kubernetes.io/component: node
+  ports:
+    - name: admin
+      port: 7900
+      targetPort: admin
+      protocol: TCP
