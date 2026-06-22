@@ -7,6 +7,7 @@ import (
 
 	"github.com/cwire/wavespan/internal/cypher/parser"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func init() {
@@ -137,12 +138,23 @@ func TestKVGetInWhereFiltersRows(t *testing.T) {
 	}
 }
 
-// A non-UTF8 stored value (which the gRPC KV API may legitimately write as bytes) must surface as a
-// clean query error from kv.get, not corrupt the result stream with an opaque proto marshal failure.
-func TestKVGetNonUTF8ValueErrors(t *testing.T) {
-	kv := &fakeKV{data: map[string]string{nsKey("x", []byte("bin")): "\xff\xfe\xfd"}}
-	ast, _ := parser.Parse("RETURN kv.get('x','bin') AS v")
-	if _, err := (&Executor{KV: kv}).Execute(ast); err == nil {
-		t.Fatal("kv.get on a non-UTF8 value must be a hard error")
+// A non-UTF8 stored value (which the gRPC KV API may legitimately write as bytes) must read back as
+// a Cypher bytes value — not a hard error and not an opaque proto-marshal stream corruption.
+func TestKVGetNonUTF8ValueReturnsBytes(t *testing.T) {
+	bin := "\xff\xfe\xfd"
+	kv := &fakeKV{data: map[string]string{nsKey("x", []byte("bin")): bin}}
+	res := runQuery(t, &Executor{KV: kv}, "RETURN kv.get('x','bin') AS v")
+	bv, ok := res.Rows[0]["v"].GetValue().(*wavespanv1.Value_BytesValue)
+	if !ok {
+		t.Fatalf("expected a bytes value, got %T", res.Rows[0]["v"].GetValue())
+	}
+	if string(bv.BytesValue) != bin {
+		t.Fatalf("bytes round-trip mismatch: got %x", bv.BytesValue)
+	}
+	// The original bug: a non-UTF8 value forced into a proto string field corrupts the result
+	// stream with an opaque marshal error. A bytes field has no UTF-8 constraint, so marshal must
+	// now succeed — this is the regression guard for that stream-corruption failure.
+	if _, err := proto.Marshal(res.Rows[0]["v"]); err != nil {
+		t.Fatalf("non-UTF8 kv.get value must marshal cleanly, got: %v", err)
 	}
 }

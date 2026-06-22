@@ -17,6 +17,9 @@ func vFloat(f float64) *wavespanv1.Value {
 func vStr(s string) *wavespanv1.Value {
 	return &wavespanv1.Value{Value: &wavespanv1.Value_StringValue{StringValue: s}}
 }
+func vBytes(b []byte) *wavespanv1.Value {
+	return &wavespanv1.Value{Value: &wavespanv1.Value_BytesValue{BytesValue: b}}
+}
 func vBool(b bool) *wavespanv1.Value {
 	return &wavespanv1.Value{Value: &wavespanv1.Value_BoolValue{BoolValue: b}}
 }
@@ -269,6 +272,8 @@ func valueKey(v *wavespanv1.Value) string {
 		return "s" + x.StringValue
 	case *wavespanv1.Value_BoolValue:
 		return "b" + strconv.FormatBool(x.BoolValue)
+	case *wavespanv1.Value_BytesValue:
+		return "y" + string(x.BytesValue)
 	}
 	return "n"
 }

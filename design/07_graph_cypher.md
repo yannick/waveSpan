@@ -105,9 +105,10 @@ but it means a transient `null` can in principle hide an unreachable holder rath
 genuinely absent key. (A future enhancement should mark such a read partial via
 `partial_graph_possible`; today it does not.)
 
-`kv.get` exposes **string** values only. A value the gRPC KV API wrote as non-UTF8 bytes is
-not representable as a Cypher string and yields a hard error (not silent truncation); read
-such keys via the gRPC KV API, or a future `kv.getBytes` built-in.
+`kv.get` returns a UTF-8 value as a Cypher **string** and any other value as a Cypher
+**bytes** value (the gRPC KV API stores values as arbitrary bytes). Both round-trip
+losslessly, so every value the KV API can write is readable from Cypher; binary values
+simply arrive as bytes rather than a string.
 
 ### `CALL kv.put(namespace, key, value [, options])` — procedure
 
@@ -137,7 +138,9 @@ two separately — the KV write does NOT join the graph mutation's `wavesdb` tra
 **Argument validation is strict.** `namespace`, `key`, and `value` must be strings;
 `ttlMs` must be an integer. A wrong type is a hard query error, not a silent null.
 
-**Values are strings** (UTF-8 bytes). Structured data must be serialised by the caller.
+**Writes take string values** (stored as UTF-8 bytes); structured data must be serialised
+by the caller. **Reads** return a string for UTF-8 values and a bytes value for any other
+bytes the KV API may hold, so every stored value is readable.
 
 ### Examples
 

@@ -56,14 +56,15 @@ func kvGet(e *Executor, args []*wavespanv1.Value, _ bindingRow) (*wavespanv1.Val
 	if !found {
 		return vNull(), nil
 	}
-	// kv.* exposes string values only (binary is a deferred non-goal). A non-UTF8 value the gRPC
-	// KV API may have written cannot go into a proto string field — returning it would corrupt the
-	// result stream with an opaque marshal error mid-query. Fail cleanly with a clear message
-	// instead, so the gap is a visible query error rather than silent stream corruption.
-	if !utf8.Valid(val) {
-		return nil, fmt.Errorf("cypher: kv.get(%q, %q): value is not valid UTF-8 and is not representable as a Cypher string", ns, key)
+	// The gRPC KV API stores values as arbitrary bytes. A non-UTF8 value cannot go into a proto
+	// string field — doing so would corrupt the result stream with an opaque marshal error
+	// mid-query. Return UTF-8 values as a Cypher string (the common case) and any other bytes as a
+	// bytes value, which has no UTF-8 constraint. This keeps kv.get readable for every value the KV
+	// API can write, with no stream corruption.
+	if utf8.Valid(val) {
+		return vStr(string(val)), nil
 	}
-	return vStr(string(val)), nil
+	return vBytes(val), nil
 }
 
 // kvPut implements CALL kv.put(namespace, key, value [, {ttlMs}]) YIELD version.
