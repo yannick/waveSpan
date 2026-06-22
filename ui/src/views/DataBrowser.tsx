@@ -3,10 +3,11 @@ import { obs } from "../transport";
 import { Completeness } from "../gen/wavespan/v1/common_pb";
 import { type InspectKey, Keyspace } from "../gen/wavespan/v1/observability_pb";
 
-type Scope = "local" | "global";
+// cluster = all nodes in this cluster (default), node = this node only, global = cross-cluster key.
+type Scope = "cluster" | "node" | "global";
 
 export function DataBrowser() {
-  const [scope, setScope] = useState<Scope>("local");
+  const [scope, setScope] = useState<Scope>("cluster");
   const [namespace, setNamespace] = useState("default");
   const [query, setQuery] = useState("");
   const [includeValue, setIncludeValue] = useState(false);
@@ -20,9 +21,15 @@ export function DataBrowser() {
     setCompleteness(null);
     const collected: InspectKey[] = [];
     const stream =
-      scope === "local"
-        ? obs.inspectLocal({ keyspace: Keyspace.KV, namespace, prefix: new TextEncoder().encode(query), includeValue })
-        : obs.inspectGlobal({ keyspace: Keyspace.KV, namespace, key: new TextEncoder().encode(query), includeValue });
+      scope === "global"
+        ? obs.inspectGlobal({ keyspace: Keyspace.KV, namespace, key: new TextEncoder().encode(query), includeValue })
+        : obs.inspectLocal({
+            keyspace: Keyspace.KV,
+            namespace,
+            prefix: new TextEncoder().encode(query),
+            includeValue,
+            clusterWide: scope === "cluster",
+          });
     for await (const row of stream) {
       if (row.row.case === "key") collected.push(row.row.value);
       else if (row.row.case === "trailer") {
@@ -38,17 +45,18 @@ export function DataBrowser() {
     <div>
       <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
         <select value={scope} onChange={(e) => setScope(e.target.value as Scope)}>
-          <option value="local">Local</option>
-          <option value="global">Global</option>
+          <option value="cluster">Cluster (all nodes)</option>
+          <option value="node">This node</option>
+          <option value="global">Global (cross-cluster)</option>
         </select>
         <input value={namespace} onChange={(e) => setNamespace(e.target.value)} placeholder="namespace" style={{ width: 120 }} />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={scope === "local" ? "prefix" : "key"} style={{ width: 200 }} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={scope === "global" ? "key" : "prefix"} style={{ width: 200 }} />
         <label style={{ fontSize: 12 }}>
           <input type="checkbox" checked={includeValue} onChange={(e) => setIncludeValue(e.target.checked)} /> include value (admin)
         </label>
         <button onClick={run}>Search</button>
       </div>
-      {scope === "global" && completeness !== null && (
+      {scope !== "node" && completeness !== null && (
         <div style={{ padding: 8, marginBottom: 8, background: completeness === Completeness.COMPLETE ? "#e9ffe9" : "#fff3cd" }}>
           completeness: {Completeness[completeness]}
           {warnings.length > 0 && <div style={{ fontSize: 12 }}>warnings: {warnings.join("; ")}</div>}

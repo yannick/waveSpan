@@ -98,6 +98,103 @@ func TestInspectLocalRedactsByDefault(t *testing.T) {
 	}
 }
 
+// membersCluster reports a fixed alive membership for cluster-wide fan-out tests.
+type membersCluster struct{ members []membership.MemberView }
+
+func (c membersCluster) Members() []membership.MemberView { return c.members }
+func (membersCluster) Graph() *latencygraph.Graph {
+	return latencygraph.New(latencygraph.DefaultConfig())
+}
+
+// fakeScanner returns canned ScanLocal rows per member id (the cluster fan-out target).
+type fakeScanner struct {
+	rows map[string][]*wavespanv1.ScanLocalRow
+}
+
+func (f fakeScanner) ScanLocal(_ context.Context, target membership.Member, _ string, _, _ []byte, _ int) ([]*wavespanv1.ScanLocalRow, error) {
+	return f.rows[target.MemberID], nil
+}
+
+func TestInspectLocalClusterWideMergesAcrossNodes(t *testing.T) {
+	mem := storage.NewMemStore()
+	t.Cleanup(func() { _ = mem.Close() })
+	rs := recordstore.NewStore(mem, "dev", "node1", version.NewClock(nil, 500), version.NewSequencer(0))
+	seedKV(t, rs, "k1", "local") // node1 holds k1 at a normal (lower) version
+
+	// node2 holds k1 at a HIGHER version (should win) plus k2 which node1 never saw.
+	hi := &wavespanv1.Version{HlcPhysicalMs: 9_000_000_000_000, WriterClusterId: "dev", WriterMemberId: "node2"}
+	scanner := fakeScanner{rows: map[string][]*wavespanv1.ScanLocalRow{
+		"node2": {
+			{Key: []byte("k1"), Value: []byte("peerwins"), Version: hi},
+			{Key: []byte("k2"), Value: []byte("only-on-node2"), Version: hi},
+		},
+	}}
+	cluster := membersCluster{members: []membership.MemberView{
+		{Member: membership.Member{MemberID: "node1"}, State: membership.StateAlive},
+		{Member: membership.Member{MemberID: "node2"}, State: membership.StateAlive},
+	}}
+	obs := NewObsService(NewGossipRing(64), cluster, membership.Member{ClusterID: "dev", MemberID: "node1"}, rs).WithClusterScan(scanner)
+	mux := http.NewServeMux()
+	mux.Handle(obs.Handler())
+	ts := httptest.NewServer(security.Identity{DevMode: true}.EnforceHTTP(mux))
+	t.Cleanup(ts.Close)
+	client := wavespanv1connect.NewObservabilityServiceClient(ts.Client(), ts.URL)
+
+	req := connect.NewRequest(&wavespanv1.InspectLocalRequest{Namespace: "default", IncludeValue: true, ClusterWide: true})
+	req.Header().Set("X-WaveSpan-Role", "admin")
+	stream, err := client.InspectLocal(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]*wavespanv1.InspectKey{}
+	for stream.Receive() {
+		if k := stream.Msg().GetKey(); k != nil {
+			got[k.GetLogicalPath()] = k
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("cluster-wide browse should merge to 2 keys (k1,k2), got %d: %v", len(got), got)
+	}
+	k1 := got["default/k1"]
+	if k1 == nil {
+		t.Fatal("k1 missing")
+	}
+	if got, want := holderIDs(k1), []string{"node1", "node2"}; !equalStrings(got, want) {
+		t.Fatalf("k1 holders = %v, want %v (both nodes hold it)", got, want)
+	}
+	if string(k1.GetValue()) != "peerwins" || k1.GetVersion().GetWriterMemberId() != "node2" {
+		t.Fatalf("latest version should win for k1: value=%q writer=%q", k1.GetValue(), k1.GetVersion().GetWriterMemberId())
+	}
+	k2 := got["default/k2"]
+	if k2 == nil || !equalStrings(holderIDs(k2), []string{"node2"}) || string(k2.GetValue()) != "only-on-node2" {
+		t.Fatalf("k2 (peer-only) not surfaced correctly: %+v", k2)
+	}
+}
+
+func holderIDs(k *wavespanv1.InspectKey) []string {
+	var ids []string
+	for _, h := range k.GetHolders() {
+		ids = append(ids, h.GetMemberId())
+	}
+	return ids
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // fakeInspector reports one unreachable holder so completeness is partial.
 type fakeInspector struct{}
 

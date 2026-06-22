@@ -31,6 +31,8 @@ func main() {
 		err = queryCmd(os.Args[2:])
 	case "kv":
 		err = kvCmd(os.Args[2:])
+	case "multiget":
+		err = multigetCmd(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 		return
@@ -100,6 +102,24 @@ func kvCmd(args []string) error {
 	fmt.Printf("# KV benchmark: concurrency=%d, duration=%s, read-ratio=%.0f%%\n", *conc, *dur, *readRatio*100)
 	fmt.Println(res.Get.Report("kv-get", *dur))
 	fmt.Println(res.Put.Report("kv-put", *dur))
+	return nil
+}
+
+func multigetCmd(args []string) error {
+	fs := flag.NewFlagSet("multiget", flag.ContinueOnError)
+	addr := fs.String("addr", "localhost:7800", "data-port address")
+	conc := fs.Int("concurrency", 32, "concurrent clients")
+	dur := fs.Duration("duration", 15*time.Second, "duration")
+	keys := fs.Int("keys", 10000, "key space size")
+	batch := fs.Int("batch", 100, "keys per MultiGet RPC")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	res := bench.RunMultiGet(*addr, bench.MultiGetOptions{Concurrency: *conc, Keys: *keys, Batch: *batch, Duration: *dur})
+	keysPerSec := float64(res.KeysGot) / dur.Seconds()
+	fmt.Printf("# MultiGet benchmark: concurrency=%d, duration=%s, batch=%d\n", *conc, *dur, *batch)
+	fmt.Println(res.Lat.Report("multiget-rpc", *dur))
+	fmt.Printf("%-28s keys=%-9d %12.0f keys/s\n", "effective-read-throughput", res.KeysGot, keysPerSec)
 	return nil
 }
 

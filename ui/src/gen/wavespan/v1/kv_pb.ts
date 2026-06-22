@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file wavespan/v1/kv.proto.
  */
 export const file_wavespan_v1_kv: GenFile = /*@__PURE__*/
-  fileDesc("ChR3YXZlc3Bhbi92MS9rdi5wcm90bxILd2F2ZXNwYW4udjEirgEKClB1dFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBINCgV2YWx1ZRgDIAEoDBITCgZ0dGxfbXMYBCABKANIAIgBARIcCg9pZGVtcG90ZW5jeV9rZXkYBSABKAlIAYgBARIfChdyZXF1aXJlX29yaWdpbl9wbHVzX29uZRgGIAEoCEIJCgdfdHRsX21zQhIKEF9pZGVtcG90ZW5jeV9rZXkikQEKCVB1dFJlc3VsdBInCgRtZXRhGAEgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEiUKB3ZlcnNpb24YAiABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEh0KFWFja2VkX25lYXJieV9yZXBsaWNhcxgDIAEoDRIVCg1nZW9fc3BpbGxvdmVyGAQgASgIImcKCkdldFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBIbChNhbGxvd19keW5hbWljX2NhY2hlGAMgASgIEhwKFGhpZGVfZXhwaXJlZF9vbl9yZWFkGAQgASgIIooBCglHZXRSZXN1bHQSJwoEbWV0YRgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRINCgVmb3VuZBgCIAEoCBINCgV2YWx1ZRgDIAEoDBIfChJleHBpcmVzX2F0X3VuaXhfbXMYBCABKANIAIgBAUIVChNfZXhwaXJlc19hdF91bml4X21zIoIBCg1EZWxldGVSZXF1ZXN0EhEKCW5hbWVzcGFjZRgBIAEoCRILCgNrZXkYAiABKAwSHAoPaWRlbXBvdGVuY3lfa2V5GAMgASgJSACIAQESHwoXcmVxdWlyZV9vcmlnaW5fcGx1c19vbmUYBCABKAhCEgoQX2lkZW1wb3RlbmN5X2tleSJ9CgxEZWxldGVSZXN1bHQSJwoEbWV0YRgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRIlCgd2ZXJzaW9uGAIgASgLMhQud2F2ZXNwYW4udjEuVmVyc2lvbhIdChVhY2tlZF9uZWFyYnlfcmVwbGljYXMYAyABKA0ieAoLU2NhblJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEhEKCXN0YXJ0X2tleRgCIAEoDBIPCgdlbmRfa2V5GAMgASgMEg0KBWxpbWl0GAQgASgNEiMKBG1vZGUYBSABKA4yFS53YXZlc3Bhbi52MS5TY2FuTW9kZSKLAQoKU2NhbkhlYWRlchInCgRtZXRhGAEgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEiMKBG1vZGUYAiABKA4yFS53YXZlc3Bhbi52MS5TY2FuTW9kZRIvCgxjb21wbGV0ZW5lc3MYAyABKA4yGS53YXZlc3Bhbi52MS5Db21wbGV0ZW5lc3MihAEKB1NjYW5Sb3cSCwoDa2V5GAEgASgMEg0KBXZhbHVlGAIgASgMEiUKB3ZlcnNpb24YAyABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEh8KEmV4cGlyZXNfYXRfdW5peF9tcxgEIAEoA0gAiAEBQhUKE19leHBpcmVzX2F0X3VuaXhfbXMibQoLU2NhblRyYWlsZXISFQoNcm93c19yZXR1cm5lZBgBIAEoBBI1ChJmaW5hbF9jb21wbGV0ZW5lc3MYAiABKA4yGS53YXZlc3Bhbi52MS5Db21wbGV0ZW5lc3MSEAoId2FybmluZ3MYAyADKAkikgEKDFNjYW5SZXNwb25zZRIpCgZoZWFkZXIYASABKAsyFy53YXZlc3Bhbi52MS5TY2FuSGVhZGVySAASIwoDcm93GAIgASgLMhQud2F2ZXNwYW4udjEuU2NhblJvd0gAEisKB3RyYWlsZXIYAyABKAsyGC53YXZlc3Bhbi52MS5TY2FuVHJhaWxlckgAQgUKA21zZyLKAQoYUmFuZ2VDb3ZlcmFnZUNlcnRpZmljYXRlEhEKCW5hbWVzcGFjZRgBIAEoCRIRCglzdGFydF9rZXkYAiABKAwSDwoHZW5kX2tleRgDIAEoDBIXCg9vd25lcl9tZW1iZXJfaWQYBCABKAkSEwoLb3duZXJfZXBvY2gYBSABKAQSLAoOaGlnaF93YXRlcm1hcmsYBiABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEhsKE3ZhbGlkX3VudGlsX3VuaXhfbXMYByABKAMqbgoIU2Nhbk1vZGUSGQoVU0NBTl9NT0RFX1VOU1BFQ0lGSUVEEAASDgoKQ0FDSEVfRkFTVBABEhIKDkNBQ0hFX0NPTVBMRVRFEAISEwoPUk9VVEVEX0VWRU5UVUFMEAMSDgoKTE9DQUxfT05MWRAEMvsBCglLdlNlcnZpY2USNgoDUHV0Ehcud2F2ZXNwYW4udjEuUHV0UmVxdWVzdBoWLndhdmVzcGFuLnYxLlB1dFJlc3VsdBI2CgNHZXQSFy53YXZlc3Bhbi52MS5HZXRSZXF1ZXN0GhYud2F2ZXNwYW4udjEuR2V0UmVzdWx0Ej8KBkRlbGV0ZRIaLndhdmVzcGFuLnYxLkRlbGV0ZVJlcXVlc3QaGS53YXZlc3Bhbi52MS5EZWxldGVSZXN1bHQSPQoEU2NhbhIYLndhdmVzcGFuLnYxLlNjYW5SZXF1ZXN0Ghkud2F2ZXNwYW4udjEuU2NhblJlc3BvbnNlMAFCnwEKD2NvbS53YXZlc3Bhbi52MUIHS3ZQcm90b1ABWjZnaXRodWIuY29tL2N3aXJlL3dhdmVzcGFuL3Byb3RvL3dhdmVzcGFuL3YxO3dhdmVzcGFudjGiAgNXWFiqAgtXYXZlc3Bhbi5WMcoCC1dhdmVzcGFuXFYx4gIXV2F2ZXNwYW5cVjFcR1BCTWV0YWRhdGHqAgxXYXZlc3Bhbjo6VjFiBnByb3RvMw", [file_wavespan_v1_common]);
+  fileDesc("ChR3YXZlc3Bhbi92MS9rdi5wcm90bxILd2F2ZXNwYW4udjEirgEKClB1dFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBINCgV2YWx1ZRgDIAEoDBITCgZ0dGxfbXMYBCABKANIAIgBARIcCg9pZGVtcG90ZW5jeV9rZXkYBSABKAlIAYgBARIfChdyZXF1aXJlX29yaWdpbl9wbHVzX29uZRgGIAEoCEIJCgdfdHRsX21zQhIKEF9pZGVtcG90ZW5jeV9rZXkikQEKCVB1dFJlc3VsdBInCgRtZXRhGAEgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEiUKB3ZlcnNpb24YAiABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEh0KFWFja2VkX25lYXJieV9yZXBsaWNhcxgDIAEoDRIVCg1nZW9fc3BpbGxvdmVyGAQgASgIImcKCkdldFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBIbChNhbGxvd19keW5hbWljX2NhY2hlGAMgASgIEhwKFGhpZGVfZXhwaXJlZF9vbl9yZWFkGAQgASgIIooBCglHZXRSZXN1bHQSJwoEbWV0YRgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRINCgVmb3VuZBgCIAEoCBINCgV2YWx1ZRgDIAEoDBIfChJleHBpcmVzX2F0X3VuaXhfbXMYBCABKANIAIgBAUIVChNfZXhwaXJlc19hdF91bml4X21zIlAKD011bHRpR2V0UmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSDAoEa2V5cxgCIAMoDBIcChRoaWRlX2V4cGlyZWRfb25fcmVhZBgDIAEoCCI5Cg5NdWx0aUdldFJlc3VsdBInCgdyZXN1bHRzGAEgAygLMhYud2F2ZXNwYW4udjEuR2V0UmVzdWx0IoIBCg1EZWxldGVSZXF1ZXN0EhEKCW5hbWVzcGFjZRgBIAEoCRILCgNrZXkYAiABKAwSHAoPaWRlbXBvdGVuY3lfa2V5GAMgASgJSACIAQESHwoXcmVxdWlyZV9vcmlnaW5fcGx1c19vbmUYBCABKAhCEgoQX2lkZW1wb3RlbmN5X2tleSJ9CgxEZWxldGVSZXN1bHQSJwoEbWV0YRgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRIlCgd2ZXJzaW9uGAIgASgLMhQud2F2ZXNwYW4udjEuVmVyc2lvbhIdChVhY2tlZF9uZWFyYnlfcmVwbGljYXMYAyABKA0ieAoLU2NhblJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEhEKCXN0YXJ0X2tleRgCIAEoDBIPCgdlbmRfa2V5GAMgASgMEg0KBWxpbWl0GAQgASgNEiMKBG1vZGUYBSABKA4yFS53YXZlc3Bhbi52MS5TY2FuTW9kZSKLAQoKU2NhbkhlYWRlchInCgRtZXRhGAEgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEiMKBG1vZGUYAiABKA4yFS53YXZlc3Bhbi52MS5TY2FuTW9kZRIvCgxjb21wbGV0ZW5lc3MYAyABKA4yGS53YXZlc3Bhbi52MS5Db21wbGV0ZW5lc3MihAEKB1NjYW5Sb3cSCwoDa2V5GAEgASgMEg0KBXZhbHVlGAIgASgMEiUKB3ZlcnNpb24YAyABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEh8KEmV4cGlyZXNfYXRfdW5peF9tcxgEIAEoA0gAiAEBQhUKE19leHBpcmVzX2F0X3VuaXhfbXMibQoLU2NhblRyYWlsZXISFQoNcm93c19yZXR1cm5lZBgBIAEoBBI1ChJmaW5hbF9jb21wbGV0ZW5lc3MYAiABKA4yGS53YXZlc3Bhbi52MS5Db21wbGV0ZW5lc3MSEAoId2FybmluZ3MYAyADKAkikgEKDFNjYW5SZXNwb25zZRIpCgZoZWFkZXIYASABKAsyFy53YXZlc3Bhbi52MS5TY2FuSGVhZGVySAASIwoDcm93GAIgASgLMhQud2F2ZXNwYW4udjEuU2NhblJvd0gAEisKB3RyYWlsZXIYAyABKAsyGC53YXZlc3Bhbi52MS5TY2FuVHJhaWxlckgAQgUKA21zZyLKAQoYUmFuZ2VDb3ZlcmFnZUNlcnRpZmljYXRlEhEKCW5hbWVzcGFjZRgBIAEoCRIRCglzdGFydF9rZXkYAiABKAwSDwoHZW5kX2tleRgDIAEoDBIXCg9vd25lcl9tZW1iZXJfaWQYBCABKAkSEwoLb3duZXJfZXBvY2gYBSABKAQSLAoOaGlnaF93YXRlcm1hcmsYBiABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEhsKE3ZhbGlkX3VudGlsX3VuaXhfbXMYByABKAMqbgoIU2Nhbk1vZGUSGQoVU0NBTl9NT0RFX1VOU1BFQ0lGSUVEEAASDgoKQ0FDSEVfRkFTVBABEhIKDkNBQ0hFX0NPTVBMRVRFEAISEwoPUk9VVEVEX0VWRU5UVUFMEAMSDgoKTE9DQUxfT05MWRAEMsICCglLdlNlcnZpY2USNgoDUHV0Ehcud2F2ZXNwYW4udjEuUHV0UmVxdWVzdBoWLndhdmVzcGFuLnYxLlB1dFJlc3VsdBI2CgNHZXQSFy53YXZlc3Bhbi52MS5HZXRSZXF1ZXN0GhYud2F2ZXNwYW4udjEuR2V0UmVzdWx0EkUKCE11bHRpR2V0Ehwud2F2ZXNwYW4udjEuTXVsdGlHZXRSZXF1ZXN0Ghsud2F2ZXNwYW4udjEuTXVsdGlHZXRSZXN1bHQSPwoGRGVsZXRlEhoud2F2ZXNwYW4udjEuRGVsZXRlUmVxdWVzdBoZLndhdmVzcGFuLnYxLkRlbGV0ZVJlc3VsdBI9CgRTY2FuEhgud2F2ZXNwYW4udjEuU2NhblJlcXVlc3QaGS53YXZlc3Bhbi52MS5TY2FuUmVzcG9uc2UwAUKfAQoPY29tLndhdmVzcGFuLnYxQgdLdlByb3RvUAFaNmdpdGh1Yi5jb20vY3dpcmUvd2F2ZXNwYW4vcHJvdG8vd2F2ZXNwYW4vdjE7d2F2ZXNwYW52MaICA1dYWKoCC1dhdmVzcGFuLlYxygILV2F2ZXNwYW5cVjHiAhdXYXZlc3BhblxWMVxHUEJNZXRhZGF0YeoCDFdhdmVzcGFuOjpWMWIGcHJvdG8z", [file_wavespan_v1_common]);
 
 /**
  * @generated from message wavespan.v1.PutRequest
@@ -159,6 +159,55 @@ export const GetResultSchema: GenMessage<GetResult> = /*@__PURE__*/
   messageDesc(file_wavespan_v1_kv, 3);
 
 /**
+ * MultiGetRequest reads many keys of one namespace in a single round-trip, amortizing the RPC +
+ * HTTP/2 + serialization overhead that dominates a per-key Get (design/03 read path, throughput).
+ *
+ * @generated from message wavespan.v1.MultiGetRequest
+ */
+export type MultiGetRequest = Message<"wavespan.v1.MultiGetRequest"> & {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: repeated bytes keys = 2;
+   */
+  keys: Uint8Array[];
+
+  /**
+   * @generated from field: bool hide_expired_on_read = 3;
+   */
+  hideExpiredOnRead: boolean;
+};
+
+/**
+ * Describes the message wavespan.v1.MultiGetRequest.
+ * Use `create(MultiGetRequestSchema)` to create a new message.
+ */
+export const MultiGetRequestSchema: GenMessage<MultiGetRequest> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_kv, 4);
+
+/**
+ * MultiGetResult returns one GetResult per requested key, in request order.
+ *
+ * @generated from message wavespan.v1.MultiGetResult
+ */
+export type MultiGetResult = Message<"wavespan.v1.MultiGetResult"> & {
+  /**
+   * @generated from field: repeated wavespan.v1.GetResult results = 1;
+   */
+  results: GetResult[];
+};
+
+/**
+ * Describes the message wavespan.v1.MultiGetResult.
+ * Use `create(MultiGetResultSchema)` to create a new message.
+ */
+export const MultiGetResultSchema: GenMessage<MultiGetResult> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_kv, 5);
+
+/**
  * @generated from message wavespan.v1.DeleteRequest
  */
 export type DeleteRequest = Message<"wavespan.v1.DeleteRequest"> & {
@@ -188,7 +237,7 @@ export type DeleteRequest = Message<"wavespan.v1.DeleteRequest"> & {
  * Use `create(DeleteRequestSchema)` to create a new message.
  */
 export const DeleteRequestSchema: GenMessage<DeleteRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_kv, 4);
+  messageDesc(file_wavespan_v1_kv, 6);
 
 /**
  * @generated from message wavespan.v1.DeleteResult
@@ -215,7 +264,7 @@ export type DeleteResult = Message<"wavespan.v1.DeleteResult"> & {
  * Use `create(DeleteResultSchema)` to create a new message.
  */
 export const DeleteResultSchema: GenMessage<DeleteResult> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_kv, 5);
+  messageDesc(file_wavespan_v1_kv, 7);
 
 /**
  * @generated from message wavespan.v1.ScanRequest
@@ -252,7 +301,7 @@ export type ScanRequest = Message<"wavespan.v1.ScanRequest"> & {
  * Use `create(ScanRequestSchema)` to create a new message.
  */
 export const ScanRequestSchema: GenMessage<ScanRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_kv, 6);
+  messageDesc(file_wavespan_v1_kv, 8);
 
 /**
  * ScanHeader is the first message of a range scan stream; it declares the actual completeness so a
@@ -282,7 +331,7 @@ export type ScanHeader = Message<"wavespan.v1.ScanHeader"> & {
  * Use `create(ScanHeaderSchema)` to create a new message.
  */
 export const ScanHeaderSchema: GenMessage<ScanHeader> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_kv, 7);
+  messageDesc(file_wavespan_v1_kv, 9);
 
 /**
  * @generated from message wavespan.v1.ScanRow
@@ -314,7 +363,7 @@ export type ScanRow = Message<"wavespan.v1.ScanRow"> & {
  * Use `create(ScanRowSchema)` to create a new message.
  */
 export const ScanRowSchema: GenMessage<ScanRow> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_kv, 8);
+  messageDesc(file_wavespan_v1_kv, 10);
 
 /**
  * @generated from message wavespan.v1.ScanTrailer
@@ -341,7 +390,7 @@ export type ScanTrailer = Message<"wavespan.v1.ScanTrailer"> & {
  * Use `create(ScanTrailerSchema)` to create a new message.
  */
 export const ScanTrailerSchema: GenMessage<ScanTrailer> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_kv, 9);
+  messageDesc(file_wavespan_v1_kv, 11);
 
 /**
  * @generated from message wavespan.v1.ScanResponse
@@ -376,7 +425,7 @@ export type ScanResponse = Message<"wavespan.v1.ScanResponse"> & {
  * Use `create(ScanResponseSchema)` to create a new message.
  */
 export const ScanResponseSchema: GenMessage<ScanResponse> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_kv, 10);
+  messageDesc(file_wavespan_v1_kv, 12);
 
 /**
  * RangeCoverageCertificate lets a node claim a cache-complete scan over [start_key, end_key): it is
@@ -428,7 +477,7 @@ export type RangeCoverageCertificate = Message<"wavespan.v1.RangeCoverageCertifi
  * Use `create(RangeCoverageCertificateSchema)` to create a new message.
  */
 export const RangeCoverageCertificateSchema: GenMessage<RangeCoverageCertificate> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_kv, 11);
+  messageDesc(file_wavespan_v1_kv, 13);
 
 /**
  * ScanMode selects the range-scan strategy (design/03 "Range scans").
@@ -498,6 +547,14 @@ export const KvService: GenService<{
     methodKind: "unary";
     input: typeof GetRequestSchema;
     output: typeof GetResultSchema;
+  },
+  /**
+   * @generated from rpc wavespan.v1.KvService.MultiGet
+   */
+  multiGet: {
+    methodKind: "unary";
+    input: typeof MultiGetRequestSchema;
+    output: typeof MultiGetResultSchema;
   },
   /**
    * @generated from rpc wavespan.v1.KvService.Delete

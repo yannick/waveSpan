@@ -2,6 +2,7 @@ package kv
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/cwire/wavespan/internal/cache"
@@ -53,6 +54,36 @@ func (r *Reader) WithCache(f fetcher, cs cacheStore) *Reader {
 func (r *Reader) WithSubscriber(s subscriber) *Reader {
 	r.sub = s
 	return r
+}
+
+// MultiGet reads many keys of one namespace, returning one GetResult per key in request order. It
+// amortizes the RPC/HTTP-2/serialization overhead of a per-key Get across the whole batch — the
+// dominant read-path cost. Reads are issued concurrently (bounded) so a batch with cache misses
+// (network fetch-on-miss) does not serialize those round-trips.
+func (r *Reader) MultiGet(ctx context.Context, namespace string, keys [][]byte, hideExpired bool) ([]*wavespanv1.GetResult, error) {
+	results := make([]*wavespanv1.GetResult, len(keys))
+	const maxConcurrent = 32
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+	for i, k := range keys {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, k []byte) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			res, err := r.Get(ctx, namespace, k, hideExpired)
+			if err != nil {
+				// degrade a single-key error to not-found so one bad key never fails the batch.
+				res = &wavespanv1.GetResult{
+					Meta:  &wavespanv1.ResponseMeta{ServedByMemberId: r.self.MemberID, Completeness: wavespanv1.Completeness_PARTIAL},
+					Found: false,
+				}
+			}
+			results[i] = res
+		}(i, k)
+	}
+	wg.Wait()
+	return results, nil
 }
 
 // Get reads a key. On a local miss it fetches from the closest holder, caches the result, and

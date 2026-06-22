@@ -152,6 +152,10 @@ message InspectLocalRequest {
   bytes end_key = 5;
   uint32 limit = 6;
   bool include_value = 7;
+  // cluster_wide fans the scan out to every alive member of THIS cluster and merges by key (latest
+  // version wins; the holders list shows which nodes hold each key). false = this node's store only.
+  // Cross-CLUSTER resolution is InspectGlobal, not this flag.
+  bool cluster_wide = 8;
 }
 
 message InspectGlobalRequest {

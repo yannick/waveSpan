@@ -37,6 +37,8 @@ const (
 	KvServicePutProcedure = "/wavespan.v1.KvService/Put"
 	// KvServiceGetProcedure is the fully-qualified name of the KvService's Get RPC.
 	KvServiceGetProcedure = "/wavespan.v1.KvService/Get"
+	// KvServiceMultiGetProcedure is the fully-qualified name of the KvService's MultiGet RPC.
+	KvServiceMultiGetProcedure = "/wavespan.v1.KvService/MultiGet"
 	// KvServiceDeleteProcedure is the fully-qualified name of the KvService's Delete RPC.
 	KvServiceDeleteProcedure = "/wavespan.v1.KvService/Delete"
 	// KvServiceScanProcedure is the fully-qualified name of the KvService's Scan RPC.
@@ -47,6 +49,7 @@ const (
 type KvServiceClient interface {
 	Put(context.Context, *connect.Request[v1.PutRequest]) (*connect.Response[v1.PutResult], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResult], error)
+	MultiGet(context.Context, *connect.Request[v1.MultiGetRequest]) (*connect.Response[v1.MultiGetResult], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResult], error)
 	Scan(context.Context, *connect.Request[v1.ScanRequest]) (*connect.ServerStreamForClient[v1.ScanResponse], error)
 }
@@ -74,6 +77,12 @@ func NewKvServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(kvServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
+		multiGet: connect.NewClient[v1.MultiGetRequest, v1.MultiGetResult](
+			httpClient,
+			baseURL+KvServiceMultiGetProcedure,
+			connect.WithSchema(kvServiceMethods.ByName("MultiGet")),
+			connect.WithClientOptions(opts...),
+		),
 		delete: connect.NewClient[v1.DeleteRequest, v1.DeleteResult](
 			httpClient,
 			baseURL+KvServiceDeleteProcedure,
@@ -91,10 +100,11 @@ func NewKvServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 
 // kvServiceClient implements KvServiceClient.
 type kvServiceClient struct {
-	put    *connect.Client[v1.PutRequest, v1.PutResult]
-	get    *connect.Client[v1.GetRequest, v1.GetResult]
-	delete *connect.Client[v1.DeleteRequest, v1.DeleteResult]
-	scan   *connect.Client[v1.ScanRequest, v1.ScanResponse]
+	put      *connect.Client[v1.PutRequest, v1.PutResult]
+	get      *connect.Client[v1.GetRequest, v1.GetResult]
+	multiGet *connect.Client[v1.MultiGetRequest, v1.MultiGetResult]
+	delete   *connect.Client[v1.DeleteRequest, v1.DeleteResult]
+	scan     *connect.Client[v1.ScanRequest, v1.ScanResponse]
 }
 
 // Put calls wavespan.v1.KvService.Put.
@@ -105,6 +115,11 @@ func (c *kvServiceClient) Put(ctx context.Context, req *connect.Request[v1.PutRe
 // Get calls wavespan.v1.KvService.Get.
 func (c *kvServiceClient) Get(ctx context.Context, req *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResult], error) {
 	return c.get.CallUnary(ctx, req)
+}
+
+// MultiGet calls wavespan.v1.KvService.MultiGet.
+func (c *kvServiceClient) MultiGet(ctx context.Context, req *connect.Request[v1.MultiGetRequest]) (*connect.Response[v1.MultiGetResult], error) {
+	return c.multiGet.CallUnary(ctx, req)
 }
 
 // Delete calls wavespan.v1.KvService.Delete.
@@ -121,6 +136,7 @@ func (c *kvServiceClient) Scan(ctx context.Context, req *connect.Request[v1.Scan
 type KvServiceHandler interface {
 	Put(context.Context, *connect.Request[v1.PutRequest]) (*connect.Response[v1.PutResult], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResult], error)
+	MultiGet(context.Context, *connect.Request[v1.MultiGetRequest]) (*connect.Response[v1.MultiGetResult], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResult], error)
 	Scan(context.Context, *connect.Request[v1.ScanRequest], *connect.ServerStream[v1.ScanResponse]) error
 }
@@ -144,6 +160,12 @@ func NewKvServiceHandler(svc KvServiceHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(kvServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
+	kvServiceMultiGetHandler := connect.NewUnaryHandler(
+		KvServiceMultiGetProcedure,
+		svc.MultiGet,
+		connect.WithSchema(kvServiceMethods.ByName("MultiGet")),
+		connect.WithHandlerOptions(opts...),
+	)
 	kvServiceDeleteHandler := connect.NewUnaryHandler(
 		KvServiceDeleteProcedure,
 		svc.Delete,
@@ -162,6 +184,8 @@ func NewKvServiceHandler(svc KvServiceHandler, opts ...connect.HandlerOption) (s
 			kvServicePutHandler.ServeHTTP(w, r)
 		case KvServiceGetProcedure:
 			kvServiceGetHandler.ServeHTTP(w, r)
+		case KvServiceMultiGetProcedure:
+			kvServiceMultiGetHandler.ServeHTTP(w, r)
 		case KvServiceDeleteProcedure:
 			kvServiceDeleteHandler.ServeHTTP(w, r)
 		case KvServiceScanProcedure:
@@ -181,6 +205,10 @@ func (UnimplementedKvServiceHandler) Put(context.Context, *connect.Request[v1.Pu
 
 func (UnimplementedKvServiceHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.KvService.Get is not implemented"))
+}
+
+func (UnimplementedKvServiceHandler) MultiGet(context.Context, *connect.Request[v1.MultiGetRequest]) (*connect.Response[v1.MultiGetResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.KvService.MultiGet is not implemented"))
 }
 
 func (UnimplementedKvServiceHandler) Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResult], error) {
