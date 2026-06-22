@@ -93,6 +93,15 @@ func (s *Service) Get(ctx context.Context, req *connect.Request[wavespanv1.GetRe
 	return connect.NewResponse(res), nil
 }
 
+// MultiGet serves a batch of reads in one round-trip (amortizes RPC overhead, design/03).
+func (s *Service) MultiGet(ctx context.Context, req *connect.Request[wavespanv1.MultiGetRequest]) (*connect.Response[wavespanv1.MultiGetResult], error) {
+	results, err := s.reader.MultiGet(ctx, req.Msg.GetNamespace(), req.Msg.GetKeys(), req.Msg.GetHideExpiredOnRead())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&wavespanv1.MultiGetResult{Results: results}), nil
+}
+
 // Scan streams a range scan (M6), always declaring the actual completeness in the header.
 func (s *Service) Scan(ctx context.Context, req *connect.Request[wavespanv1.ScanRequest], stream *connect.ServerStream[wavespanv1.ScanResponse]) error {
 	if s.scanner == nil {

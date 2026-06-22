@@ -9,6 +9,7 @@ import "wavespan/v1/common.proto";
 service KvService {
   rpc Put(PutRequest) returns (PutResult);
   rpc Get(GetRequest) returns (GetResult);
+  rpc MultiGet(MultiGetRequest) returns (MultiGetResult);
   rpc Delete(DeleteRequest) returns (DeleteResult);
   rpc Scan(ScanRequest) returns (stream ScanResponse);
 }
@@ -43,6 +44,19 @@ message GetResult {
   bool found = 2;
   bytes value = 3;
   optional int64 expires_at_unix_ms = 4;
+}
+
+// MultiGetRequest reads many keys of one namespace in a single round-trip, amortizing the RPC +
+// HTTP/2 + serialization overhead that dominates a per-key Get (design/03 read path, throughput).
+message MultiGetRequest {
+  string namespace = 1;
+  repeated bytes keys = 2;
+  bool hide_expired_on_read = 3;
+}
+
+// MultiGetResult returns one GetResult per requested key, in request order.
+message MultiGetResult {
+  repeated GetResult results = 1;
 }
 
 message DeleteRequest {

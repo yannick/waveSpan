@@ -1123,14 +1123,18 @@ func (*InspectRow_Key) isInspectRow_Row() {}
 func (*InspectRow_Trailer) isInspectRow_Row() {}
 
 type InspectLocalRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Keyspace      Keyspace               `protobuf:"varint,1,opt,name=keyspace,proto3,enum=wavespan.v1.Keyspace" json:"keyspace,omitempty"`
-	Namespace     string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	Prefix        []byte                 `protobuf:"bytes,3,opt,name=prefix,proto3" json:"prefix,omitempty"`
-	StartKey      []byte                 `protobuf:"bytes,4,opt,name=start_key,json=startKey,proto3" json:"start_key,omitempty"`
-	EndKey        []byte                 `protobuf:"bytes,5,opt,name=end_key,json=endKey,proto3" json:"end_key,omitempty"`
-	Limit         uint32                 `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
-	IncludeValue  bool                   `protobuf:"varint,7,opt,name=include_value,json=includeValue,proto3" json:"include_value,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Keyspace     Keyspace               `protobuf:"varint,1,opt,name=keyspace,proto3,enum=wavespan.v1.Keyspace" json:"keyspace,omitempty"`
+	Namespace    string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Prefix       []byte                 `protobuf:"bytes,3,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	StartKey     []byte                 `protobuf:"bytes,4,opt,name=start_key,json=startKey,proto3" json:"start_key,omitempty"`
+	EndKey       []byte                 `protobuf:"bytes,5,opt,name=end_key,json=endKey,proto3" json:"end_key,omitempty"`
+	Limit        uint32                 `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
+	IncludeValue bool                   `protobuf:"varint,7,opt,name=include_value,json=includeValue,proto3" json:"include_value,omitempty"`
+	// cluster_wide fans the scan out to every alive member of THIS cluster and merges by key (latest
+	// version wins; the holders list shows which nodes hold each key). false = this node's store only.
+	// Cross-CLUSTER resolution is InspectGlobal, not this flag.
+	ClusterWide   bool `protobuf:"varint,8,opt,name=cluster_wide,json=clusterWide,proto3" json:"cluster_wide,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1210,6 +1214,13 @@ func (x *InspectLocalRequest) GetLimit() uint32 {
 func (x *InspectLocalRequest) GetIncludeValue() bool {
 	if x != nil {
 		return x.IncludeValue
+	}
+	return false
+}
+
+func (x *InspectLocalRequest) GetClusterWide() bool {
+	if x != nil {
+		return x.ClusterWide
 	}
 	return false
 }
@@ -1792,7 +1803,7 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\x06header\x18\x01 \x01(\v2\x19.wavespan.v1.ResponseMetaH\x00R\x06header\x12+\n" +
 	"\x03key\x18\x02 \x01(\v2\x17.wavespan.v1.InspectKeyH\x00R\x03key\x127\n" +
 	"\atrailer\x18\x03 \x01(\v2\x1b.wavespan.v1.InspectTrailerH\x00R\atrailerB\x05\n" +
-	"\x03row\"\xef\x01\n" +
+	"\x03row\"\x92\x02\n" +
 	"\x13InspectLocalRequest\x121\n" +
 	"\bkeyspace\x18\x01 \x01(\x0e2\x15.wavespan.v1.KeyspaceR\bkeyspace\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x16\n" +
@@ -1800,7 +1811,8 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\tstart_key\x18\x04 \x01(\fR\bstartKey\x12\x17\n" +
 	"\aend_key\x18\x05 \x01(\fR\x06endKey\x12\x14\n" +
 	"\x05limit\x18\x06 \x01(\rR\x05limit\x12#\n" +
-	"\rinclude_value\x18\a \x01(\bR\fincludeValue\"\xd2\x01\n" +
+	"\rinclude_value\x18\a \x01(\bR\fincludeValue\x12!\n" +
+	"\fcluster_wide\x18\b \x01(\bR\vclusterWide\"\xd2\x01\n" +
 	"\x14InspectGlobalRequest\x121\n" +
 	"\bkeyspace\x18\x01 \x01(\x0e2\x15.wavespan.v1.KeyspaceR\bkeyspace\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x10\n" +

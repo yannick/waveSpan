@@ -335,7 +335,8 @@ func run() error {
 	})
 	obsSvc := observability.NewObsService(gossipRing, svc, self, rstore).
 		WithUnderReplicated(func() uint64 { return uint64(holders.UnderReplicatedEstimate(targetHolders, isAlive)) }).
-		WithGraph(graphStore) // enables the visual node explorer (GraphExplore)
+		WithGraph(graphStore).      // enables the visual node explorer (GraphExplore)
+		WithClusterScan(replicator) // cluster-wide Data Browser: fan InspectLocal out to all members
 	adminIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
 	obsPath, obsHandler := obsSvc.Handler()
 	adminMux.Handle(obsPath, adminIdentity.EnforceHTTP(obsHandler)) // ObservabilityService (admin auth)

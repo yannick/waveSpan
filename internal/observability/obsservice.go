@@ -23,6 +23,13 @@ type GlobalInspector interface {
 	InspectKey(ctx context.Context, namespace string, key []byte, includePeerClusters, includeValue bool) (holders []*wavespanv1.InspectHolder, warnings []string, complete bool)
 }
 
+// holderScanner scans a remote member's local store over a subrange — the same fan-out the routed KV
+// scanner uses (internal/kv/scan.go). It powers cluster-wide InspectLocal so the Data Browser can
+// see keys on every node, not just this one. Satisfied by *local.ConnectReplicator.
+type holderScanner interface {
+	ScanLocal(ctx context.Context, target membership.Member, namespace string, start, end []byte, limit int) ([]*wavespanv1.ScanLocalRow, error)
+}
+
 // ObsService is the ObservabilityService handler powering the embedded UI and wavespanctl
 // introspection (design/26). It is mounted on the admin port behind admin auth; values are redacted
 // by default.
@@ -37,6 +44,8 @@ type ObsService struct {
 	globalInspector GlobalInspector
 	// Visual node explorer support; nil disables GraphExplore.
 	graph *graph.Store
+	// Cluster-wide InspectLocal fan-out; nil disables cluster_wide (falls back to local-only).
+	clusterScan holderScanner
 }
 
 // NewObsService wires the observability service.
@@ -53,6 +62,13 @@ func (s *ObsService) WithUnderReplicated(fn func() uint64) *ObsService {
 // WithGlobalInspector enables InspectGlobal cross-holder resolution.
 func (s *ObsService) WithGlobalInspector(g GlobalInspector) *ObsService {
 	s.globalInspector = g
+	return s
+}
+
+// WithClusterScan enables cluster-wide InspectLocal: a fan-out scan over every alive member so the
+// Data Browser shows the whole cluster's KV, not just this node's.
+func (s *ObsService) WithClusterScan(h holderScanner) *ObsService {
+	s.clusterScan = h
 	return s
 }
 
