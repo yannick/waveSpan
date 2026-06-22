@@ -65,4 +65,15 @@ func TestCacheMissFetchAndDynamicCacheHit(t *testing.T) {
 	if string(resp.Msg.GetValue()) != "cv" {
 		t.Fatalf("cached value = %q, want cv", resp.Msg.GetValue())
 	}
+
+	// (TS-042) update on the holder propagates to the subscribed cache
+	if _, err := kvClient(dataPorts["node1"]).Put(ctx, connect.NewRequest(&wavespanv1.PutRequest{
+		Namespace: "default", Key: []byte("ck"), Value: []byte("cv2"), RequireOriginPlusOne: true,
+	})); err != nil {
+		t.Fatalf("update put: %v", err)
+	}
+	waitFor(t, "cache receives the update via subscription", 30*time.Second, func() bool {
+		r, err := kvClient(dataPorts[miss]).Get(ctx, connect.NewRequest(&wavespanv1.GetRequest{Namespace: "default", Key: []byte("ck")}))
+		return err == nil && string(r.Msg.GetValue()) == "cv2"
+	})
 }

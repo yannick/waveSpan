@@ -21,6 +21,11 @@ type cacheStore interface {
 	IsCacheReplica(namespace string, key []byte) bool
 }
 
+// subscriber opens a live update subscription for a cached key (M5).
+type subscriber interface {
+	Ensure(ctx context.Context, namespace string, key []byte, offer *wavespanv1.SubscriptionOffer)
+}
+
 // Reader serves reads: local-first, then (M5) a closest-holder fetch that populates the dynamic
 // cache so later reads are local (design/03 "Get path").
 type Reader struct {
@@ -28,6 +33,7 @@ type Reader struct {
 	self    membership.Member
 	fetcher fetcher
 	cache   cacheStore
+	sub     subscriber
 }
 
 // NewReader builds a local reader (no cache fetch path).
@@ -39,6 +45,13 @@ func NewReader(store *recordstore.Store, self membership.Member) *Reader {
 func (r *Reader) WithCache(f fetcher, cs cacheStore) *Reader {
 	r.fetcher = f
 	r.cache = cs
+	return r
+}
+
+// WithSubscriber enables live cache invalidation: after caching a fetched key, open a
+// SubscribeKey stream so updates on the holder propagate to this cache (M5).
+func (r *Reader) WithSubscriber(s subscriber) *Reader {
+	r.sub = s
 	return r
 }
 
@@ -60,6 +73,9 @@ func (r *Reader) Get(ctx context.Context, namespace string, key []byte, hideExpi
 		if fr, ferr := r.fetcher.Fetch(ctx, namespace, key); ferr == nil && fr.Found {
 			if r.cache != nil {
 				_ = r.cache.Put(fr.Record)
+			}
+			if r.sub != nil && fr.Offer != nil {
+				r.sub.Ensure(ctx, namespace, key, fr.Offer)
 			}
 			out, err = r.store.Get(namespace, key)
 			if err != nil {
