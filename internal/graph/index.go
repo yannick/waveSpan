@@ -146,6 +146,18 @@ func (s *Store) wipeIndex() error {
 	return s.local.Batch(ops)
 }
 
+// AllNodes returns every live node record of a graph (used by the AllNodesScan operator).
+func (s *Store) AllNodes(graph string) ([]*wavespanv1.NodeRecord, error) {
+	var out []*wavespanv1.NodeRecord
+	err := s.forEachNode(graph, func(n *wavespanv1.NodeRecord) error {
+		if !n.GetTombstone() {
+			out = append(out, n)
+		}
+		return nil
+	})
+	return out, err
+}
+
 func (s *Store) forEachNode(graph string, fn func(*wavespanv1.NodeRecord) error) error {
 	prefix := NodePrefix(graph)
 	it, err := s.local.Scan(storage.CFGraphData, prefix, prefixEnd(prefix), 0)

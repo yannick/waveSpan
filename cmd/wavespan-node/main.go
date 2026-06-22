@@ -18,6 +18,8 @@ import (
 	"github.com/cwire/wavespan/internal/cache"
 	"github.com/cwire/wavespan/internal/config"
 	"github.com/cwire/wavespan/internal/conflict"
+	"github.com/cwire/wavespan/internal/cypher"
+	"github.com/cwire/wavespan/internal/graph"
 	"github.com/cwire/wavespan/internal/kv"
 	"github.com/cwire/wavespan/internal/membership"
 	"github.com/cwire/wavespan/internal/observability"
@@ -197,10 +199,16 @@ func run() error {
 		logger.Info("global replication enabled", "peers", len(peers))
 	}
 
-	// Data server on the data port: public KvService + internal ReplicationService.
+	// Graph + Cypher (M8): the Cypher service plans and executes against the local graph store.
+	cypherSvc := cypher.NewService(graph.NewStore(store), cfg.ClusterID, cfg.MemberID, func() *wavespanv1.Version {
+		return rstore.NextVersion().ToProto()
+	})
+
+	// Data server on the data port: public KvService + Cypher + internal ReplicationService.
 	dataMux := http.NewServeMux()
 	dataMux.Handle(kvSvc.Handler())
 	dataMux.Handle(replicaSrv.Handler())
+	dataMux.Handle(cypherSvc.Handler())
 	if globalSrv != nil {
 		dataMux.Handle(globalSrv.Handler())
 	}
