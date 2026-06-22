@@ -1,0 +1,33 @@
+apiVersion: db.wavespan.io/v1alpha1
+kind: ReplicationPolicy
+metadata:
+  name: local-cache-default
+spec:
+  mode: local-cache
+  local:
+    targetNearbyReplicas: 3
+    minAckNearbyReplicas: 1
+    requireDistinctNodes: true
+    geo: prefer-local-geo
+  conflict:
+    policy: hlc-last-write-wins
+---
+apiVersion: db.wavespan.io/v1alpha1
+kind: WaveSpanCluster
+metadata:
+  name: demo
+spec:
+  image: wavespan/node:dev
+  replicas: 3
+  clusterId: demo
+  storage:
+    volumeSize: 10Gi
+    storageClassName: standard
+  gateway:
+    enabled: true
+    replicas: 2
+  disruption:
+    maxUnavailable: 1
+  replicationPolicyRef: local-cache-default
+  security:
+    insecureDevMode: true

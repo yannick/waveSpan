@@ -1,0 +1,13 @@
+# An INVALID ReplicationPolicy the validating webhook must reject: require-local-geo with no
+# compliance boundary (design/12 "Operator validation rules"). The e2e webhook test applies this
+# and asserts the apply is rejected.
+apiVersion: db.wavespan.io/v1alpha1
+kind: ReplicationPolicy
+metadata:
+  name: invalid-no-boundary
+spec:
+  mode: local-cache
+  local:
+    targetNearbyReplicas: 3
+    minAckNearbyReplicas: 1
+    geo: require-local-geo
