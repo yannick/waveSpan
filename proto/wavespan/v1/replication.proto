@@ -117,9 +117,13 @@ message GlobalMutation {
   uint32 partition = 5;
 }
 
+// PushGlobalRequest batches mutations to a peer (unary; works over HTTP/1.1, unlike a bidi stream).
+message PushGlobalRequest {
+  repeated GlobalMutation mutations = 1;
+}
+
 message PushGlobalAck {
-  uint64 applied_through_seq = 1;
-  uint32 partition = 2;
+  uint64 applied_count = 1;
 }
 
 message KeyRange {
@@ -148,7 +152,7 @@ message FetchRangeRequest {
 // GlobalReplication ships local mutations to peer clusters asynchronously and reconciles via
 // anti-entropy (design/06). No cross-cluster consensus on the hot path.
 service GlobalReplication {
-  rpc PushGlobal(stream GlobalMutation) returns (stream PushGlobalAck);
+  rpc PushGlobal(PushGlobalRequest) returns (PushGlobalAck);
   rpc RangeSummary(RangeSummaryRequest) returns (RangeSummaryResponse);
   rpc FetchRange(FetchRangeRequest) returns (stream GlobalMutation);
 }

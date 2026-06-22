@@ -208,7 +208,7 @@ func (UnimplementedReplicationServiceHandler) ScanLocal(context.Context, *connec
 
 // GlobalReplicationClient is a client for the wavespan.v1.GlobalReplication service.
 type GlobalReplicationClient interface {
-	PushGlobal(context.Context) *connect.BidiStreamForClient[v1.GlobalMutation, v1.PushGlobalAck]
+	PushGlobal(context.Context, *connect.Request[v1.PushGlobalRequest]) (*connect.Response[v1.PushGlobalAck], error)
 	RangeSummary(context.Context, *connect.Request[v1.RangeSummaryRequest]) (*connect.Response[v1.RangeSummaryResponse], error)
 	FetchRange(context.Context, *connect.Request[v1.FetchRangeRequest]) (*connect.ServerStreamForClient[v1.GlobalMutation], error)
 }
@@ -224,7 +224,7 @@ func NewGlobalReplicationClient(httpClient connect.HTTPClient, baseURL string, o
 	baseURL = strings.TrimRight(baseURL, "/")
 	globalReplicationMethods := v1.File_wavespan_v1_replication_proto.Services().ByName("GlobalReplication").Methods()
 	return &globalReplicationClient{
-		pushGlobal: connect.NewClient[v1.GlobalMutation, v1.PushGlobalAck](
+		pushGlobal: connect.NewClient[v1.PushGlobalRequest, v1.PushGlobalAck](
 			httpClient,
 			baseURL+GlobalReplicationPushGlobalProcedure,
 			connect.WithSchema(globalReplicationMethods.ByName("PushGlobal")),
@@ -247,14 +247,14 @@ func NewGlobalReplicationClient(httpClient connect.HTTPClient, baseURL string, o
 
 // globalReplicationClient implements GlobalReplicationClient.
 type globalReplicationClient struct {
-	pushGlobal   *connect.Client[v1.GlobalMutation, v1.PushGlobalAck]
+	pushGlobal   *connect.Client[v1.PushGlobalRequest, v1.PushGlobalAck]
 	rangeSummary *connect.Client[v1.RangeSummaryRequest, v1.RangeSummaryResponse]
 	fetchRange   *connect.Client[v1.FetchRangeRequest, v1.GlobalMutation]
 }
 
 // PushGlobal calls wavespan.v1.GlobalReplication.PushGlobal.
-func (c *globalReplicationClient) PushGlobal(ctx context.Context) *connect.BidiStreamForClient[v1.GlobalMutation, v1.PushGlobalAck] {
-	return c.pushGlobal.CallBidiStream(ctx)
+func (c *globalReplicationClient) PushGlobal(ctx context.Context, req *connect.Request[v1.PushGlobalRequest]) (*connect.Response[v1.PushGlobalAck], error) {
+	return c.pushGlobal.CallUnary(ctx, req)
 }
 
 // RangeSummary calls wavespan.v1.GlobalReplication.RangeSummary.
@@ -269,7 +269,7 @@ func (c *globalReplicationClient) FetchRange(ctx context.Context, req *connect.R
 
 // GlobalReplicationHandler is an implementation of the wavespan.v1.GlobalReplication service.
 type GlobalReplicationHandler interface {
-	PushGlobal(context.Context, *connect.BidiStream[v1.GlobalMutation, v1.PushGlobalAck]) error
+	PushGlobal(context.Context, *connect.Request[v1.PushGlobalRequest]) (*connect.Response[v1.PushGlobalAck], error)
 	RangeSummary(context.Context, *connect.Request[v1.RangeSummaryRequest]) (*connect.Response[v1.RangeSummaryResponse], error)
 	FetchRange(context.Context, *connect.Request[v1.FetchRangeRequest], *connect.ServerStream[v1.GlobalMutation]) error
 }
@@ -281,7 +281,7 @@ type GlobalReplicationHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewGlobalReplicationHandler(svc GlobalReplicationHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	globalReplicationMethods := v1.File_wavespan_v1_replication_proto.Services().ByName("GlobalReplication").Methods()
-	globalReplicationPushGlobalHandler := connect.NewBidiStreamHandler(
+	globalReplicationPushGlobalHandler := connect.NewUnaryHandler(
 		GlobalReplicationPushGlobalProcedure,
 		svc.PushGlobal,
 		connect.WithSchema(globalReplicationMethods.ByName("PushGlobal")),
@@ -316,8 +316,8 @@ func NewGlobalReplicationHandler(svc GlobalReplicationHandler, opts ...connect.H
 // UnimplementedGlobalReplicationHandler returns CodeUnimplemented from all methods.
 type UnimplementedGlobalReplicationHandler struct{}
 
-func (UnimplementedGlobalReplicationHandler) PushGlobal(context.Context, *connect.BidiStream[v1.GlobalMutation, v1.PushGlobalAck]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.GlobalReplication.PushGlobal is not implemented"))
+func (UnimplementedGlobalReplicationHandler) PushGlobal(context.Context, *connect.Request[v1.PushGlobalRequest]) (*connect.Response[v1.PushGlobalAck], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.GlobalReplication.PushGlobal is not implemented"))
 }
 
 func (UnimplementedGlobalReplicationHandler) RangeSummary(context.Context, *connect.Request[v1.RangeSummaryRequest]) (*connect.Response[v1.RangeSummaryResponse], error) {

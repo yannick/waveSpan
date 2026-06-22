@@ -35,6 +35,9 @@ type Config struct {
 	Admin         AdminConfig       `yaml:"admin"`
 	Ports         PortsConfig       `yaml:"ports"`
 	Security      SecurityConfig    `yaml:"security"`
+
+	GlobalReplication GlobalReplicationConfig `yaml:"globalReplication"`
+	Namespaces        []NamespaceConfig       `yaml:"namespaces"`
 }
 
 // TopologyConfig holds the static topology labels (hints; the latency graph is authoritative,
@@ -188,6 +191,7 @@ func (c *Config) applyEnv(get func(string) (string, bool)) {
 			c.Replication.MinAckNearbyReplicas = &n
 		}
 	}
+	c.applyGlobalEnv(get)
 }
 
 func (c *Config) applyDefaults() {
