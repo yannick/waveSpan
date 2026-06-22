@@ -292,6 +292,41 @@ func run() error {
 		metas = append(metas, meta)
 	}
 	indexSet := vector.NewIndexSet(metas, ann.DefaultParams())
+	// Rebuild the ANN indexes from the authoritative raw vectors so vectors written before a restart
+	// are searchable again (the live indexes start empty otherwise — design/08 "Index rebuild").
+	if err := indexSet.RebuildFromStore(vstore); err != nil {
+		return fmt.Errorf("rebuild vector indexes: %w", err)
+	}
+	// Drain each live index's delta into its main HNSW segment on the vector.mergeInterval tunable, so
+	// search isn't a growing linear scan over the delta. Re-reads the interval live on a Hot change.
+	if mp := tun.Get("vector.mergeInterval"); mp != nil {
+		for _, li := range indexSet.LiveIndexes() {
+			go vector.NewMerger(li, 0).Run(ctx, mp.Duration())
+		}
+	}
+	// Feed the vector store + ANN index from every durable apply (origin, replica, anti-entropy,
+	// bootstrap, cross-cluster) so a vector written anywhere becomes searchable on each holder. Only
+	// the LWW winner is applied; an older/losing write is ignored.
+	rstore.SetApplyObserver(func(rec *wavespanv1.StoredRecord, won bool) {
+		if !won || !vector.IsMutationNamespace(rec.GetNamespace()) {
+			return
+		}
+		coll := vector.CollectionFromNamespace(rec.GetNamespace())
+		id := string(rec.GetLogicalKey())
+		if rec.GetTombstone() {
+			_ = vstore.Delete(coll, id, rec.GetVersion())
+			indexSet.OnWrite(&wavespanv1.VectorRecord{Collection: coll, VectorId: id, Tombstone: true})
+			return
+		}
+		v, uerr := vector.Unwrap(rec)
+		if uerr != nil {
+			logger.Warn("vector apply: unwrap failed", "collection", coll, "err", uerr)
+			return
+		}
+		v.Version = rec.GetVersion() // stamp the authoritative replication version onto the stored copy
+		_ = vstore.Put(v)
+		indexSet.OnWrite(v)
+	})
 	newGraphVersion := func() *wavespanv1.Version { return rstore.NextVersion().ToProto() }
 
 	// Global active-active replication (M7/M10): tap origin KV writes AND raw-vector writes into a
@@ -302,10 +337,9 @@ func run() error {
 	var vectorGlobalTap func(ns string, key []byte, rec *wavespanv1.StoredRecord)
 	if cfg.GlobalReplication.Enabled() {
 		applier := global.NewApplier(rstore, conflict.NewRegistry(), cfg.ConflictPolicy)
-		applier.SetVectorSink(func(v *wavespanv1.VectorRecord) {
-			_ = vstore.Put(v)
-			indexSet.OnWrite(v)
-		})
+		// Note: applied vectors are fed to the local vector store + ANN index by the recordstore
+		// apply-observer (wired above), which covers every apply path (origin, replica, anti-entropy,
+		// bootstrap, cross-cluster) uniformly — so no separate vector sink is needed here.
 		// A cross-cluster write lands on one local node; spread it within this cluster exactly like a
 		// locally-originated write — so a replicate-everywhere namespace reaches every local node, and
 		// the holder is advertised — instead of sitting on the single receiving node.
@@ -352,6 +386,12 @@ func run() error {
 	// SearchLocal serves the per-node fragment a query coordinator scatters to holders (design/08).
 	vectorSvc := vector.NewService(vstore, newGraphVersion).
 		WithHooks(indexSet.OnWrite, vectorGlobalTap).
+		WithReplication(func(ctx context.Context, ns string, key, value []byte) error {
+			// Route the vector write through the origin+1 coordinator so it replicates to holders and
+			// taps cross-cluster; each holder's apply-observer feeds its HNSW.
+			_, err := coord.Put(ctx, ns, key, value, nil, "")
+			return err
+		}, indexSet.CollectionDims).
 		WithSearch(indexSet.Meta, indexSet.Live)
 
 	// Vector search scatters SearchLocal to alive peers and merges, so a query spans the whole

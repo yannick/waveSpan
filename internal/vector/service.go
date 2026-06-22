@@ -19,6 +19,12 @@ type Service struct {
 	globalTap  func(ns string, key []byte, rec *wavespanv1.StoredRecord) // ship to peer clusters
 	index      func(name string) (*IndexMeta, bool)                      // resolve an index (for SearchLocal)
 	live       func(name string) (*LiveIndex, bool)                      // resolve the live ANN index
+
+	// replicate routes a vector write through the KV origin+1 coordinator (intra-cluster replication +
+	// cross-cluster tap); the holders' recordstore apply-observer feeds each HNSW. nil = local-only
+	// (single-node tests). dims, when set, validates a Put against the collection's declared dimensions.
+	replicate func(ctx context.Context, ns string, key, value []byte) error
+	dims      func(collection string) (int, bool)
 }
 
 // NewService wires the vector ingest service.
@@ -38,6 +44,15 @@ func (s *Service) WithHooks(onWrite func(*wavespanv1.VectorRecord), globalTap fu
 func (s *Service) WithSearch(index func(name string) (*IndexMeta, bool), live func(name string) (*LiveIndex, bool)) *Service {
 	s.index = index
 	s.live = live
+	return s
+}
+
+// WithReplication routes vector writes through the cluster (origin+1 + holders + cross-cluster tap) so
+// a vector is searchable on every holder and survives reboots, instead of living only on the ingest
+// node. dims validates Put requests against the collection's declared dimensionality.
+func (s *Service) WithReplication(replicate func(ctx context.Context, ns string, key, value []byte) error, dims func(collection string) (int, bool)) *Service {
+	s.replicate = replicate
+	s.dims = dims
 	return s
 }
 
@@ -70,25 +85,49 @@ func (s *Service) Handler() (string, http.Handler) {
 	return wavespanv1connect.NewVectorServiceHandler(s, rpcopts.Handler()...)
 }
 
-// Put ingests a vector record, stamping a server version when absent and deriving dimensions.
-func (s *Service) Put(_ context.Context, req *connect.Request[wavespanv1.PutVectorRequest]) (*connect.Response[wavespanv1.PutVectorResponse], error) {
+// Put ingests a vector record. It validates dimensions, derives the vector id from the embedding when
+// none is supplied ("the vector is the key"), and — when replication is wired — routes the write
+// through the cluster so every holder's HNSW is fed via the recordstore apply-observer and the vector
+// survives reboot. Without replication (single-node tests) it falls back to a local write.
+func (s *Service) Put(ctx context.Context, req *connect.Request[wavespanv1.PutVectorRequest]) (*connect.Response[wavespanv1.PutVectorResponse], error) {
 	rec := req.Msg.GetRecord()
 	if rec == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errNoRecord)
 	}
+	if s.dims != nil {
+		if d, ok := s.dims(rec.GetCollection()); ok && len(rec.GetValues()) != d {
+			return nil, connect.NewError(connect.CodeInvalidArgument, connectError("vector: dimension mismatch for collection "+rec.GetCollection()))
+		}
+	}
+	rec.Dimensions = uint32(len(rec.GetValues()))
+	if rec.GetVectorId() == "" {
+		rec.VectorId = VecHash(rec.GetValues()) // vector-as-key: identity derived from the embedding
+	}
 	if rec.Version == nil && s.newVersion != nil {
 		rec.Version = s.newVersion()
 	}
-	rec.Dimensions = uint32(len(rec.GetValues()))
+
+	if s.replicate != nil {
+		sr, werr := Wrap(rec)
+		if werr != nil {
+			return nil, connect.NewError(connect.CodeInternal, werr)
+		}
+		if err := s.replicate(ctx, sr.GetNamespace(), sr.GetLogicalKey(), sr.GetValue().GetInline()); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		return connect.NewResponse(&wavespanv1.PutVectorResponse{}), nil
+	}
+
+	// Local-only fallback (no cluster wired): store + index this node only.
 	if err := s.store.Put(rec); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if s.onWrite != nil {
-		s.onWrite(rec) // make it immediately searchable via the local live index
+		s.onWrite(rec)
 	}
 	if s.globalTap != nil {
 		if sr, werr := Wrap(rec); werr == nil {
-			s.globalTap(sr.GetNamespace(), sr.GetLogicalKey(), sr) // replicate the raw vector to peers
+			s.globalTap(sr.GetNamespace(), sr.GetLogicalKey(), sr)
 		}
 	}
 	return connect.NewResponse(&wavespanv1.PutVectorResponse{}), nil

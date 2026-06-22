@@ -30,6 +30,18 @@ type Store struct {
 	// Get + pointer decode entirely. Capped per stripe; on overflow a stripe's cache is cleared (a
 	// miss simply falls back to the storage read, so correctness is unaffected).
 	latestVer [numStripes]map[string]version.Version
+
+	// applyObserver, if set, fires after every durable Apply (origin, replica, anti-entropy,
+	// bootstrap, and cross-cluster all route through Apply). `won` reports whether the applied record
+	// is the LWW winner for its key, so a derived index (e.g. the vector ANN) can mirror the winner
+	// and ignore losing/older writes.
+	applyObserver func(rec *wavespanv1.StoredRecord, won bool)
+}
+
+// SetApplyObserver installs a post-apply hook (nil clears it). It is the single integration point for
+// derived state that must mirror every replicated write regardless of the path it arrived on.
+func (s *Store) SetApplyObserver(fn func(rec *wavespanv1.StoredRecord, won bool)) {
+	s.applyObserver = fn
 }
 
 const (
@@ -213,6 +225,9 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 		m[ckey] = winner
 	} else {
 		s.latestVer[si] = map[string]version.Version{ckey: winner} // bounded reset
+	}
+	if s.applyObserver != nil {
+		s.applyObserver(rec, winner.Compare(recVer) == 0)
 	}
 	return winner, nil
 }
