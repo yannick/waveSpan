@@ -4,6 +4,7 @@ go 1.26.4
 
 require (
 	connectrpc.com/connect v1.20.0
+	github.com/google/pprof v0.0.0-20260604005048-7023385849c0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/zeebo/blake3 v0.2.4
 	golang.org/x/net v0.53.0

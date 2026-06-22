@@ -10,3 +10,10 @@
 /cmd/wavespan-node/.wavespan-data/
 ui/node_modules/
 tests/harness/repro/repro_*.json
+
+# perf tooling artifacts
+perf-report/
+*.pb.gz
+/wavespan-node
+/wavespan-profile
+/wavespan-bench

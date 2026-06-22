@@ -1,4 +1,7 @@
-package main
+// Package bench holds the WaveSpan load + benchmark workloads (bulk load, Cypher query replay, KV
+// load) as a reusable library so both the wavespan-bench CLI and wavespan-profile drive identical
+// traffic — the profiler runs these in-process while capturing pprof from every node.
+package bench
 
 import (
 	"fmt"
@@ -18,26 +21,31 @@ func cypherClient(addr string) wavespanv1connect.CypherClient {
 	return wavespanv1connect.NewCypherClient(http.DefaultClient, "http://"+addr)
 }
 
-// latencies accumulates op latencies for percentile reporting.
-type latencies struct {
+// Latencies accumulates op latencies for percentile reporting.
+type Latencies struct {
 	mu   sync.Mutex
 	lats []time.Duration
 	errs int
 }
 
-func (l *latencies) add(d time.Duration) {
+// Add records one successful op latency.
+func (l *Latencies) Add(d time.Duration) {
 	l.mu.Lock()
 	l.lats = append(l.lats, d)
 	l.mu.Unlock()
 }
 
-func (l *latencies) addErr() {
+// AddErr records one failed op.
+func (l *Latencies) AddErr() {
 	l.mu.Lock()
 	l.errs++
 	l.mu.Unlock()
 }
 
-func (l *latencies) percentile(q float64) time.Duration {
+// Count returns the number of successful ops.
+func (l *Latencies) Count() int { l.mu.Lock(); defer l.mu.Unlock(); return len(l.lats) }
+
+func (l *Latencies) percentile(q float64) time.Duration {
 	if len(l.lats) == 0 {
 		return 0
 	}
@@ -48,8 +56,8 @@ func (l *latencies) percentile(q float64) time.Duration {
 	return l.lats[i]
 }
 
-// report sorts and renders one line of throughput + percentiles.
-func (l *latencies) report(label string, wall time.Duration) string {
+// Report sorts and renders one line of throughput + percentiles.
+func (l *Latencies) Report(label string, wall time.Duration) string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	sort.Slice(l.lats, func(i, j int) bool { return l.lats[i] < l.lats[j] })
