@@ -14,6 +14,107 @@ The KV store supports:
 - dynamic cache replicas;
 - active-active replication.
 
+## Namespaces
+
+A **namespace** is the KV store's logical keyspace and its unit of policy. Every operation takes
+one — `Put(namespace, key, …)`, `Get(namespace, key, …)`, `Scan(namespace, …)` — and the record's
+true identity is the pair **`(namespace, key)`**, not the key alone. The same user key in two
+namespaces is two unrelated records.
+
+### Identity and isolation
+
+Records are physically scoped by namespace: the storage key is a **length-prefixed namespace
+followed by the raw user key** (`internal/recordstore/encode.go`, `latestKey`/`dataKey`/`ttlKey`).
+Two consequences follow:
+
+- **Isolation.** Keys in different namespaces never collide and never appear in each other's scans.
+- **Ordered, per-namespace scans.** Within a namespace user keys sort in natural byte order, so a
+  range scan is a contiguous prefix scan over exactly that namespace
+  (`namespacePrefix`, design/03 "Range scans").
+
+Namespaces are the KV concept. The graph and vector stores have their own analogous scoping
+(`graph_id` for graph entities, `collection` for vectors); this section is about KV.
+
+### Per-namespace policy
+
+A namespace is configured under `namespaces[]` (`internal/config/global.go`, `NamespaceConfig`).
+Unlisted namespaces use the defaults. Four independent knobs:
+
+| Knob | Meaning | Default | Detail |
+|---|---|---|---|
+| `conflictPolicy` | how concurrent versions of a key are resolved | `hlc-last-write-wins` | this doc, "Conflict handling" |
+| `replicationFactor` | how widely a write spreads (see below) | cluster target-N | design/28 |
+| `globalDurabilityRequired` | block the local write ACK when the cross-cluster out-log is full, so an accepted write is guaranteed queued for peers | `false` | design/06, design/28 |
+| `hideExpiredOnRead` | filter expired records at read time for a tighter TTL bound | `false` | this doc, "TTL across clusters and strict namespaces" |
+
+### Significance: the two replication axes
+
+The namespace's `replicationFactor` controls **two orthogonal things** — how widely a key spreads
+*inside* its cluster, and whether it *crosses* to peer clusters
+(`NamespaceConfig.ReplicateEverywhere`/`Scope`, design/28):
+
+| Axis | Question it answers | Set by |
+|---|---|---|
+| **intra-cluster spread** | how many nodes of *this* cluster hold the key? | `replicationFactor` |
+| **global boundary** | does the write leave this cluster for peers? | `replicationFactor` + global config (design/06) |
+
+`replicationFactor` values:
+
+| Value | Intra-cluster spread | Global boundary |
+|---|---|---|
+| `""` (default) | origin + target-N nearby durable replicas | ships to peers **iff** global replication is enabled |
+| `"N"` (e.g. `"5"`) | origin + N nearby (override the target holder count) | same as default |
+| `"all"` | **every node of the current cluster** | **never** crosses to peer clusters (local-only) |
+| `"global"` | **every node of the current cluster** | **always** ships to **every** peer cluster |
+
+The useful mental model: `all` = "everywhere locally, nowhere globally"; `global` = "everywhere
+locally *and* in every cluster". Both also make a **joining node backfill the full set** on
+bootstrap (design/28 "Node sync"), and both cost ~Nx the *background* replication work — so reserve
+them for **small, slowly-changing reference data** (feature flags, config), not hot keys.
+
+### Significance for cluster replication
+
+For a normal namespace the namespace doesn't change *placement* — the coordinator still picks
+origin + nearby durable replicas over the latency graph — it only changes the **target count**
+(`replicationFactor: "N"`) or forces full-cluster spread (`all`/`global`). Repair and the
+under-replication estimate use the namespace's effective target, so an `all` namespace is "under
+replicated" until every alive node holds the key (design/28 "Write path").
+
+### Significance for global (cross-cluster) replication
+
+Across clusters the namespace decides three things (design/06):
+
+1. **Whether writes ship at all.** `global` always ships; `all` never does; default follows the
+   cluster's global-replication config.
+2. **How cross-cluster conflicts resolve.** `conflictPolicy` is applied per namespace when a peer
+   mutation is applied: `hlc-last-write-wins` collapses concurrent writes to one deterministic
+   winner; `keep-siblings` preserves both and a `Get` reports `SIBLINGS_PRESENT` for the client to
+   resolve.
+3. **Whether acceptance implies global durability.** With `globalDurabilityRequired=true` the local
+   ACK is withheld if the per-peer out-log is full, so "write accepted" means "queued for every
+   peer" rather than merely "locally durable".
+
+### Configuration
+
+```yaml
+namespaces:
+  - name: default                       # implicit; LWW, target-N, ships iff global enabled
+  - name: flags
+    replicationFactor: global           # every node of every cluster (reference data)
+  - name: cluster-cache
+    replicationFactor: all              # every node of THIS cluster, never leaves it
+  - name: hot
+    replicationFactor: "5"              # override the nearby target for this namespace
+  - name: siblings
+    conflictPolicy: keep-siblings       # preserve concurrent writes as siblings
+  - name: ledger
+    globalDurabilityRequired: true      # block ACK until the write is queued for peers
+```
+
+Env equivalents exist for dev/compose: `WAVESPAN_KEEP_SIBLINGS_NAMESPACES`,
+`WAVESPAN_REPLICATE_EVERYWHERE_NAMESPACES` (= `all`), and `WAVESPAN_REPLICATE_GLOBAL_NAMESPACES`
+(= `global`) — see `internal/config/global.go`.
+
 ## Key ordering
 
 Keys are lexicographically ordered byte arrays.
