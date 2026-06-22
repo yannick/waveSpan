@@ -94,11 +94,11 @@ func TestScanCollectionFiltersTombstones(t *testing.T) {
 }
 
 func TestPartitionRouting(t *testing.T) {
-	if Partition("g", "n1") != Partition("g", "n1") || PartitionBare("c", "v1") != PartitionBare("c", "v1") {
+	pa, pb := Partition("g", "n1"), PartitionBare("c", "v1")
+	if pa != Partition("g", "n1") || pb != PartitionBare("c", "v1") {
 		t.Fatal("partitioning must be deterministic")
 	}
-	// graph-attached and bare use different inputs -> generally different partitions
-	if Partition("g", "n1") >= NumPartitions || PartitionBare("c", "v1") >= NumPartitions {
+	if pa >= NumPartitions || pb >= NumPartitions {
 		t.Fatal("partition out of range")
 	}
 }
