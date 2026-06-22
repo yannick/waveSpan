@@ -383,19 +383,8 @@ func run() error {
 		logger.Info("global replication enabled", "peers", len(peers))
 	}
 
-	// SearchLocal serves the per-node fragment a query coordinator scatters to holders (design/08).
-	vectorSvc := vector.NewService(vstore, newGraphVersion).
-		WithHooks(indexSet.OnWrite, vectorGlobalTap).
-		WithReplication(func(ctx context.Context, ns string, key, value []byte) error {
-			// Route the vector write through the origin+1 coordinator so it replicates to holders and
-			// taps cross-cluster; each holder's apply-observer feeds its HNSW.
-			_, err := coord.Put(ctx, ns, key, value, nil, "")
-			return err
-		}, indexSet.CollectionDims).
-		WithSearch(indexSet.Meta, indexSet.Live)
-
-	// Vector search scatters SearchLocal to alive peers and merges, so a query spans the whole
-	// cluster even when vectors are sharded (not fully replicated).
+	// Vector search scatters SearchLocal to alive peers and merges, so a query spans the whole cluster
+	// even when vectors are sharded. Shared by the Cypher vector.* procedures and the VectorSearch RPC.
 	vectorPeers := func() []cypher.Peer {
 		var peers []cypher.Peer
 		for _, m := range svc.Members() {
@@ -405,12 +394,41 @@ func run() error {
 		}
 		return peers
 	}
+	vectorScatter := cypher.NewVectorScatter(cfg.MemberID, vectorPeers, httpClient)
+
+	// VectorService: SearchLocal fragment + the vector-as-key API (Put/Get/Delete/Search, design/29).
+	vectorSvc := vector.NewService(vstore, newGraphVersion).
+		WithHooks(indexSet.OnWrite, vectorGlobalTap).
+		WithReplication(func(ctx context.Context, ns string, key, value []byte) error {
+			// Route the vector write through the origin+1 coordinator so it replicates to holders and
+			// taps cross-cluster; each holder's apply-observer feeds its HNSW.
+			_, err := coord.Put(ctx, ns, key, value, nil, "")
+			return err
+		}, indexSet.CollectionDims).
+		WithSearch(indexSet.Meta, indexSet.Live).
+		WithCoordinator(
+			indexSet.IndexForCollection,
+			func(ctx context.Context, idx string, q []float32, k, ef int, rerank bool) ([][]vector.Hit, int) {
+				return vectorScatter(ctx, idx, q, k, ef, false, rerank)
+			},
+			func(ctx context.Context, ns string, key []byte) ([]byte, bool, error) {
+				res, err := reader.Get(ctx, ns, key, true)
+				if err != nil {
+					return nil, false, err
+				}
+				return res.GetValue(), res.GetFound(), nil
+			},
+			func(ctx context.Context, ns string, key []byte) error {
+				_, err := coord.Delete(ctx, ns, key, "")
+				return err
+			},
+		)
 
 	// Graph + Cypher (M8/M9/M10): plans and executes against the local graph store, with vector search.
 	graphStore := graph.NewStore(store)
 	cypherSvc := cypher.NewService(graphStore, cfg.ClusterID, cfg.MemberID, newGraphVersion).
 		WithVector(vstore, indexSet.Meta, indexSet.Live).
-		WithVectorScatter(cypher.NewVectorScatter(cfg.MemberID, vectorPeers, httpClient)).
+		WithVectorScatter(vectorScatter).
 		WithKV(kv.NewCypherKV(reader, coord))
 
 	// Data server on the data port: public KvService + Cypher + Vector + internal ReplicationService.
@@ -702,11 +720,20 @@ func maybeH2C(h http.Handler, tlsConfig *tls.Config) http.Handler {
 func intraAENamespaces(cfg *config.Config) []string {
 	ns := []string{"default"}
 	seen := map[string]bool{"default": true}
-	for _, n := range cfg.Namespaces {
-		if n.Name != "" && !seen[n.Name] {
-			seen[n.Name] = true
-			ns = append(ns, n.Name)
+	add := func(n string) {
+		if n != "" && !seen[n] {
+			seen[n] = true
+			ns = append(ns, n)
 		}
+	}
+	for _, n := range cfg.Namespaces {
+		add(n.Name)
+	}
+	// Reconcile each vector collection's replication namespace too, so a vector write or delete that
+	// reached only some holders (origin+1 may pick a different nearby peer per write) converges
+	// LWW across all holders — otherwise a deleted vector lingers in a stale holder's HNSW.
+	for _, vi := range cfg.VectorIndexes {
+		add(vector.MutationNamespace(vi.Collection))
 	}
 	return ns
 }

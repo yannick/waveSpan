@@ -4,7 +4,7 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Version } from "./common_pb";
+import type { Completeness, ResponseMeta, Version } from "./common_pb";
 import { file_wavespan_v1_common } from "./common_pb";
 import type { Value } from "./cypher_pb";
 import { file_wavespan_v1_cypher } from "./cypher_pb";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file wavespan/v1/vector.proto.
  */
 export const file_wavespan_v1_vector: GenFile = /*@__PURE__*/
-  fileDesc("Chh3YXZlc3Bhbi92MS92ZWN0b3IucHJvdG8SC3dhdmVzcGFuLnYxIrkCCgxWZWN0b3JSZWNvcmQSEgoKY29sbGVjdGlvbhgBIAEoCRIRCgl2ZWN0b3JfaWQYAiABKAkSDgoGdmFsdWVzGAMgAygCEg0KBWR0eXBlGAQgASgJEhIKCmRpbWVuc2lvbnMYBSABKA0SOQoIbWV0YWRhdGEYBiADKAsyJy53YXZlc3Bhbi52MS5WZWN0b3JSZWNvcmQuTWV0YWRhdGFFbnRyeRIVCg1ncmFwaF9ub2RlX2lkGAcgASgJEiUKB3ZlcnNpb24YCCABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEhEKCXRvbWJzdG9uZRgJIAEoCBpDCg1NZXRhZGF0YUVudHJ5EgsKA2tleRgBIAEoCRIhCgV2YWx1ZRgCIAEoCzISLndhdmVzcGFuLnYxLlZhbHVlOgI4ASJuCgpWZWN0b3JNZXRhEhIKCmNvbGxlY3Rpb24YASABKAkSEQoJdmVjdG9yX2lkGAIgASgJEhIKCmRpbWVuc2lvbnMYAyABKA0SDgoGbWV0cmljGAQgASgJEhUKDWdyYXBoX25vZGVfaWQYBSABKAkiPQoQUHV0VmVjdG9yUmVxdWVzdBIpCgZyZWNvcmQYASABKAsyGS53YXZlc3Bhbi52MS5WZWN0b3JSZWNvcmQiEwoRUHV0VmVjdG9yUmVzcG9uc2UidAoSU2VhcmNoTG9jYWxSZXF1ZXN0EhIKCmluZGV4X25hbWUYASABKAkSDQoFcXVlcnkYAiADKAISCQoBaxgDIAEoBRIRCgllZl9zZWFyY2gYBCABKAUSDQoFZXhhY3QYBSABKAgSDgoGcmVyYW5rGAYgASgIImoKCVZlY3RvckhpdBISCgpjb2xsZWN0aW9uGAEgASgJEhEKCXZlY3Rvcl9pZBgCIAEoCRIVCg1ncmFwaF9ub2RlX2lkGAMgASgJEhAKCGRpc3RhbmNlGAQgASgBEg0KBXNjb3JlGAUgASgBIjsKE1NlYXJjaExvY2FsUmVzcG9uc2USJAoEaGl0cxgBIAMoCzIWLndhdmVzcGFuLnYxLlZlY3RvckhpdDKnAQoNVmVjdG9yU2VydmljZRJECgNQdXQSHS53YXZlc3Bhbi52MS5QdXRWZWN0b3JSZXF1ZXN0Gh4ud2F2ZXNwYW4udjEuUHV0VmVjdG9yUmVzcG9uc2USUAoLU2VhcmNoTG9jYWwSHy53YXZlc3Bhbi52MS5TZWFyY2hMb2NhbFJlcXVlc3QaIC53YXZlc3Bhbi52MS5TZWFyY2hMb2NhbFJlc3BvbnNlQqMBCg9jb20ud2F2ZXNwYW4udjFCC1ZlY3RvclByb3RvUAFaNmdpdGh1Yi5jb20vY3dpcmUvd2F2ZXNwYW4vcHJvdG8vd2F2ZXNwYW4vdjE7d2F2ZXNwYW52MaICA1dYWKoCC1dhdmVzcGFuLlYxygILV2F2ZXNwYW5cVjHiAhdXYXZlc3BhblxWMVxHUEJNZXRhZGF0YeoCDFdhdmVzcGFuOjpWMWIGcHJvdG8z", [file_wavespan_v1_common, file_wavespan_v1_cypher]);
+  fileDesc("Chh3YXZlc3Bhbi92MS92ZWN0b3IucHJvdG8SC3dhdmVzcGFuLnYxIsoCCgxWZWN0b3JSZWNvcmQSEgoKY29sbGVjdGlvbhgBIAEoCRIRCgl2ZWN0b3JfaWQYAiABKAkSDgoGdmFsdWVzGAMgAygCEg0KBWR0eXBlGAQgASgJEhIKCmRpbWVuc2lvbnMYBSABKA0SOQoIbWV0YWRhdGEYBiADKAsyJy53YXZlc3Bhbi52MS5WZWN0b3JSZWNvcmQuTWV0YWRhdGFFbnRyeRIVCg1ncmFwaF9ub2RlX2lkGAcgASgJEiUKB3ZlcnNpb24YCCABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEhEKCXRvbWJzdG9uZRgJIAEoCBIPCgdwYXlsb2FkGAogASgMGkMKDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEiEKBXZhbHVlGAIgASgLMhIud2F2ZXNwYW4udjEuVmFsdWU6AjgBIm4KClZlY3Rvck1ldGESEgoKY29sbGVjdGlvbhgBIAEoCRIRCgl2ZWN0b3JfaWQYAiABKAkSEgoKZGltZW5zaW9ucxgDIAEoDRIOCgZtZXRyaWMYBCABKAkSFQoNZ3JhcGhfbm9kZV9pZBgFIAEoCSI9ChBQdXRWZWN0b3JSZXF1ZXN0EikKBnJlY29yZBgBIAEoCzIZLndhdmVzcGFuLnYxLlZlY3RvclJlY29yZCITChFQdXRWZWN0b3JSZXNwb25zZSJ0ChJTZWFyY2hMb2NhbFJlcXVlc3QSEgoKaW5kZXhfbmFtZRgBIAEoCRINCgVxdWVyeRgCIAMoAhIJCgFrGAMgASgFEhEKCWVmX3NlYXJjaBgEIAEoBRINCgVleGFjdBgFIAEoCBIOCgZyZXJhbmsYBiABKAgiagoJVmVjdG9ySGl0EhIKCmNvbGxlY3Rpb24YASABKAkSEQoJdmVjdG9yX2lkGAIgASgJEhUKDWdyYXBoX25vZGVfaWQYAyABKAkSEAoIZGlzdGFuY2UYBCABKAESDQoFc2NvcmUYBSABKAEiOwoTU2VhcmNoTG9jYWxSZXNwb25zZRIkCgRoaXRzGAEgAygLMhYud2F2ZXNwYW4udjEuVmVjdG9ySGl0ImMKDFZlY3RvclB1dFJlcRISCgpjb2xsZWN0aW9uGAEgASgJEg4KBnZlY3RvchgCIAMoAhIPCgdwYXlsb2FkGAMgASgMEhMKBnR0bF9tcxgEIAEoA0gAiAEBQgkKB190dGxfbXMiNQoMVmVjdG9yUHV0UmVzEiUKB3ZlcnNpb24YASABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uIjIKDFZlY3RvckdldFJlcRISCgpjb2xsZWN0aW9uGAEgASgJEg4KBnZlY3RvchgCIAMoAiIuCgxWZWN0b3JHZXRSZXMSDQoFZm91bmQYASABKAgSDwoHcGF5bG9hZBgCIAEoDCI1Cg9WZWN0b3JEZWxldGVSZXESEgoKY29sbGVjdGlvbhgBIAEoCRIOCgZ2ZWN0b3IYAiADKAIiEQoPVmVjdG9yRGVsZXRlUmVzIosBCg9WZWN0b3JTZWFyY2hSZXESEgoKY29sbGVjdGlvbhgBIAEoCRINCgVxdWVyeRgCIAMoAhIJCgFrGAMgASgNEg4KBm5wcm9iZRgEIAEoDRIRCgllZl9zZWFyY2gYBSABKA0SDgoGcmVyYW5rGAYgASgIEhcKD2luY2x1ZGVfcGF5bG9hZBgHIAEoCCJfCghOZWlnaGJvchIOCgZ2ZWN0b3IYASADKAISDwoHcGF5bG9hZBgCIAEoDBIQCghkaXN0YW5jZRgDIAEoARINCgVzY29yZRgEIAEoARIRCgl2ZWN0b3JfaWQYBSABKAkilQEKD1ZlY3RvclNlYXJjaFJlcxIoCgluZWlnaGJvcnMYASADKAsyFS53YXZlc3Bhbi52MS5OZWlnaGJvchInCgRtZXRhGAIgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEi8KDGNvbXBsZXRlbmVzcxgDIAEoDjIZLndhdmVzcGFuLnYxLkNvbXBsZXRlbmVzczLFAwoNVmVjdG9yU2VydmljZRJECgNQdXQSHS53YXZlc3Bhbi52MS5QdXRWZWN0b3JSZXF1ZXN0Gh4ud2F2ZXNwYW4udjEuUHV0VmVjdG9yUmVzcG9uc2USUAoLU2VhcmNoTG9jYWwSHy53YXZlc3Bhbi52MS5TZWFyY2hMb2NhbFJlcXVlc3QaIC53YXZlc3Bhbi52MS5TZWFyY2hMb2NhbFJlc3BvbnNlEkEKCVZlY3RvclB1dBIZLndhdmVzcGFuLnYxLlZlY3RvclB1dFJlcRoZLndhdmVzcGFuLnYxLlZlY3RvclB1dFJlcxJBCglWZWN0b3JHZXQSGS53YXZlc3Bhbi52MS5WZWN0b3JHZXRSZXEaGS53YXZlc3Bhbi52MS5WZWN0b3JHZXRSZXMSSgoMVmVjdG9yRGVsZXRlEhwud2F2ZXNwYW4udjEuVmVjdG9yRGVsZXRlUmVxGhwud2F2ZXNwYW4udjEuVmVjdG9yRGVsZXRlUmVzEkoKDFZlY3RvclNlYXJjaBIcLndhdmVzcGFuLnYxLlZlY3RvclNlYXJjaFJlcRocLndhdmVzcGFuLnYxLlZlY3RvclNlYXJjaFJlc0KjAQoPY29tLndhdmVzcGFuLnYxQgtWZWN0b3JQcm90b1ABWjZnaXRodWIuY29tL2N3aXJlL3dhdmVzcGFuL3Byb3RvL3dhdmVzcGFuL3YxO3dhdmVzcGFudjGiAgNXWFiqAgtXYXZlc3Bhbi5WMcoCC1dhdmVzcGFuXFYx4gIXV2F2ZXNwYW5cVjFcR1BCTWV0YWRhdGHqAgxXYXZlc3Bhbjo6VjFiBnByb3RvMw", [file_wavespan_v1_common, file_wavespan_v1_cypher]);
 
 /**
  * VectorRecord is a raw embedding vector, optionally attached to a graph node (design/08
@@ -71,6 +71,13 @@ export type VectorRecord = Message<"wavespan.v1.VectorRecord"> & {
    * @generated from field: bool tombstone = 9;
    */
   tombstone: boolean;
+
+  /**
+   * caller's opaque proto payload (vector-as-key value)
+   *
+   * @generated from field: bytes payload = 10;
+   */
+  payload: Uint8Array;
 };
 
 /**
@@ -260,9 +267,266 @@ export const SearchLocalResponseSchema: GenMessage<SearchLocalResponse> = /*@__P
   messageDesc(file_wavespan_v1_vector, 6);
 
 /**
- * VectorService ingests raw vectors and serves per-node local search fragments (design/08). The
- * public, cluster-wide search is the Cypher vector.searchExact/searchApprox procedure, which
- * scatters SearchLocal to holders and merges.
+ * @generated from message wavespan.v1.VectorPutReq
+ */
+export type VectorPutReq = Message<"wavespan.v1.VectorPutReq"> & {
+  /**
+   * @generated from field: string collection = 1;
+   */
+  collection: string;
+
+  /**
+   * @generated from field: repeated float vector = 2;
+   */
+  vector: number[];
+
+  /**
+   * @generated from field: bytes payload = 3;
+   */
+  payload: Uint8Array;
+
+  /**
+   * reserved (TTL plumbing is a later phase)
+   *
+   * @generated from field: optional int64 ttl_ms = 4;
+   */
+  ttlMs?: bigint | undefined;
+};
+
+/**
+ * Describes the message wavespan.v1.VectorPutReq.
+ * Use `create(VectorPutReqSchema)` to create a new message.
+ */
+export const VectorPutReqSchema: GenMessage<VectorPutReq> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 7);
+
+/**
+ * @generated from message wavespan.v1.VectorPutRes
+ */
+export type VectorPutRes = Message<"wavespan.v1.VectorPutRes"> & {
+  /**
+   * @generated from field: wavespan.v1.Version version = 1;
+   */
+  version?: Version | undefined;
+};
+
+/**
+ * Describes the message wavespan.v1.VectorPutRes.
+ * Use `create(VectorPutResSchema)` to create a new message.
+ */
+export const VectorPutResSchema: GenMessage<VectorPutRes> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 8);
+
+/**
+ * @generated from message wavespan.v1.VectorGetReq
+ */
+export type VectorGetReq = Message<"wavespan.v1.VectorGetReq"> & {
+  /**
+   * @generated from field: string collection = 1;
+   */
+  collection: string;
+
+  /**
+   * exact lookup by embedding
+   *
+   * @generated from field: repeated float vector = 2;
+   */
+  vector: number[];
+};
+
+/**
+ * Describes the message wavespan.v1.VectorGetReq.
+ * Use `create(VectorGetReqSchema)` to create a new message.
+ */
+export const VectorGetReqSchema: GenMessage<VectorGetReq> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 9);
+
+/**
+ * @generated from message wavespan.v1.VectorGetRes
+ */
+export type VectorGetRes = Message<"wavespan.v1.VectorGetRes"> & {
+  /**
+   * @generated from field: bool found = 1;
+   */
+  found: boolean;
+
+  /**
+   * @generated from field: bytes payload = 2;
+   */
+  payload: Uint8Array;
+};
+
+/**
+ * Describes the message wavespan.v1.VectorGetRes.
+ * Use `create(VectorGetResSchema)` to create a new message.
+ */
+export const VectorGetResSchema: GenMessage<VectorGetRes> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 10);
+
+/**
+ * @generated from message wavespan.v1.VectorDeleteReq
+ */
+export type VectorDeleteReq = Message<"wavespan.v1.VectorDeleteReq"> & {
+  /**
+   * @generated from field: string collection = 1;
+   */
+  collection: string;
+
+  /**
+   * @generated from field: repeated float vector = 2;
+   */
+  vector: number[];
+};
+
+/**
+ * Describes the message wavespan.v1.VectorDeleteReq.
+ * Use `create(VectorDeleteReqSchema)` to create a new message.
+ */
+export const VectorDeleteReqSchema: GenMessage<VectorDeleteReq> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 11);
+
+/**
+ * @generated from message wavespan.v1.VectorDeleteRes
+ */
+export type VectorDeleteRes = Message<"wavespan.v1.VectorDeleteRes"> & {
+};
+
+/**
+ * Describes the message wavespan.v1.VectorDeleteRes.
+ * Use `create(VectorDeleteResSchema)` to create a new message.
+ */
+export const VectorDeleteResSchema: GenMessage<VectorDeleteRes> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 12);
+
+/**
+ * VectorSearchReq is a cluster-wide k-nearest-neighbour query. The query vector is `query`; its
+ * length must equal the collection's dimensions.
+ *
+ * @generated from message wavespan.v1.VectorSearchReq
+ */
+export type VectorSearchReq = Message<"wavespan.v1.VectorSearchReq"> & {
+  /**
+   * @generated from field: string collection = 1;
+   */
+  collection: string;
+
+  /**
+   * @generated from field: repeated float query = 2;
+   */
+  query: number[];
+
+  /**
+   * @generated from field: uint32 k = 3;
+   */
+  k: number;
+
+  /**
+   * buckets to probe (Phase 2 routing); 0 = scatter to all holders
+   *
+   * @generated from field: uint32 nprobe = 4;
+   */
+  nprobe: number;
+
+  /**
+   * HNSW beam width
+   *
+   * @generated from field: uint32 ef_search = 5;
+   */
+  efSearch: number;
+
+  /**
+   * exact-rescore ANN candidates
+   *
+   * @generated from field: bool rerank = 6;
+   */
+  rerank: boolean;
+
+  /**
+   * return payloads inline
+   *
+   * @generated from field: bool include_payload = 7;
+   */
+  includePayload: boolean;
+};
+
+/**
+ * Describes the message wavespan.v1.VectorSearchReq.
+ * Use `create(VectorSearchReqSchema)` to create a new message.
+ */
+export const VectorSearchReqSchema: GenMessage<VectorSearchReq> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 13);
+
+/**
+ * @generated from message wavespan.v1.Neighbor
+ */
+export type Neighbor = Message<"wavespan.v1.Neighbor"> & {
+  /**
+   * @generated from field: repeated float vector = 1;
+   */
+  vector: number[];
+
+  /**
+   * @generated from field: bytes payload = 2;
+   */
+  payload: Uint8Array;
+
+  /**
+   * smaller = closer
+   *
+   * @generated from field: double distance = 3;
+   */
+  distance: number;
+
+  /**
+   * larger = more similar
+   *
+   * @generated from field: double score = 4;
+   */
+  score: number;
+
+  /**
+   * @generated from field: string vector_id = 5;
+   */
+  vectorId: string;
+};
+
+/**
+ * Describes the message wavespan.v1.Neighbor.
+ * Use `create(NeighborSchema)` to create a new message.
+ */
+export const NeighborSchema: GenMessage<Neighbor> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 14);
+
+/**
+ * @generated from message wavespan.v1.VectorSearchRes
+ */
+export type VectorSearchRes = Message<"wavespan.v1.VectorSearchRes"> & {
+  /**
+   * @generated from field: repeated wavespan.v1.Neighbor neighbors = 1;
+   */
+  neighbors: Neighbor[];
+
+  /**
+   * @generated from field: wavespan.v1.ResponseMeta meta = 2;
+   */
+  meta?: ResponseMeta | undefined;
+
+  /**
+   * @generated from field: wavespan.v1.Completeness completeness = 3;
+   */
+  completeness: Completeness;
+};
+
+/**
+ * Describes the message wavespan.v1.VectorSearchRes.
+ * Use `create(VectorSearchResSchema)` to create a new message.
+ */
+export const VectorSearchResSchema: GenMessage<VectorSearchRes> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 15);
+
+/**
+ * VectorService ingests raw vectors, serves per-node local search fragments, and (vector-as-key API)
+ * the cluster-wide Put/Get/Delete/Search (design/08, design/29).
  *
  * @generated from service wavespan.v1.VectorService
  */
@@ -282,6 +546,38 @@ export const VectorService: GenService<{
     methodKind: "unary";
     input: typeof SearchLocalRequestSchema;
     output: typeof SearchLocalResponseSchema;
+  },
+  /**
+   * @generated from rpc wavespan.v1.VectorService.VectorPut
+   */
+  vectorPut: {
+    methodKind: "unary";
+    input: typeof VectorPutReqSchema;
+    output: typeof VectorPutResSchema;
+  },
+  /**
+   * @generated from rpc wavespan.v1.VectorService.VectorGet
+   */
+  vectorGet: {
+    methodKind: "unary";
+    input: typeof VectorGetReqSchema;
+    output: typeof VectorGetResSchema;
+  },
+  /**
+   * @generated from rpc wavespan.v1.VectorService.VectorDelete
+   */
+  vectorDelete: {
+    methodKind: "unary";
+    input: typeof VectorDeleteReqSchema;
+    output: typeof VectorDeleteResSchema;
+  },
+  /**
+   * @generated from rpc wavespan.v1.VectorService.VectorSearch
+   */
+  vectorSearch: {
+    methodKind: "unary";
+    input: typeof VectorSearchReqSchema;
+    output: typeof VectorSearchResSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_wavespan_v1_vector, 0);

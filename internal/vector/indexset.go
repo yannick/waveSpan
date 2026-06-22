@@ -56,6 +56,17 @@ func (s *IndexSet) LiveIndexes() map[string]*LiveIndex {
 	return out
 }
 
+// IndexForCollection returns the (first) index name configured over a collection, for resolving a
+// collection-addressed search to a concrete index.
+func (s *IndexSet) IndexForCollection(collection string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if names := s.namesByColl[collection]; len(names) > 0 {
+		return names[0], true
+	}
+	return "", false
+}
+
 // CollectionDims returns the declared dimensionality of any index over a collection (they share one
 // dimension), for validating Put requests. false when the collection has no configured index.
 func (s *IndexSet) CollectionDims(collection string) (int, bool) {

@@ -19,6 +19,7 @@ message VectorRecord {
   string graph_node_id = 7; // optional graph attachment
   Version version = 8;
   bool tombstone = 9;
+  bytes payload = 10; // caller's opaque proto payload (vector-as-key value)
 }
 
 // VectorMeta is the lightweight metadata record at /vector/{collection}/meta/{vector_id}.
@@ -63,10 +64,66 @@ message SearchLocalResponse {
   repeated VectorHit hits = 1;
 }
 
-// VectorService ingests raw vectors and serves per-node local search fragments (design/08). The
-// public, cluster-wide search is the Cypher vector.searchExact/searchApprox procedure, which
-// scatters SearchLocal to holders and merges.
+// --- Vector-as-key API (design/29): the embedding is the key, an opaque proto is the payload. All
+// vector fields are repeated float (self-describing, validated against the collection's dimensions);
+// the byte form is an internal key encoding clients never see.
+
+message VectorPutReq {
+  string collection = 1;
+  repeated float vector = 2;
+  bytes payload = 3;
+  optional int64 ttl_ms = 4; // reserved (TTL plumbing is a later phase)
+}
+message VectorPutRes {
+  Version version = 1;
+}
+
+message VectorGetReq {
+  string collection = 1;
+  repeated float vector = 2; // exact lookup by embedding
+}
+message VectorGetRes {
+  bool found = 1;
+  bytes payload = 2;
+}
+
+message VectorDeleteReq {
+  string collection = 1;
+  repeated float vector = 2;
+}
+message VectorDeleteRes {}
+
+// VectorSearchReq is a cluster-wide k-nearest-neighbour query. The query vector is `query`; its
+// length must equal the collection's dimensions.
+message VectorSearchReq {
+  string collection = 1;
+  repeated float query = 2;
+  uint32 k = 3;
+  uint32 nprobe = 4;        // buckets to probe (Phase 2 routing); 0 = scatter to all holders
+  uint32 ef_search = 5;     // HNSW beam width
+  bool rerank = 6;          // exact-rescore ANN candidates
+  bool include_payload = 7; // return payloads inline
+}
+message Neighbor {
+  repeated float vector = 1;
+  bytes payload = 2;
+  double distance = 3; // smaller = closer
+  double score = 4;    // larger = more similar
+  string vector_id = 5;
+}
+message VectorSearchRes {
+  repeated Neighbor neighbors = 1;
+  ResponseMeta meta = 2;
+  Completeness completeness = 3;
+}
+
+// VectorService ingests raw vectors, serves per-node local search fragments, and (vector-as-key API)
+// the cluster-wide Put/Get/Delete/Search (design/08, design/29).
 service VectorService {
   rpc Put(PutVectorRequest) returns (PutVectorResponse);
   rpc SearchLocal(SearchLocalRequest) returns (SearchLocalResponse);
+  rpc VectorPut(VectorPutReq) returns (VectorPutRes);
+  rpc VectorGet(VectorGetReq) returns (VectorGetRes);
+  rpc VectorDelete(VectorDeleteReq) returns (VectorDeleteRes);
+  rpc VectorSearch(VectorSearchReq) returns (VectorSearchRes);
 }

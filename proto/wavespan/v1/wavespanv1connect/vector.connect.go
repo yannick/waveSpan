@@ -38,12 +38,26 @@ const (
 	// VectorServiceSearchLocalProcedure is the fully-qualified name of the VectorService's SearchLocal
 	// RPC.
 	VectorServiceSearchLocalProcedure = "/wavespan.v1.VectorService/SearchLocal"
+	// VectorServiceVectorPutProcedure is the fully-qualified name of the VectorService's VectorPut RPC.
+	VectorServiceVectorPutProcedure = "/wavespan.v1.VectorService/VectorPut"
+	// VectorServiceVectorGetProcedure is the fully-qualified name of the VectorService's VectorGet RPC.
+	VectorServiceVectorGetProcedure = "/wavespan.v1.VectorService/VectorGet"
+	// VectorServiceVectorDeleteProcedure is the fully-qualified name of the VectorService's
+	// VectorDelete RPC.
+	VectorServiceVectorDeleteProcedure = "/wavespan.v1.VectorService/VectorDelete"
+	// VectorServiceVectorSearchProcedure is the fully-qualified name of the VectorService's
+	// VectorSearch RPC.
+	VectorServiceVectorSearchProcedure = "/wavespan.v1.VectorService/VectorSearch"
 )
 
 // VectorServiceClient is a client for the wavespan.v1.VectorService service.
 type VectorServiceClient interface {
 	Put(context.Context, *connect.Request[v1.PutVectorRequest]) (*connect.Response[v1.PutVectorResponse], error)
 	SearchLocal(context.Context, *connect.Request[v1.SearchLocalRequest]) (*connect.Response[v1.SearchLocalResponse], error)
+	VectorPut(context.Context, *connect.Request[v1.VectorPutReq]) (*connect.Response[v1.VectorPutRes], error)
+	VectorGet(context.Context, *connect.Request[v1.VectorGetReq]) (*connect.Response[v1.VectorGetRes], error)
+	VectorDelete(context.Context, *connect.Request[v1.VectorDeleteReq]) (*connect.Response[v1.VectorDeleteRes], error)
+	VectorSearch(context.Context, *connect.Request[v1.VectorSearchReq]) (*connect.Response[v1.VectorSearchRes], error)
 }
 
 // NewVectorServiceClient constructs a client for the wavespan.v1.VectorService service. By default,
@@ -69,13 +83,41 @@ func NewVectorServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(vectorServiceMethods.ByName("SearchLocal")),
 			connect.WithClientOptions(opts...),
 		),
+		vectorPut: connect.NewClient[v1.VectorPutReq, v1.VectorPutRes](
+			httpClient,
+			baseURL+VectorServiceVectorPutProcedure,
+			connect.WithSchema(vectorServiceMethods.ByName("VectorPut")),
+			connect.WithClientOptions(opts...),
+		),
+		vectorGet: connect.NewClient[v1.VectorGetReq, v1.VectorGetRes](
+			httpClient,
+			baseURL+VectorServiceVectorGetProcedure,
+			connect.WithSchema(vectorServiceMethods.ByName("VectorGet")),
+			connect.WithClientOptions(opts...),
+		),
+		vectorDelete: connect.NewClient[v1.VectorDeleteReq, v1.VectorDeleteRes](
+			httpClient,
+			baseURL+VectorServiceVectorDeleteProcedure,
+			connect.WithSchema(vectorServiceMethods.ByName("VectorDelete")),
+			connect.WithClientOptions(opts...),
+		),
+		vectorSearch: connect.NewClient[v1.VectorSearchReq, v1.VectorSearchRes](
+			httpClient,
+			baseURL+VectorServiceVectorSearchProcedure,
+			connect.WithSchema(vectorServiceMethods.ByName("VectorSearch")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // vectorServiceClient implements VectorServiceClient.
 type vectorServiceClient struct {
-	put         *connect.Client[v1.PutVectorRequest, v1.PutVectorResponse]
-	searchLocal *connect.Client[v1.SearchLocalRequest, v1.SearchLocalResponse]
+	put          *connect.Client[v1.PutVectorRequest, v1.PutVectorResponse]
+	searchLocal  *connect.Client[v1.SearchLocalRequest, v1.SearchLocalResponse]
+	vectorPut    *connect.Client[v1.VectorPutReq, v1.VectorPutRes]
+	vectorGet    *connect.Client[v1.VectorGetReq, v1.VectorGetRes]
+	vectorDelete *connect.Client[v1.VectorDeleteReq, v1.VectorDeleteRes]
+	vectorSearch *connect.Client[v1.VectorSearchReq, v1.VectorSearchRes]
 }
 
 // Put calls wavespan.v1.VectorService.Put.
@@ -88,10 +130,34 @@ func (c *vectorServiceClient) SearchLocal(ctx context.Context, req *connect.Requ
 	return c.searchLocal.CallUnary(ctx, req)
 }
 
+// VectorPut calls wavespan.v1.VectorService.VectorPut.
+func (c *vectorServiceClient) VectorPut(ctx context.Context, req *connect.Request[v1.VectorPutReq]) (*connect.Response[v1.VectorPutRes], error) {
+	return c.vectorPut.CallUnary(ctx, req)
+}
+
+// VectorGet calls wavespan.v1.VectorService.VectorGet.
+func (c *vectorServiceClient) VectorGet(ctx context.Context, req *connect.Request[v1.VectorGetReq]) (*connect.Response[v1.VectorGetRes], error) {
+	return c.vectorGet.CallUnary(ctx, req)
+}
+
+// VectorDelete calls wavespan.v1.VectorService.VectorDelete.
+func (c *vectorServiceClient) VectorDelete(ctx context.Context, req *connect.Request[v1.VectorDeleteReq]) (*connect.Response[v1.VectorDeleteRes], error) {
+	return c.vectorDelete.CallUnary(ctx, req)
+}
+
+// VectorSearch calls wavespan.v1.VectorService.VectorSearch.
+func (c *vectorServiceClient) VectorSearch(ctx context.Context, req *connect.Request[v1.VectorSearchReq]) (*connect.Response[v1.VectorSearchRes], error) {
+	return c.vectorSearch.CallUnary(ctx, req)
+}
+
 // VectorServiceHandler is an implementation of the wavespan.v1.VectorService service.
 type VectorServiceHandler interface {
 	Put(context.Context, *connect.Request[v1.PutVectorRequest]) (*connect.Response[v1.PutVectorResponse], error)
 	SearchLocal(context.Context, *connect.Request[v1.SearchLocalRequest]) (*connect.Response[v1.SearchLocalResponse], error)
+	VectorPut(context.Context, *connect.Request[v1.VectorPutReq]) (*connect.Response[v1.VectorPutRes], error)
+	VectorGet(context.Context, *connect.Request[v1.VectorGetReq]) (*connect.Response[v1.VectorGetRes], error)
+	VectorDelete(context.Context, *connect.Request[v1.VectorDeleteReq]) (*connect.Response[v1.VectorDeleteRes], error)
+	VectorSearch(context.Context, *connect.Request[v1.VectorSearchReq]) (*connect.Response[v1.VectorSearchRes], error)
 }
 
 // NewVectorServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -113,12 +179,44 @@ func NewVectorServiceHandler(svc VectorServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(vectorServiceMethods.ByName("SearchLocal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	vectorServiceVectorPutHandler := connect.NewUnaryHandler(
+		VectorServiceVectorPutProcedure,
+		svc.VectorPut,
+		connect.WithSchema(vectorServiceMethods.ByName("VectorPut")),
+		connect.WithHandlerOptions(opts...),
+	)
+	vectorServiceVectorGetHandler := connect.NewUnaryHandler(
+		VectorServiceVectorGetProcedure,
+		svc.VectorGet,
+		connect.WithSchema(vectorServiceMethods.ByName("VectorGet")),
+		connect.WithHandlerOptions(opts...),
+	)
+	vectorServiceVectorDeleteHandler := connect.NewUnaryHandler(
+		VectorServiceVectorDeleteProcedure,
+		svc.VectorDelete,
+		connect.WithSchema(vectorServiceMethods.ByName("VectorDelete")),
+		connect.WithHandlerOptions(opts...),
+	)
+	vectorServiceVectorSearchHandler := connect.NewUnaryHandler(
+		VectorServiceVectorSearchProcedure,
+		svc.VectorSearch,
+		connect.WithSchema(vectorServiceMethods.ByName("VectorSearch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.VectorService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case VectorServicePutProcedure:
 			vectorServicePutHandler.ServeHTTP(w, r)
 		case VectorServiceSearchLocalProcedure:
 			vectorServiceSearchLocalHandler.ServeHTTP(w, r)
+		case VectorServiceVectorPutProcedure:
+			vectorServiceVectorPutHandler.ServeHTTP(w, r)
+		case VectorServiceVectorGetProcedure:
+			vectorServiceVectorGetHandler.ServeHTTP(w, r)
+		case VectorServiceVectorDeleteProcedure:
+			vectorServiceVectorDeleteHandler.ServeHTTP(w, r)
+		case VectorServiceVectorSearchProcedure:
+			vectorServiceVectorSearchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -134,4 +232,20 @@ func (UnimplementedVectorServiceHandler) Put(context.Context, *connect.Request[v
 
 func (UnimplementedVectorServiceHandler) SearchLocal(context.Context, *connect.Request[v1.SearchLocalRequest]) (*connect.Response[v1.SearchLocalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.VectorService.SearchLocal is not implemented"))
+}
+
+func (UnimplementedVectorServiceHandler) VectorPut(context.Context, *connect.Request[v1.VectorPutReq]) (*connect.Response[v1.VectorPutRes], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.VectorService.VectorPut is not implemented"))
+}
+
+func (UnimplementedVectorServiceHandler) VectorGet(context.Context, *connect.Request[v1.VectorGetReq]) (*connect.Response[v1.VectorGetRes], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.VectorService.VectorGet is not implemented"))
+}
+
+func (UnimplementedVectorServiceHandler) VectorDelete(context.Context, *connect.Request[v1.VectorDeleteReq]) (*connect.Response[v1.VectorDeleteRes], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.VectorService.VectorDelete is not implemented"))
+}
+
+func (UnimplementedVectorServiceHandler) VectorSearch(context.Context, *connect.Request[v1.VectorSearchReq]) (*connect.Response[v1.VectorSearchRes], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.VectorService.VectorSearch is not implemented"))
 }

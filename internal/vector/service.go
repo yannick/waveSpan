@@ -25,6 +25,27 @@ type Service struct {
 	// (single-node tests). dims, when set, validates a Put against the collection's declared dimensions.
 	replicate func(ctx context.Context, ns string, key, value []byte) error
 	dims      func(collection string) (int, bool)
+
+	// Coordinator ops for the vector-as-key API (design/29): resolve a collection's index, scatter a
+	// kNN search to holders, read a record's bytes (for exact Get + neighbour payloads), and delete.
+	collIndex func(collection string) (string, bool)
+	scatter   func(ctx context.Context, indexName string, query []float32, k, efSearch int, rerank bool) (fragments [][]Hit, unreachable int)
+	kvRead    func(ctx context.Context, ns string, key []byte) (value []byte, found bool, err error)
+	kvDelete  func(ctx context.Context, ns string, key []byte) error
+}
+
+// WithCoordinator wires the cluster-wide vector-as-key operations (VectorGet/Delete/Search).
+func (s *Service) WithCoordinator(
+	collIndex func(collection string) (string, bool),
+	scatter func(ctx context.Context, indexName string, query []float32, k, efSearch int, rerank bool) ([][]Hit, int),
+	kvRead func(ctx context.Context, ns string, key []byte) ([]byte, bool, error),
+	kvDelete func(ctx context.Context, ns string, key []byte) error,
+) *Service {
+	s.collIndex = collIndex
+	s.scatter = scatter
+	s.kvRead = kvRead
+	s.kvDelete = kvDelete
+	return s
 }
 
 // NewService wires the vector ingest service.
@@ -85,15 +106,23 @@ func (s *Service) Handler() (string, http.Handler) {
 	return wavespanv1connect.NewVectorServiceHandler(s, rpcopts.Handler()...)
 }
 
-// Put ingests a vector record. It validates dimensions, derives the vector id from the embedding when
-// none is supplied ("the vector is the key"), and — when replication is wired — routes the write
-// through the cluster so every holder's HNSW is fed via the recordstore apply-observer and the vector
-// survives reboot. Without replication (single-node tests) it falls back to a local write.
+// Put ingests a vector record (legacy ingest RPC). See putRecord for the shared write path.
 func (s *Service) Put(ctx context.Context, req *connect.Request[wavespanv1.PutVectorRequest]) (*connect.Response[wavespanv1.PutVectorResponse], error) {
 	rec := req.Msg.GetRecord()
 	if rec == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errNoRecord)
 	}
+	if _, err := s.putRecord(ctx, rec); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&wavespanv1.PutVectorResponse{}), nil
+}
+
+// putRecord validates dimensions, derives the vector id from the embedding when none is supplied
+// ("the vector is the key"), and — when replication is wired — routes the write through the cluster
+// so every holder's HNSW is fed via the recordstore apply-observer and the vector survives reboot.
+// Without replication (single-node tests) it falls back to a local write. Returns the record's version.
+func (s *Service) putRecord(ctx context.Context, rec *wavespanv1.VectorRecord) (*wavespanv1.Version, error) {
 	if s.dims != nil {
 		if d, ok := s.dims(rec.GetCollection()); ok && len(rec.GetValues()) != d {
 			return nil, connect.NewError(connect.CodeInvalidArgument, connectError("vector: dimension mismatch for collection "+rec.GetCollection()))
@@ -101,7 +130,7 @@ func (s *Service) Put(ctx context.Context, req *connect.Request[wavespanv1.PutVe
 	}
 	rec.Dimensions = uint32(len(rec.GetValues()))
 	if rec.GetVectorId() == "" {
-		rec.VectorId = VecHash(rec.GetValues()) // vector-as-key: identity derived from the embedding
+		rec.VectorId = VecHash(rec.GetValues())
 	}
 	if rec.Version == nil && s.newVersion != nil {
 		rec.Version = s.newVersion()
@@ -115,7 +144,7 @@ func (s *Service) Put(ctx context.Context, req *connect.Request[wavespanv1.PutVe
 		if err := s.replicate(ctx, sr.GetNamespace(), sr.GetLogicalKey(), sr.GetValue().GetInline()); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
-		return connect.NewResponse(&wavespanv1.PutVectorResponse{}), nil
+		return rec.GetVersion(), nil
 	}
 
 	// Local-only fallback (no cluster wired): store + index this node only.
@@ -130,7 +159,7 @@ func (s *Service) Put(ctx context.Context, req *connect.Request[wavespanv1.PutVe
 			s.globalTap(sr.GetNamespace(), sr.GetLogicalKey(), sr)
 		}
 	}
-	return connect.NewResponse(&wavespanv1.PutVectorResponse{}), nil
+	return rec.GetVersion(), nil
 }
 
 var errNoRecord = connectError("vector: put requires a record")
