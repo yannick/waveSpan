@@ -49,9 +49,14 @@ func kvGet(e *Executor, args []*wavespanv1.Value, _ bindingRow) (*wavespanv1.Val
 	if err != nil {
 		return nil, err
 	}
-	val, found, err := e.KV.Get(e.kvCtx(), ns, []byte(key))
+	val, found, partial, err := e.KV.Get(e.kvCtx(), ns, []byte(key))
 	if err != nil {
 		return nil, fmt.Errorf("cypher: kv.get(%q, %q): %w", ns, key, err)
+	}
+	if partial {
+		// A holder was unreachable, so a null here may be a false negative. Surface it via
+		// QueryMeta.partial_graph_possible + a warning rather than presenting a definite absence.
+		e.MarkPartial(fmt.Sprintf("kv.get(%q, %q): a holder was unreachable; result may be incomplete", ns, key))
 	}
 	if !found {
 		return vNull(), nil

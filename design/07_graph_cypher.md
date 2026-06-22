@@ -99,11 +99,12 @@ A bad call (wrong arity, non-string arguments, unconfigured backend) is a hard q
 never `null`. `null` is reserved for "the read found no live value."
 
 Reads are eventual, exactly like the gRPC KV `Get`: local-first, with a closest-holder
-fetch on a local miss. If that holder fetch fails (holder unreachable), the read currently
-surfaces as `null` — the same behavior the gRPC KV API exhibits, so the two stay coherent,
-but it means a transient `null` can in principle hide an unreachable holder rather than a
-genuinely absent key. (A future enhancement should mark such a read partial via
-`partial_graph_possible`; today it does not.)
+fetch on a local miss. If that holder fetch fails (holder unreachable), the read may be
+incomplete — the value could live on the holder that could not be reached. In that case
+`kv.get` still returns `null`, but the query is flagged: `QueryMeta.partial_graph_possible`
+is set and a warning is added, so a client can tell "definitely absent" (complete read)
+from "absent as far as I could see" (a holder was unreachable). A reachable holder that
+reports the key absent is a genuine, complete miss and is **not** flagged partial.
 
 `kv.get` returns a UTF-8 value as a Cypher **string** and any other value as a Cypher
 **bytes** value (the gRPC KV API stores values as arbitrary bytes). Both round-trip

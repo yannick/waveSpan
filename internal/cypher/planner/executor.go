@@ -75,7 +75,9 @@ func RegisterProcedure(name string, fn Procedure) { procedures[name] = fn }
 // KVAccess is the KV read/write surface the cypher kv.* built-ins use. It is satisfied by
 // internal/kv.CypherKV, which routes to the same Reader/Coordinator the gRPC KV API uses.
 type KVAccess interface {
-	Get(ctx context.Context, namespace string, key []byte) (value []byte, found bool, err error)
+	// Get returns the value and whether it was found. partial is true when the read may be
+	// incomplete (e.g. a holder was unreachable), so a found=false could be a false negative.
+	Get(ctx context.Context, namespace string, key []byte) (value []byte, found bool, partial bool, err error)
 	Put(ctx context.Context, namespace string, key, value []byte, ttlMs *int64) (version string, err error)
 	Delete(ctx context.Context, namespace string, key []byte) (version string, err error)
 }

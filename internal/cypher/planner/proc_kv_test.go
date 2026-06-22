@@ -46,22 +46,23 @@ func TestUnknownFunctionIsHardError(t *testing.T) {
 }
 
 type fakeKV struct {
-	data   map[string]string
-	ver    int
-	getErr error
+	data    map[string]string
+	ver     int
+	getErr  error
+	partial bool // when true, reads report a possibly-incomplete result (unreachable holder)
 }
 
 func nsKey(ns string, key []byte) string { return ns + "\x00" + string(key) }
 
-func (f *fakeKV) Get(_ context.Context, ns string, key []byte) ([]byte, bool, error) {
+func (f *fakeKV) Get(_ context.Context, ns string, key []byte) ([]byte, bool, bool, error) {
 	if f.getErr != nil {
-		return nil, false, f.getErr
+		return nil, false, f.partial, f.getErr
 	}
 	v, ok := f.data[nsKey(ns, key)]
 	if !ok {
-		return nil, false, nil
+		return nil, false, f.partial, nil
 	}
-	return []byte(v), true, nil
+	return []byte(v), true, f.partial, nil
 }
 func (f *fakeKV) Put(_ context.Context, ns string, key, value []byte, _ *int64) (string, error) {
 	if f.data == nil {
@@ -90,6 +91,21 @@ func TestKVGetMissingIsNull(t *testing.T) {
 	res := runQuery(t, &Executor{KV: &fakeKV{data: map[string]string{}}}, "RETURN kv.get('x','nope') AS v")
 	if _, isNull := res.Rows[0]["v"].GetValue().(*wavespanv1.Value_Null); !isNull {
 		t.Fatalf("expected null, got %v", res.Rows[0]["v"])
+	}
+	if res.Meta.GetPartialGraphPossible() {
+		t.Fatal("a complete miss must not be marked partial")
+	}
+}
+
+// When the KV read is incomplete (e.g. a holder was unreachable), a null kv.get result must surface
+// as QueryMeta.partial_graph_possible with a warning — not a silent definite absence.
+func TestKVGetPartialReadMarksQueryPartial(t *testing.T) {
+	res := runQuery(t, &Executor{KV: &fakeKV{data: map[string]string{}, partial: true}}, "RETURN kv.get('x','nope') AS v")
+	if !res.Meta.GetPartialGraphPossible() {
+		t.Fatal("an unreachable-holder read must set QueryMeta.partial_graph_possible")
+	}
+	if len(res.Meta.GetWarnings()) == 0 {
+		t.Fatal("expected a warning describing the partial read")
 	}
 }
 

@@ -34,17 +34,20 @@ func TestCypherKVRoundTrip(t *testing.T) {
 	if ver == "" {
 		t.Fatal("expected non-empty version")
 	}
-	got, found, err := kvAdapter.Get(ctx, "profile", []byte("u1"))
+	got, found, partial, err := kvAdapter.Get(ctx, "profile", []byte("u1"))
 	if err != nil || !found || string(got) != "hello" {
 		t.Fatalf("get: got=%q found=%v err=%v", got, found, err)
 	}
-	if _, found, _ := kvAdapter.Get(ctx, "profile", []byte("absent")); found {
+	if partial {
+		t.Fatal("a local hit must not be partial")
+	}
+	if _, found, _, _ := kvAdapter.Get(ctx, "profile", []byte("absent")); found {
 		t.Fatal("absent key should not be found")
 	}
 	if _, err := kvAdapter.Delete(ctx, "profile", []byte("u1")); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, found, _ := kvAdapter.Get(ctx, "profile", []byte("u1")); found {
+	if _, found, _, _ := kvAdapter.Get(ctx, "profile", []byte("u1")); found {
 		t.Fatal("deleted key should not be found")
 	}
 }
@@ -58,7 +61,7 @@ func TestCypherKVEmptyValueIsPresent(t *testing.T) {
 	if _, err := kvAdapter.Put(ctx, "profile", []byte("empty"), []byte(""), nil); err != nil {
 		t.Fatalf("put empty: %v", err)
 	}
-	got, found, err := kvAdapter.Get(ctx, "profile", []byte("empty"))
+	got, found, _, err := kvAdapter.Get(ctx, "profile", []byte("empty"))
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}

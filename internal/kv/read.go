@@ -95,13 +95,16 @@ func (r *Reader) Get(ctx context.Context, namespace string, key []byte, hideExpi
 	}
 
 	source := wavespanv1.ReadSource_LOCAL_DURABLE
+	completeness := wavespanv1.Completeness_COMPLETE
 	if out.Found || out.Tombstone {
 		if r.cache != nil && r.cache.IsCacheReplica(namespace, key) {
 			source = wavespanv1.ReadSource_LOCAL_DYNAMIC_CACHE
 		}
 	} else if r.fetcher != nil {
 		// local miss: fetch from the closest holder and cache it (design/05 read path)
-		if fr, ferr := r.fetcher.Fetch(ctx, namespace, key); ferr == nil && fr.Found {
+		fr, ferr := r.fetcher.Fetch(ctx, namespace, key)
+		switch {
+		case ferr == nil && fr.Found:
 			if r.cache != nil {
 				_ = r.cache.Put(fr.Record)
 			}
@@ -113,6 +116,11 @@ func (r *Reader) Get(ctx context.Context, namespace string, key []byte, hideExpi
 				return nil, err
 			}
 			source = wavespanv1.ReadSource_FETCHED_CLOSEST_HOLDER
+		case ferr != nil:
+			// Holder unreachable: this not-found may be a false negative (the value could live on
+			// the holder we could not reach), so the read is incomplete. A reachable holder that
+			// reports absent (ferr == nil, !fr.Found) stays COMPLETE — that is a genuine miss.
+			completeness = wavespanv1.Completeness_PARTIAL
 		}
 	}
 
@@ -121,7 +129,7 @@ func (r *Reader) Get(ctx context.Context, namespace string, key []byte, hideExpi
 		ServedByMemberId:  r.self.MemberID,
 		Source:            source,
 		ConflictState:     wavespanv1.ConflictState_CONFLICT_NONE,
-		Completeness:      wavespanv1.Completeness_COMPLETE,
+		Completeness:      completeness,
 		ObservedAtUnixMs:  time.Now().UnixMilli(),
 	}
 	if !out.ConflictNone {

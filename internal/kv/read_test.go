@@ -2,6 +2,7 @@ package kv
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/cwire/wavespan/internal/cache"
@@ -24,6 +25,54 @@ func (f *fakeFetcher) Fetch(_ context.Context, _ string, _ []byte) (cache.FetchR
 		return cache.FetchResult{Found: false}, nil
 	}
 	return cache.FetchResult{Found: true, Record: f.rec, Source: "node1"}, nil
+}
+
+// errFetcher simulates an unreachable holder: the closest-holder fetch fails.
+type errFetcher struct{ calls int }
+
+func (f *errFetcher) Fetch(_ context.Context, _ string, _ []byte) (cache.FetchResult, error) {
+	f.calls++
+	return cache.FetchResult{}, errors.New("holder unreachable")
+}
+
+// An unreachable holder on a local miss must mark the read PARTIAL: the not-found may be a false
+// negative (the value could live on the holder we could not reach), so callers can react.
+func TestReadMissUnreachableHolderIsPartial(t *testing.T) {
+	mem := storage.NewMemStore()
+	t.Cleanup(func() { _ = mem.Close() })
+	rstore := recordstore.NewStore(mem, "dev", "node3", version.NewClock(nil, 500), version.NewSequencer(0))
+	self := membership.Member{ClusterID: "dev", MemberID: "node3"}
+	cs := cache.NewStore(rstore, func() int64 { return 1 })
+	reader := NewReader(rstore, self).WithCache(&errFetcher{}, cs)
+
+	res, err := reader.Get(context.Background(), "default", []byte("absent"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.GetFound() {
+		t.Fatal("expected not found")
+	}
+	if res.GetMeta().GetCompleteness() != wavespanv1.Completeness_PARTIAL {
+		t.Fatalf("unreachable-holder miss must be PARTIAL, got %v", res.GetMeta().GetCompleteness())
+	}
+}
+
+// A reachable holder that reports the key absent is a genuine, COMPLETE miss (not partial).
+func TestReadMissReachableHolderAbsentIsComplete(t *testing.T) {
+	mem := storage.NewMemStore()
+	t.Cleanup(func() { _ = mem.Close() })
+	rstore := recordstore.NewStore(mem, "dev", "node3", version.NewClock(nil, 500), version.NewSequencer(0))
+	self := membership.Member{ClusterID: "dev", MemberID: "node3"}
+	cs := cache.NewStore(rstore, func() int64 { return 1 })
+	reader := NewReader(rstore, self).WithCache(&fakeFetcher{rec: nil}, cs)
+
+	res, err := reader.Get(context.Background(), "default", []byte("absent"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.GetMeta().GetCompleteness() != wavespanv1.Completeness_COMPLETE {
+		t.Fatalf("reachable-holder absent must be COMPLETE, got %v", res.GetMeta().GetCompleteness())
+	}
 }
 
 func TestReadMissFetchesAndCaches(t *testing.T) {

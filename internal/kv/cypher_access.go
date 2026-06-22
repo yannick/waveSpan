@@ -2,7 +2,11 @@
 // so Cypher kv.* built-ins read and write the exact same namespaced, replicated KV as the gRPC API.
 package kv
 
-import "context"
+import (
+	"context"
+
+	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+)
 
 // CypherKV satisfies planner.KVAccess (structural — this package does not import the planner).
 type CypherKV struct {
@@ -16,16 +20,19 @@ func NewCypherKV(reader *Reader, coord *Coordinator) *CypherKV {
 }
 
 // Get routes through the Reader: local-first with a closest-holder cache fetch on a miss.
-// hideExpired=true so expired/tombstoned records read as absent (→ Cypher null).
-func (k *CypherKV) Get(ctx context.Context, namespace string, key []byte) ([]byte, bool, error) {
+// hideExpired=true so expired/tombstoned records read as absent (→ Cypher null). partial is true
+// when the read may be incomplete (e.g. a holder was unreachable), so a not-found could be a false
+// negative — the caller surfaces this rather than presenting it as a definite absence.
+func (k *CypherKV) Get(ctx context.Context, namespace string, key []byte) (value []byte, found bool, partial bool, err error) {
 	res, err := k.reader.Get(ctx, namespace, key, true)
 	if err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
+	partial = res.GetMeta().GetCompleteness() == wavespanv1.Completeness_PARTIAL
 	if !res.GetFound() {
-		return nil, false, nil
+		return nil, false, partial, nil
 	}
-	return res.GetValue(), true, nil
+	return res.GetValue(), true, partial, nil
 }
 
 // Put routes through the Coordinator (origin+1 durable + replication fanout). The returned version
