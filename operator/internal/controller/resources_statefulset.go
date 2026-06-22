@@ -19,10 +19,14 @@ const (
 	adminPort  = 7900
 )
 
-// StatefulSetName / HeadlessServiceName / GatewayName derive resource names from a cluster.
-func StatefulSetName(c *dbv1alpha1.WaveSpanCluster) string     { return c.Name }
+// StatefulSetName is the data StatefulSet name for a cluster.
+func StatefulSetName(c *dbv1alpha1.WaveSpanCluster) string { return c.Name }
+
+// HeadlessServiceName is the peer-discovery headless Service name for a cluster.
 func HeadlessServiceName(c *dbv1alpha1.WaveSpanCluster) string { return c.Name + "-peers" }
-func GatewayName(c *dbv1alpha1.WaveSpanCluster) string         { return c.Name + "-gateway" }
+
+// GatewayName is the gateway Deployment/Service name for a cluster.
+func GatewayName(c *dbv1alpha1.WaveSpanCluster) string { return c.Name + "-gateway" }
 
 func dataLabels(c *dbv1alpha1.WaveSpanCluster) map[string]string {
 	return map[string]string{"app.kubernetes.io/name": "wavespan", "app.kubernetes.io/instance": c.Name, "wavespan.io/role": "data"}
