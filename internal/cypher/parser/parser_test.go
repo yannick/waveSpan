@@ -89,6 +89,32 @@ func TestParseWithAndUnwind(t *testing.T) {
 	}
 }
 
+func TestParseFunctionCall(t *testing.T) {
+	q, err := Parse("RETURN kv.get('users', 'u1')")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	ret := q.Clauses[len(q.Clauses)-1].(*ReturnClause)
+	fc, ok := ret.Items[0].Expr.(*FunctionCall)
+	if !ok {
+		t.Fatalf("expected *FunctionCall, got %T", ret.Items[0].Expr)
+	}
+	if fc.Name != "kv.get" || len(fc.Args) != 2 {
+		t.Fatalf("got name=%q args=%d", fc.Name, len(fc.Args))
+	}
+}
+
+func TestParsePropertyAccessStillWorks(t *testing.T) {
+	q, err := Parse("MATCH (n) RETURN n.name")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	ret := q.Clauses[len(q.Clauses)-1].(*ReturnClause)
+	if _, ok := ret.Items[0].Expr.(*PropertyAccess); !ok {
+		t.Fatalf("expected *PropertyAccess, got %T", ret.Items[0].Expr)
+	}
+}
+
 func TestUnsupportedClauseIsExplicitError(t *testing.T) {
 	for _, q := range []string{
 		"MERGE (n:User {id:'1'})",

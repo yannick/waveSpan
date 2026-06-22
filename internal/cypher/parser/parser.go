@@ -607,7 +607,16 @@ func (p *parser) primary() (Expr, error) {
 			if p.peek().Type != TokIdent {
 				return nil, fmt.Errorf("cypher: expected property name after '.'")
 			}
-			return &PropertyAccess{Variable: t.Val, Property: p.next().Val}, nil
+			name := p.next().Val
+			// A dotted name followed by '(' is a function call (kv.get(...)); otherwise property access.
+			if p.isPunct("(") {
+				args, err := p.callArgs()
+				if err != nil {
+					return nil, err
+				}
+				return &FunctionCall{Name: t.Val + "." + name, Args: args}, nil
+			}
+			return &PropertyAccess{Variable: t.Val, Property: name}, nil
 		}
 		return &Variable{Name: t.Val}, nil
 	case TokPunct:
@@ -637,6 +646,27 @@ func (p *parser) primary() (Expr, error) {
 		}
 	}
 	return nil, fmt.Errorf("cypher: unexpected token %q at %d in expression", t.Val, t.Pos)
+}
+
+// callArgs parses a parenthesized, comma-separated expression list: '(' [expr {',' expr}] ')'.
+func (p *parser) callArgs() ([]Expr, error) {
+	if err := p.expectPunct("("); err != nil {
+		return nil, err
+	}
+	var args []Expr
+	if !p.isPunct(")") {
+		for {
+			a, err := p.expr()
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, a)
+			if !p.acceptPunct(",") {
+				break
+			}
+		}
+	}
+	return args, p.expectPunct(")")
 }
 
 func (p *parser) listLiteral() (Expr, error) {

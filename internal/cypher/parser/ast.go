@@ -161,9 +161,16 @@ type UnaryExpr struct {
 	Expr Expr
 }
 
+// FunctionCall is a scalar function invocation in an expression, e.g. kv.get('ns','k').
+type FunctionCall struct {
+	Name string
+	Args []Expr
+}
+
 func (*Variable) isExpr()       {}
 func (*PropertyAccess) isExpr() {}
 func (*Literal) isExpr()        {}
 func (*Parameter) isExpr()      {}
 func (*BinaryExpr) isExpr()     {}
 func (*UnaryExpr) isExpr()      {}
+func (*FunctionCall) isExpr()   {}
