@@ -6,6 +6,7 @@ option go_package = "github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1";
 
 import "wavespan/v1/common.proto";
 import "wavespan/v1/admin.proto";
+import "wavespan/v1/cypher.proto";
 
 // --- Live gossip observability (design/26, design/11) ---
 
@@ -178,6 +179,38 @@ message GetClusterViewResponse {
   uint64 under_replicated_estimate = 4;
 }
 
+// --- Visual graph explorer (design/26 node explorer) ---
+
+// GraphNode is a property-graph node for visualization. Property values are redacted unless the
+// request includes include_value with an admin role.
+message GraphNode {
+  string node_id = 1;
+  repeated string labels = 2;
+  map<string, Value> properties = 3;
+}
+
+// GraphEdge is a directed relationship between two nodes.
+message GraphEdge {
+  string edge_id = 1;
+  string source = 2;
+  string target = 3;
+  string type = 4;
+}
+
+message GraphExploreRequest {
+  string graph_id = 1;
+  string seed_node_id = 2; // optional; empty starts from the whole graph (bounded by limit)
+  uint32 depth = 3;        // BFS hops from the seed (0 => just the seed / first page)
+  uint32 limit = 4;        // max nodes returned (server-capped)
+  bool include_value = 5;  // reveal property values (admin only)
+}
+
+message GraphExploreResponse {
+  repeated GraphNode nodes = 1;
+  repeated GraphEdge edges = 2;
+  bool truncated = 3; // more nodes exist than the limit returned
+}
+
 // ObservabilityService powers the embedded node UI and wavespanctl introspection (design/26).
 // Mounted on the admin port behind admin auth; values are redacted by default.
 service ObservabilityService {
@@ -185,4 +218,5 @@ service ObservabilityService {
   rpc InspectLocal(InspectLocalRequest) returns (stream InspectRow);
   rpc InspectGlobal(InspectGlobalRequest) returns (stream InspectRow);
   rpc GetClusterView(GetClusterViewRequest) returns (GetClusterViewResponse);
+  rpc GraphExplore(GraphExploreRequest) returns (GraphExploreResponse);
 }

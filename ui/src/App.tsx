@@ -3,10 +3,14 @@ import { GossipInspector } from "./views/GossipInspector";
 import { DataBrowser } from "./views/DataBrowser";
 import { ClusterTopology } from "./views/ClusterTopology";
 import { MetricsSummary } from "./views/MetricsSummary";
+import { CypherConsole } from "./views/CypherConsole";
+import { NodeExplorer } from "./views/NodeExplorer";
 
-type Tab = "gossip" | "data" | "topology" | "metrics";
+type Tab = "cypher" | "explorer" | "gossip" | "data" | "topology" | "metrics";
 
 const tabs: { id: Tab; label: string }[] = [
+  { id: "cypher", label: "Cypher Console" },
+  { id: "explorer", label: "Node Explorer" },
   { id: "gossip", label: "Gossip Inspector" },
   { id: "data", label: "Data Browser" },
   { id: "topology", label: "Cluster Topology" },
@@ -14,7 +18,7 @@ const tabs: { id: Tab; label: string }[] = [
 ];
 
 export function App() {
-  const [tab, setTab] = useState<Tab>("gossip");
+  const [tab, setTab] = useState<Tab>("cypher");
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", padding: 16 }}>
       <h1 style={{ fontSize: 20 }}>WaveSpan node</h1>
@@ -35,6 +39,8 @@ export function App() {
           </button>
         ))}
       </nav>
+      {tab === "cypher" && <CypherConsole />}
+      {tab === "explorer" && <NodeExplorer />}
       {tab === "gossip" && <GossipInspector />}
       {tab === "data" && <DataBrowser />}
       {tab === "topology" && <ClusterTopology />}

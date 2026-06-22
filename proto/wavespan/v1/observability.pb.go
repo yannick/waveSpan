@@ -1454,11 +1454,278 @@ func (x *GetClusterViewResponse) GetUnderReplicatedEstimate() uint64 {
 	return 0
 }
 
+// GraphNode is a property-graph node for visualization. Property values are redacted unless the
+// request includes include_value with an admin role.
+type GraphNode struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Labels        []string               `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty"`
+	Properties    map[string]*Value      `protobuf:"bytes,3,rep,name=properties,proto3" json:"properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GraphNode) Reset() {
+	*x = GraphNode{}
+	mi := &file_wavespan_v1_observability_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GraphNode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GraphNode) ProtoMessage() {}
+
+func (x *GraphNode) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_observability_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GraphNode.ProtoReflect.Descriptor instead.
+func (*GraphNode) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *GraphNode) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *GraphNode) GetLabels() []string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+func (x *GraphNode) GetProperties() map[string]*Value {
+	if x != nil {
+		return x.Properties
+	}
+	return nil
+}
+
+// GraphEdge is a directed relationship between two nodes.
+type GraphEdge struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EdgeId        string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	Source        string                 `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	Target        string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	Type          string                 `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GraphEdge) Reset() {
+	*x = GraphEdge{}
+	mi := &file_wavespan_v1_observability_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GraphEdge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GraphEdge) ProtoMessage() {}
+
+func (x *GraphEdge) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_observability_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GraphEdge.ProtoReflect.Descriptor instead.
+func (*GraphEdge) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *GraphEdge) GetEdgeId() string {
+	if x != nil {
+		return x.EdgeId
+	}
+	return ""
+}
+
+func (x *GraphEdge) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *GraphEdge) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *GraphEdge) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+type GraphExploreRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GraphId       string                 `protobuf:"bytes,1,opt,name=graph_id,json=graphId,proto3" json:"graph_id,omitempty"`
+	SeedNodeId    string                 `protobuf:"bytes,2,opt,name=seed_node_id,json=seedNodeId,proto3" json:"seed_node_id,omitempty"`      // optional; empty starts from the whole graph (bounded by limit)
+	Depth         uint32                 `protobuf:"varint,3,opt,name=depth,proto3" json:"depth,omitempty"`                                   // BFS hops from the seed (0 => just the seed / first page)
+	Limit         uint32                 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`                                   // max nodes returned (server-capped)
+	IncludeValue  bool                   `protobuf:"varint,5,opt,name=include_value,json=includeValue,proto3" json:"include_value,omitempty"` // reveal property values (admin only)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GraphExploreRequest) Reset() {
+	*x = GraphExploreRequest{}
+	mi := &file_wavespan_v1_observability_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GraphExploreRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GraphExploreRequest) ProtoMessage() {}
+
+func (x *GraphExploreRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_observability_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GraphExploreRequest.ProtoReflect.Descriptor instead.
+func (*GraphExploreRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *GraphExploreRequest) GetGraphId() string {
+	if x != nil {
+		return x.GraphId
+	}
+	return ""
+}
+
+func (x *GraphExploreRequest) GetSeedNodeId() string {
+	if x != nil {
+		return x.SeedNodeId
+	}
+	return ""
+}
+
+func (x *GraphExploreRequest) GetDepth() uint32 {
+	if x != nil {
+		return x.Depth
+	}
+	return 0
+}
+
+func (x *GraphExploreRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *GraphExploreRequest) GetIncludeValue() bool {
+	if x != nil {
+		return x.IncludeValue
+	}
+	return false
+}
+
+type GraphExploreResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nodes         []*GraphNode           `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	Edges         []*GraphEdge           `protobuf:"bytes,2,rep,name=edges,proto3" json:"edges,omitempty"`
+	Truncated     bool                   `protobuf:"varint,3,opt,name=truncated,proto3" json:"truncated,omitempty"` // more nodes exist than the limit returned
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GraphExploreResponse) Reset() {
+	*x = GraphExploreResponse{}
+	mi := &file_wavespan_v1_observability_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GraphExploreResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GraphExploreResponse) ProtoMessage() {}
+
+func (x *GraphExploreResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_observability_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GraphExploreResponse.ProtoReflect.Descriptor instead.
+func (*GraphExploreResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *GraphExploreResponse) GetNodes() []*GraphNode {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+func (x *GraphExploreResponse) GetEdges() []*GraphEdge {
+	if x != nil {
+		return x.Edges
+	}
+	return nil
+}
+
+func (x *GraphExploreResponse) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
 var File_wavespan_v1_observability_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\n" +
-	"\x1fwavespan/v1/observability.proto\x12\vwavespan.v1\x1a\x18wavespan/v1/common.proto\x1a\x17wavespan/v1/admin.proto\"\xad\x01\n" +
+	"\x1fwavespan/v1/observability.proto\x12\vwavespan.v1\x1a\x18wavespan/v1/common.proto\x1a\x17wavespan/v1/admin.proto\x1a\x18wavespan/v1/cypher.proto\"\xad\x01\n" +
 	"\fGossipFilter\x12-\n" +
 	"\x05kinds\x18\x01 \x03(\x0e2\x17.wavespan.v1.GossipKindR\x05kinds\x12\x14\n" +
 	"\x05peers\x18\x02 \x03(\tR\x05peers\x12:\n" +
@@ -1550,7 +1817,32 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\amembers\x18\x01 \x03(\v2\x18.wavespan.v1.MemberStateR\amembers\x12.\n" +
 	"\x05edges\x18\x02 \x03(\v2\x18.wavespan.v1.LatencyEdgeR\x05edges\x126\n" +
 	"\x06repair\x18\x03 \x03(\v2\x1e.wavespan.v1.RangeRepairStatusR\x06repair\x12:\n" +
-	"\x19under_replicated_estimate\x18\x04 \x01(\x04R\x17underReplicatedEstimate*\xee\x01\n" +
+	"\x19under_replicated_estimate\x18\x04 \x01(\x04R\x17underReplicatedEstimate\"\xd7\x01\n" +
+	"\tGraphNode\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x16\n" +
+	"\x06labels\x18\x02 \x03(\tR\x06labels\x12F\n" +
+	"\n" +
+	"properties\x18\x03 \x03(\v2&.wavespan.v1.GraphNode.PropertiesEntryR\n" +
+	"properties\x1aQ\n" +
+	"\x0fPropertiesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12(\n" +
+	"\x05value\x18\x02 \x01(\v2\x12.wavespan.v1.ValueR\x05value:\x028\x01\"h\n" +
+	"\tGraphEdge\x12\x17\n" +
+	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12\x16\n" +
+	"\x06source\x18\x02 \x01(\tR\x06source\x12\x16\n" +
+	"\x06target\x18\x03 \x01(\tR\x06target\x12\x12\n" +
+	"\x04type\x18\x04 \x01(\tR\x04type\"\xa3\x01\n" +
+	"\x13GraphExploreRequest\x12\x19\n" +
+	"\bgraph_id\x18\x01 \x01(\tR\agraphId\x12 \n" +
+	"\fseed_node_id\x18\x02 \x01(\tR\n" +
+	"seedNodeId\x12\x14\n" +
+	"\x05depth\x18\x03 \x01(\rR\x05depth\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\rR\x05limit\x12#\n" +
+	"\rinclude_value\x18\x05 \x01(\bR\fincludeValue\"\x90\x01\n" +
+	"\x14GraphExploreResponse\x12,\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x16.wavespan.v1.GraphNodeR\x05nodes\x12,\n" +
+	"\x05edges\x18\x02 \x03(\v2\x16.wavespan.v1.GraphEdgeR\x05edges\x12\x1c\n" +
+	"\ttruncated\x18\x03 \x01(\bR\ttruncated*\xee\x01\n" +
 	"\n" +
 	"GossipKind\x12\x1b\n" +
 	"\x17GOSSIP_KIND_UNSPECIFIED\x10\x00\x12\x0f\n" +
@@ -1578,12 +1870,13 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\x18HOLDER_CLASS_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rHOLDER_ORIGIN\x10\x01\x12\x12\n" +
 	"\x0eHOLDER_DURABLE\x10\x02\x12\x18\n" +
-	"\x14HOLDER_DYNAMIC_CACHE\x10\x032\xdb\x02\n" +
+	"\x14HOLDER_DYNAMIC_CACHE\x10\x032\xb0\x03\n" +
 	"\x14ObservabilityService\x12L\n" +
 	"\fStreamGossip\x12 .wavespan.v1.StreamGossipRequest\x1a\x18.wavespan.v1.GossipEvent0\x01\x12K\n" +
 	"\fInspectLocal\x12 .wavespan.v1.InspectLocalRequest\x1a\x17.wavespan.v1.InspectRow0\x01\x12M\n" +
 	"\rInspectGlobal\x12!.wavespan.v1.InspectGlobalRequest\x1a\x17.wavespan.v1.InspectRow0\x01\x12Y\n" +
-	"\x0eGetClusterView\x12\".wavespan.v1.GetClusterViewRequest\x1a#.wavespan.v1.GetClusterViewResponseB\xaa\x01\n" +
+	"\x0eGetClusterView\x12\".wavespan.v1.GetClusterViewRequest\x1a#.wavespan.v1.GetClusterViewResponse\x12S\n" +
+	"\fGraphExplore\x12 .wavespan.v1.GraphExploreRequest\x1a!.wavespan.v1.GraphExploreResponseB\xaa\x01\n" +
 	"\x0fcom.wavespan.v1B\x12ObservabilityProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -1599,7 +1892,7 @@ func file_wavespan_v1_observability_proto_rawDescGZIP() []byte {
 }
 
 var file_wavespan_v1_observability_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_wavespan_v1_observability_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_wavespan_v1_observability_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_wavespan_v1_observability_proto_goTypes = []any{
 	(GossipKind)(0),                // 0: wavespan.v1.GossipKind
 	(GossipDirection)(0),           // 1: wavespan.v1.GossipDirection
@@ -1621,12 +1914,18 @@ var file_wavespan_v1_observability_proto_goTypes = []any{
 	(*RangeRepairStatus)(nil),      // 17: wavespan.v1.RangeRepairStatus
 	(*GetClusterViewRequest)(nil),  // 18: wavespan.v1.GetClusterViewRequest
 	(*GetClusterViewResponse)(nil), // 19: wavespan.v1.GetClusterViewResponse
-	(*Version)(nil),                // 20: wavespan.v1.Version
-	(ConflictState)(0),             // 21: wavespan.v1.ConflictState
-	(Completeness)(0),              // 22: wavespan.v1.Completeness
-	(*ResponseMeta)(nil),           // 23: wavespan.v1.ResponseMeta
-	(*MemberState)(nil),            // 24: wavespan.v1.MemberState
-	(*LatencyEdge)(nil),            // 25: wavespan.v1.LatencyEdge
+	(*GraphNode)(nil),              // 20: wavespan.v1.GraphNode
+	(*GraphEdge)(nil),              // 21: wavespan.v1.GraphEdge
+	(*GraphExploreRequest)(nil),    // 22: wavespan.v1.GraphExploreRequest
+	(*GraphExploreResponse)(nil),   // 23: wavespan.v1.GraphExploreResponse
+	nil,                            // 24: wavespan.v1.GraphNode.PropertiesEntry
+	(*Version)(nil),                // 25: wavespan.v1.Version
+	(ConflictState)(0),             // 26: wavespan.v1.ConflictState
+	(Completeness)(0),              // 27: wavespan.v1.Completeness
+	(*ResponseMeta)(nil),           // 28: wavespan.v1.ResponseMeta
+	(*MemberState)(nil),            // 29: wavespan.v1.MemberState
+	(*LatencyEdge)(nil),            // 30: wavespan.v1.LatencyEdge
+	(*Value)(nil),                  // 31: wavespan.v1.Value
 }
 var file_wavespan_v1_observability_proto_depIdxs = []int32{
 	0,  // 0: wavespan.v1.GossipFilter.kinds:type_name -> wavespan.v1.GossipKind
@@ -1638,35 +1937,41 @@ var file_wavespan_v1_observability_proto_depIdxs = []int32{
 	7,  // 6: wavespan.v1.GossipEvent.gap:type_name -> wavespan.v1.GapMarker
 	4,  // 7: wavespan.v1.StreamGossipRequest.filter:type_name -> wavespan.v1.GossipFilter
 	3,  // 8: wavespan.v1.InspectHolder.holder_class:type_name -> wavespan.v1.HolderClass
-	20, // 9: wavespan.v1.InspectHolder.version:type_name -> wavespan.v1.Version
-	21, // 10: wavespan.v1.InspectHolder.conflict:type_name -> wavespan.v1.ConflictState
-	20, // 11: wavespan.v1.InspectSibling.version:type_name -> wavespan.v1.Version
-	20, // 12: wavespan.v1.InspectKey.version:type_name -> wavespan.v1.Version
-	21, // 13: wavespan.v1.InspectKey.conflict:type_name -> wavespan.v1.ConflictState
+	25, // 9: wavespan.v1.InspectHolder.version:type_name -> wavespan.v1.Version
+	26, // 10: wavespan.v1.InspectHolder.conflict:type_name -> wavespan.v1.ConflictState
+	25, // 11: wavespan.v1.InspectSibling.version:type_name -> wavespan.v1.Version
+	25, // 12: wavespan.v1.InspectKey.version:type_name -> wavespan.v1.Version
+	26, // 13: wavespan.v1.InspectKey.conflict:type_name -> wavespan.v1.ConflictState
 	11, // 14: wavespan.v1.InspectKey.siblings:type_name -> wavespan.v1.InspectSibling
 	10, // 15: wavespan.v1.InspectKey.holders:type_name -> wavespan.v1.InspectHolder
-	22, // 16: wavespan.v1.InspectTrailer.final_completeness:type_name -> wavespan.v1.Completeness
-	23, // 17: wavespan.v1.InspectRow.header:type_name -> wavespan.v1.ResponseMeta
+	27, // 16: wavespan.v1.InspectTrailer.final_completeness:type_name -> wavespan.v1.Completeness
+	28, // 17: wavespan.v1.InspectRow.header:type_name -> wavespan.v1.ResponseMeta
 	12, // 18: wavespan.v1.InspectRow.key:type_name -> wavespan.v1.InspectKey
 	13, // 19: wavespan.v1.InspectRow.trailer:type_name -> wavespan.v1.InspectTrailer
 	2,  // 20: wavespan.v1.InspectLocalRequest.keyspace:type_name -> wavespan.v1.Keyspace
 	2,  // 21: wavespan.v1.InspectGlobalRequest.keyspace:type_name -> wavespan.v1.Keyspace
-	24, // 22: wavespan.v1.GetClusterViewResponse.members:type_name -> wavespan.v1.MemberState
-	25, // 23: wavespan.v1.GetClusterViewResponse.edges:type_name -> wavespan.v1.LatencyEdge
+	29, // 22: wavespan.v1.GetClusterViewResponse.members:type_name -> wavespan.v1.MemberState
+	30, // 23: wavespan.v1.GetClusterViewResponse.edges:type_name -> wavespan.v1.LatencyEdge
 	17, // 24: wavespan.v1.GetClusterViewResponse.repair:type_name -> wavespan.v1.RangeRepairStatus
-	9,  // 25: wavespan.v1.ObservabilityService.StreamGossip:input_type -> wavespan.v1.StreamGossipRequest
-	15, // 26: wavespan.v1.ObservabilityService.InspectLocal:input_type -> wavespan.v1.InspectLocalRequest
-	16, // 27: wavespan.v1.ObservabilityService.InspectGlobal:input_type -> wavespan.v1.InspectGlobalRequest
-	18, // 28: wavespan.v1.ObservabilityService.GetClusterView:input_type -> wavespan.v1.GetClusterViewRequest
-	8,  // 29: wavespan.v1.ObservabilityService.StreamGossip:output_type -> wavespan.v1.GossipEvent
-	14, // 30: wavespan.v1.ObservabilityService.InspectLocal:output_type -> wavespan.v1.InspectRow
-	14, // 31: wavespan.v1.ObservabilityService.InspectGlobal:output_type -> wavespan.v1.InspectRow
-	19, // 32: wavespan.v1.ObservabilityService.GetClusterView:output_type -> wavespan.v1.GetClusterViewResponse
-	29, // [29:33] is the sub-list for method output_type
-	25, // [25:29] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	24, // 25: wavespan.v1.GraphNode.properties:type_name -> wavespan.v1.GraphNode.PropertiesEntry
+	20, // 26: wavespan.v1.GraphExploreResponse.nodes:type_name -> wavespan.v1.GraphNode
+	21, // 27: wavespan.v1.GraphExploreResponse.edges:type_name -> wavespan.v1.GraphEdge
+	31, // 28: wavespan.v1.GraphNode.PropertiesEntry.value:type_name -> wavespan.v1.Value
+	9,  // 29: wavespan.v1.ObservabilityService.StreamGossip:input_type -> wavespan.v1.StreamGossipRequest
+	15, // 30: wavespan.v1.ObservabilityService.InspectLocal:input_type -> wavespan.v1.InspectLocalRequest
+	16, // 31: wavespan.v1.ObservabilityService.InspectGlobal:input_type -> wavespan.v1.InspectGlobalRequest
+	18, // 32: wavespan.v1.ObservabilityService.GetClusterView:input_type -> wavespan.v1.GetClusterViewRequest
+	22, // 33: wavespan.v1.ObservabilityService.GraphExplore:input_type -> wavespan.v1.GraphExploreRequest
+	8,  // 34: wavespan.v1.ObservabilityService.StreamGossip:output_type -> wavespan.v1.GossipEvent
+	14, // 35: wavespan.v1.ObservabilityService.InspectLocal:output_type -> wavespan.v1.InspectRow
+	14, // 36: wavespan.v1.ObservabilityService.InspectGlobal:output_type -> wavespan.v1.InspectRow
+	19, // 37: wavespan.v1.ObservabilityService.GetClusterView:output_type -> wavespan.v1.GetClusterViewResponse
+	23, // 38: wavespan.v1.ObservabilityService.GraphExplore:output_type -> wavespan.v1.GraphExploreResponse
+	34, // [34:39] is the sub-list for method output_type
+	29, // [29:34] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_observability_proto_init() }
@@ -1676,6 +1981,7 @@ func file_wavespan_v1_observability_proto_init() {
 	}
 	file_wavespan_v1_common_proto_init()
 	file_wavespan_v1_admin_proto_init()
+	file_wavespan_v1_cypher_proto_init()
 	file_wavespan_v1_observability_proto_msgTypes[4].OneofWrappers = []any{
 		(*GossipEvent_Record)(nil),
 		(*GossipEvent_Gap)(nil),
@@ -1692,7 +1998,7 @@ func file_wavespan_v1_observability_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_observability_proto_rawDesc), len(file_wavespan_v1_observability_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   16,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
