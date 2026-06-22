@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file wavespan/v1/vector.proto.
  */
 export const file_wavespan_v1_vector: GenFile = /*@__PURE__*/
-  fileDesc("Chh3YXZlc3Bhbi92MS92ZWN0b3IucHJvdG8SC3dhdmVzcGFuLnYxIrkCCgxWZWN0b3JSZWNvcmQSEgoKY29sbGVjdGlvbhgBIAEoCRIRCgl2ZWN0b3JfaWQYAiABKAkSDgoGdmFsdWVzGAMgAygCEg0KBWR0eXBlGAQgASgJEhIKCmRpbWVuc2lvbnMYBSABKA0SOQoIbWV0YWRhdGEYBiADKAsyJy53YXZlc3Bhbi52MS5WZWN0b3JSZWNvcmQuTWV0YWRhdGFFbnRyeRIVCg1ncmFwaF9ub2RlX2lkGAcgASgJEiUKB3ZlcnNpb24YCCABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEhEKCXRvbWJzdG9uZRgJIAEoCBpDCg1NZXRhZGF0YUVudHJ5EgsKA2tleRgBIAEoCRIhCgV2YWx1ZRgCIAEoCzISLndhdmVzcGFuLnYxLlZhbHVlOgI4ASJuCgpWZWN0b3JNZXRhEhIKCmNvbGxlY3Rpb24YASABKAkSEQoJdmVjdG9yX2lkGAIgASgJEhIKCmRpbWVuc2lvbnMYAyABKA0SDgoGbWV0cmljGAQgASgJEhUKDWdyYXBoX25vZGVfaWQYBSABKAkiPQoQUHV0VmVjdG9yUmVxdWVzdBIpCgZyZWNvcmQYASABKAsyGS53YXZlc3Bhbi52MS5WZWN0b3JSZWNvcmQiEwoRUHV0VmVjdG9yUmVzcG9uc2UyVQoNVmVjdG9yU2VydmljZRJECgNQdXQSHS53YXZlc3Bhbi52MS5QdXRWZWN0b3JSZXF1ZXN0Gh4ud2F2ZXNwYW4udjEuUHV0VmVjdG9yUmVzcG9uc2VCowEKD2NvbS53YXZlc3Bhbi52MUILVmVjdG9yUHJvdG9QAVo2Z2l0aHViLmNvbS9jd2lyZS93YXZlc3Bhbi9wcm90by93YXZlc3Bhbi92MTt3YXZlc3BhbnYxogIDV1hYqgILV2F2ZXNwYW4uVjHKAgtXYXZlc3BhblxWMeICF1dhdmVzcGFuXFYxXEdQQk1ldGFkYXRh6gIMV2F2ZXNwYW46OlYxYgZwcm90bzM", [file_wavespan_v1_common, file_wavespan_v1_cypher]);
+  fileDesc("Chh3YXZlc3Bhbi92MS92ZWN0b3IucHJvdG8SC3dhdmVzcGFuLnYxIrkCCgxWZWN0b3JSZWNvcmQSEgoKY29sbGVjdGlvbhgBIAEoCRIRCgl2ZWN0b3JfaWQYAiABKAkSDgoGdmFsdWVzGAMgAygCEg0KBWR0eXBlGAQgASgJEhIKCmRpbWVuc2lvbnMYBSABKA0SOQoIbWV0YWRhdGEYBiADKAsyJy53YXZlc3Bhbi52MS5WZWN0b3JSZWNvcmQuTWV0YWRhdGFFbnRyeRIVCg1ncmFwaF9ub2RlX2lkGAcgASgJEiUKB3ZlcnNpb24YCCABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEhEKCXRvbWJzdG9uZRgJIAEoCBpDCg1NZXRhZGF0YUVudHJ5EgsKA2tleRgBIAEoCRIhCgV2YWx1ZRgCIAEoCzISLndhdmVzcGFuLnYxLlZhbHVlOgI4ASJuCgpWZWN0b3JNZXRhEhIKCmNvbGxlY3Rpb24YASABKAkSEQoJdmVjdG9yX2lkGAIgASgJEhIKCmRpbWVuc2lvbnMYAyABKA0SDgoGbWV0cmljGAQgASgJEhUKDWdyYXBoX25vZGVfaWQYBSABKAkiPQoQUHV0VmVjdG9yUmVxdWVzdBIpCgZyZWNvcmQYASABKAsyGS53YXZlc3Bhbi52MS5WZWN0b3JSZWNvcmQiEwoRUHV0VmVjdG9yUmVzcG9uc2UidAoSU2VhcmNoTG9jYWxSZXF1ZXN0EhIKCmluZGV4X25hbWUYASABKAkSDQoFcXVlcnkYAiADKAISCQoBaxgDIAEoBRIRCgllZl9zZWFyY2gYBCABKAUSDQoFZXhhY3QYBSABKAgSDgoGcmVyYW5rGAYgASgIImoKCVZlY3RvckhpdBISCgpjb2xsZWN0aW9uGAEgASgJEhEKCXZlY3Rvcl9pZBgCIAEoCRIVCg1ncmFwaF9ub2RlX2lkGAMgASgJEhAKCGRpc3RhbmNlGAQgASgBEg0KBXNjb3JlGAUgASgBIjsKE1NlYXJjaExvY2FsUmVzcG9uc2USJAoEaGl0cxgBIAMoCzIWLndhdmVzcGFuLnYxLlZlY3RvckhpdDKnAQoNVmVjdG9yU2VydmljZRJECgNQdXQSHS53YXZlc3Bhbi52MS5QdXRWZWN0b3JSZXF1ZXN0Gh4ud2F2ZXNwYW4udjEuUHV0VmVjdG9yUmVzcG9uc2USUAoLU2VhcmNoTG9jYWwSHy53YXZlc3Bhbi52MS5TZWFyY2hMb2NhbFJlcXVlc3QaIC53YXZlc3Bhbi52MS5TZWFyY2hMb2NhbFJlc3BvbnNlQqMBCg9jb20ud2F2ZXNwYW4udjFCC1ZlY3RvclByb3RvUAFaNmdpdGh1Yi5jb20vY3dpcmUvd2F2ZXNwYW4vcHJvdG8vd2F2ZXNwYW4vdjE7d2F2ZXNwYW52MaICA1dYWKoCC1dhdmVzcGFuLlYxygILV2F2ZXNwYW5cVjHiAhdXYXZlc3BhblxWMVxHUEJNZXRhZGF0YeoCDFdhdmVzcGFuOjpWMWIGcHJvdG8z", [file_wavespan_v1_common, file_wavespan_v1_cypher]);
 
 /**
  * VectorRecord is a raw embedding vector, optionally attached to a graph node (design/08
@@ -150,8 +150,119 @@ export const PutVectorResponseSchema: GenMessage<PutVectorResponse> = /*@__PURE_
   messageDesc(file_wavespan_v1_vector, 3);
 
 /**
- * VectorService ingests raw vectors (design/08). Search is exposed via the Cypher
- * vector.searchExact procedure, not a dedicated RPC.
+ * SearchLocalRequest asks a node to search ONLY the vectors it holds locally and return its
+ * fragment of the top-k (design/08 "scatter to partition-holders"). The query coordinator merges
+ * fragments from every holder. exact=true scans the collection; otherwise the ANN live index is
+ * used with ef_search. Hits are exact-scored from the stored vector regardless, so the merged
+ * global top-k is exact over the candidate union.
+ *
+ * @generated from message wavespan.v1.SearchLocalRequest
+ */
+export type SearchLocalRequest = Message<"wavespan.v1.SearchLocalRequest"> & {
+  /**
+   * @generated from field: string index_name = 1;
+   */
+  indexName: string;
+
+  /**
+   * @generated from field: repeated float query = 2;
+   */
+  query: number[];
+
+  /**
+   * @generated from field: int32 k = 3;
+   */
+  k: number;
+
+  /**
+   * @generated from field: int32 ef_search = 4;
+   */
+  efSearch: number;
+
+  /**
+   * @generated from field: bool exact = 5;
+   */
+  exact: boolean;
+
+  /**
+   * over-fetch ANN candidates before exact scoring
+   *
+   * @generated from field: bool rerank = 6;
+   */
+  rerank: boolean;
+};
+
+/**
+ * Describes the message wavespan.v1.SearchLocalRequest.
+ * Use `create(SearchLocalRequestSchema)` to create a new message.
+ */
+export const SearchLocalRequestSchema: GenMessage<SearchLocalRequest> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 4);
+
+/**
+ * VectorHit is one local search result (exact-scored).
+ *
+ * @generated from message wavespan.v1.VectorHit
+ */
+export type VectorHit = Message<"wavespan.v1.VectorHit"> & {
+  /**
+   * @generated from field: string collection = 1;
+   */
+  collection: string;
+
+  /**
+   * @generated from field: string vector_id = 2;
+   */
+  vectorId: string;
+
+  /**
+   * @generated from field: string graph_node_id = 3;
+   */
+  graphNodeId: string;
+
+  /**
+   * smaller = closer (ranking)
+   *
+   * @generated from field: double distance = 4;
+   */
+  distance: number;
+
+  /**
+   * larger = more similar (user-facing)
+   *
+   * @generated from field: double score = 5;
+   */
+  score: number;
+};
+
+/**
+ * Describes the message wavespan.v1.VectorHit.
+ * Use `create(VectorHitSchema)` to create a new message.
+ */
+export const VectorHitSchema: GenMessage<VectorHit> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 5);
+
+/**
+ * @generated from message wavespan.v1.SearchLocalResponse
+ */
+export type SearchLocalResponse = Message<"wavespan.v1.SearchLocalResponse"> & {
+  /**
+   * @generated from field: repeated wavespan.v1.VectorHit hits = 1;
+   */
+  hits: VectorHit[];
+};
+
+/**
+ * Describes the message wavespan.v1.SearchLocalResponse.
+ * Use `create(SearchLocalResponseSchema)` to create a new message.
+ */
+export const SearchLocalResponseSchema: GenMessage<SearchLocalResponse> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 6);
+
+/**
+ * VectorService ingests raw vectors and serves per-node local search fragments (design/08). The
+ * public, cluster-wide search is the Cypher vector.searchExact/searchApprox procedure, which
+ * scatters SearchLocal to holders and merges.
  *
  * @generated from service wavespan.v1.VectorService
  */
@@ -163,6 +274,14 @@ export const VectorService: GenService<{
     methodKind: "unary";
     input: typeof PutVectorRequestSchema;
     output: typeof PutVectorResponseSchema;
+  },
+  /**
+   * @generated from rpc wavespan.v1.VectorService.SearchLocal
+   */
+  searchLocal: {
+    methodKind: "unary";
+    input: typeof SearchLocalRequestSchema;
+    output: typeof SearchLocalResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_wavespan_v1_vector, 0);

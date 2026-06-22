@@ -65,7 +65,7 @@ func SurfaceForProcedure(procedure string) Surface {
 	case "/wavespan.v1.ReplicationService/StoreReplica", "/wavespan.v1.ReplicationService/FetchReplica",
 		"/wavespan.v1.ReplicationService/SubscribeKey", "/wavespan.v1.ReplicationService/ScanLocal",
 		"/wavespan.v1.GlobalReplication/PushGlobal", "/wavespan.v1.GlobalReplication/RangeSummary",
-		"/wavespan.v1.GlobalReplication/FetchRange":
+		"/wavespan.v1.GlobalReplication/FetchRange", "/wavespan.v1.VectorService/SearchLocal":
 		return SurfaceInternal
 	default:
 		return SurfaceAdmin

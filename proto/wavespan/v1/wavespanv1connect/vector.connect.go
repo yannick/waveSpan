@@ -35,11 +35,15 @@ const (
 const (
 	// VectorServicePutProcedure is the fully-qualified name of the VectorService's Put RPC.
 	VectorServicePutProcedure = "/wavespan.v1.VectorService/Put"
+	// VectorServiceSearchLocalProcedure is the fully-qualified name of the VectorService's SearchLocal
+	// RPC.
+	VectorServiceSearchLocalProcedure = "/wavespan.v1.VectorService/SearchLocal"
 )
 
 // VectorServiceClient is a client for the wavespan.v1.VectorService service.
 type VectorServiceClient interface {
 	Put(context.Context, *connect.Request[v1.PutVectorRequest]) (*connect.Response[v1.PutVectorResponse], error)
+	SearchLocal(context.Context, *connect.Request[v1.SearchLocalRequest]) (*connect.Response[v1.SearchLocalResponse], error)
 }
 
 // NewVectorServiceClient constructs a client for the wavespan.v1.VectorService service. By default,
@@ -59,12 +63,19 @@ func NewVectorServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(vectorServiceMethods.ByName("Put")),
 			connect.WithClientOptions(opts...),
 		),
+		searchLocal: connect.NewClient[v1.SearchLocalRequest, v1.SearchLocalResponse](
+			httpClient,
+			baseURL+VectorServiceSearchLocalProcedure,
+			connect.WithSchema(vectorServiceMethods.ByName("SearchLocal")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // vectorServiceClient implements VectorServiceClient.
 type vectorServiceClient struct {
-	put *connect.Client[v1.PutVectorRequest, v1.PutVectorResponse]
+	put         *connect.Client[v1.PutVectorRequest, v1.PutVectorResponse]
+	searchLocal *connect.Client[v1.SearchLocalRequest, v1.SearchLocalResponse]
 }
 
 // Put calls wavespan.v1.VectorService.Put.
@@ -72,9 +83,15 @@ func (c *vectorServiceClient) Put(ctx context.Context, req *connect.Request[v1.P
 	return c.put.CallUnary(ctx, req)
 }
 
+// SearchLocal calls wavespan.v1.VectorService.SearchLocal.
+func (c *vectorServiceClient) SearchLocal(ctx context.Context, req *connect.Request[v1.SearchLocalRequest]) (*connect.Response[v1.SearchLocalResponse], error) {
+	return c.searchLocal.CallUnary(ctx, req)
+}
+
 // VectorServiceHandler is an implementation of the wavespan.v1.VectorService service.
 type VectorServiceHandler interface {
 	Put(context.Context, *connect.Request[v1.PutVectorRequest]) (*connect.Response[v1.PutVectorResponse], error)
+	SearchLocal(context.Context, *connect.Request[v1.SearchLocalRequest]) (*connect.Response[v1.SearchLocalResponse], error)
 }
 
 // NewVectorServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -90,10 +107,18 @@ func NewVectorServiceHandler(svc VectorServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(vectorServiceMethods.ByName("Put")),
 		connect.WithHandlerOptions(opts...),
 	)
+	vectorServiceSearchLocalHandler := connect.NewUnaryHandler(
+		VectorServiceSearchLocalProcedure,
+		svc.SearchLocal,
+		connect.WithSchema(vectorServiceMethods.ByName("SearchLocal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.VectorService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case VectorServicePutProcedure:
 			vectorServicePutHandler.ServeHTTP(w, r)
+		case VectorServiceSearchLocalProcedure:
+			vectorServiceSearchLocalHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -105,4 +130,8 @@ type UnimplementedVectorServiceHandler struct{}
 
 func (UnimplementedVectorServiceHandler) Put(context.Context, *connect.Request[v1.PutVectorRequest]) (*connect.Response[v1.PutVectorResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.VectorService.Put is not implemented"))
+}
+
+func (UnimplementedVectorServiceHandler) SearchLocal(context.Context, *connect.Request[v1.SearchLocalRequest]) (*connect.Response[v1.SearchLocalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.VectorService.SearchLocal is not implemented"))
 }

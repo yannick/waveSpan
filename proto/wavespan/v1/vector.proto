@@ -36,8 +36,37 @@ message PutVectorRequest {
 
 message PutVectorResponse {}
 
-// VectorService ingests raw vectors (design/08). Search is exposed via the Cypher
-// vector.searchExact procedure, not a dedicated RPC.
+// SearchLocalRequest asks a node to search ONLY the vectors it holds locally and return its
+// fragment of the top-k (design/08 "scatter to partition-holders"). The query coordinator merges
+// fragments from every holder. exact=true scans the collection; otherwise the ANN live index is
+// used with ef_search. Hits are exact-scored from the stored vector regardless, so the merged
+// global top-k is exact over the candidate union.
+message SearchLocalRequest {
+  string index_name = 1;
+  repeated float query = 2;
+  int32 k = 3;
+  int32 ef_search = 4;
+  bool exact = 5;
+  bool rerank = 6; // over-fetch ANN candidates before exact scoring
+}
+
+// VectorHit is one local search result (exact-scored).
+message VectorHit {
+  string collection = 1;
+  string vector_id = 2;
+  string graph_node_id = 3;
+  double distance = 4; // smaller = closer (ranking)
+  double score = 5;    // larger = more similar (user-facing)
+}
+
+message SearchLocalResponse {
+  repeated VectorHit hits = 1;
+}
+
+// VectorService ingests raw vectors and serves per-node local search fragments (design/08). The
+// public, cluster-wide search is the Cypher vector.searchExact/searchApprox procedure, which
+// scatters SearchLocal to holders and merges.
 service VectorService {
   rpc Put(PutVectorRequest) returns (PutVectorResponse);
+  rpc SearchLocal(SearchLocalRequest) returns (SearchLocalResponse);
 }
