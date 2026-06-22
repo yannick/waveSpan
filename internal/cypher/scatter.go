@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	"github.com/cwire/wavespan/internal/vector"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
@@ -26,7 +27,7 @@ type ScatterFunc func(ctx context.Context, indexName string, query []float32, k,
 // per query so it tracks live membership; clients are cached per address.
 func NewVectorScatter(self string, peers func() []Peer, hc *http.Client) ScatterFunc {
 	if hc == nil {
-		hc = http.DefaultClient
+		hc = rpcopts.H2CClient()
 	}
 	clients := map[string]wavespanv1connect.VectorServiceClient{}
 	return func(ctx context.Context, indexName string, query []float32, k, efSearch int, exact, rerank bool) ([][]vector.Hit, int) {

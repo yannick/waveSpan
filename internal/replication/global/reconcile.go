@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/cwire/wavespan/internal/config"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
@@ -29,7 +30,7 @@ type Reconciler struct {
 // NewReconciler wires a reconciler. namespaces is the set of namespaces whose whole keyspace is
 // compared each round (default ["default"]).
 func NewReconciler(ae *AntiEntropy, applier *Applier, outlog *OutLog, peers []config.ClusterPeer, namespaces []string, hc *http.Client, m *Metrics) *Reconciler {
-	var c connect.HTTPClient = http.DefaultClient
+	var c connect.HTTPClient = rpcopts.H2CClient()
 	if hc != nil {
 		c = hc
 	}

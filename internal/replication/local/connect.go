@@ -23,7 +23,7 @@ type ConnectReplicator struct {
 
 // NewConnectReplicator builds a replicator over the given HTTP client (nil uses http.DefaultClient).
 func NewConnectReplicator(hc *http.Client) *ConnectReplicator {
-	var c connect.HTTPClient = http.DefaultClient
+	var c connect.HTTPClient = rpcopts.H2CClient()
 	if hc != nil {
 		c = hc
 	}

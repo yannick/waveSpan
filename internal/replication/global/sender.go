@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/cwire/wavespan/internal/config"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
@@ -28,7 +29,7 @@ type Sender struct {
 
 // NewSender wires a sender over an out-log and the configured peers.
 func NewSender(outlog *OutLog, peers []config.ClusterPeer, hc *http.Client) *Sender {
-	var c connect.HTTPClient = http.DefaultClient
+	var c connect.HTTPClient = rpcopts.H2CClient()
 	if hc != nil {
 		c = hc
 	}

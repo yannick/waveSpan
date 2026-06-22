@@ -73,6 +73,9 @@ type LocalStore interface {
 	Delete(cf ColumnFamily, key []byte) error
 	// Batch applies all ops atomically in a single transaction (all-or-nothing).
 	Batch(ops []StoreOp) error
+	// BatchRC applies all ops atomically at ReadCommitted isolation (skips the write-write conflict
+	// check so independent keys commit in parallel; the caller orders same-key writes itself).
+	BatchRC(ops []StoreOp) error
 	// Scan returns a forward iterator over [start, end) limited to limit rows (0 = unlimited).
 	Scan(cf ColumnFamily, start, end []byte, limit int) (Iterator, error)
 	// Snapshot returns a read-consistent view.

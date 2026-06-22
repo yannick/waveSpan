@@ -21,6 +21,10 @@ x-env: &env
   WAVESPAN_PROFILING_ENABLED: "true"
   WAVESPAN_BLOCK_PROFILE_RATE: "10000"     # sample ~one blocking event per 10µs of delay
   WAVESPAN_MUTEX_PROFILE_FRACTION: "100"   # sample 1-in-100 contended mutex events
+  # GC tuning (#10): with allocation cut ~3x, collect less often to spend more cycles serving
+  # requests; GOMEMLIMIT caps heap as a safety net.
+  GOGC: "300"
+  GOMEMLIMIT: "3GiB"
 
 services:
   node1:

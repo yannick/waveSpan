@@ -145,7 +145,7 @@ type ConnectTransport struct {
 
 // NewConnectTransport builds a transport over the given HTTP client (nil uses http.DefaultClient).
 func NewConnectTransport(hc *http.Client) *ConnectTransport {
-	var c connect.HTTPClient = http.DefaultClient
+	var c connect.HTTPClient = rpcopts.H2CClient()
 	if hc != nil {
 		c = hc
 	}

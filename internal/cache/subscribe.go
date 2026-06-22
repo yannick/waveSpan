@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/cwire/wavespan/internal/membership"
 	"github.com/cwire/wavespan/internal/recordstore"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
@@ -146,7 +147,7 @@ type Subscriber struct {
 // NewSubscriber builds a subscriber. Subscriptions live under the base context (set via
 // SetBaseContext to the node lifetime), not the per-read request context.
 func NewSubscriber(self membership.Member, store *Store, fetcher *Fetcher, hc *http.Client) *Subscriber {
-	var c connect.HTTPClient = http.DefaultClient
+	var c connect.HTTPClient = rpcopts.H2CClient()
 	if hc != nil {
 		c = hc
 	}
