@@ -46,7 +46,15 @@ type ObsService struct {
 	graph *graph.Store
 	// Cluster-wide InspectLocal fan-out; nil disables cluster_wide (falls back to local-only).
 	clusterScan holderScanner
+	// Test/admin KV write forwarder; nil disables AdminPut. Forwards a Put to a chosen member's
+	// data port so that member coordinates the write.
+	kvWriter KvWriter
 }
+
+// KvWriter forwards a KV Put to a target member's data-port KvService, returning the result. It lets
+// the node UI write a record coordinated by a chosen cluster member (design/26). Wired in the node
+// from the shared replication HTTP client.
+type KvWriter func(ctx context.Context, target membership.Member, req *wavespanv1.PutRequest) (*wavespanv1.PutResult, error)
 
 // NewObsService wires the observability service.
 func NewObsService(ring *GossipRing, cluster ClusterSource, self membership.Member, rstore *recordstore.Store) *ObsService {
@@ -69,6 +77,12 @@ func (s *ObsService) WithGlobalInspector(g GlobalInspector) *ObsService {
 // Data Browser shows the whole cluster's KV, not just this node's.
 func (s *ObsService) WithClusterScan(h holderScanner) *ObsService {
 	s.clusterScan = h
+	return s
+}
+
+// WithKvWriter enables AdminPut: the node-UI KV write tool that forwards to a chosen coordinator.
+func (s *ObsService) WithKvWriter(w KvWriter) *ObsService {
+	s.kvWriter = w
 	return s
 }
 

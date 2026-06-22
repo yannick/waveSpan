@@ -223,4 +223,27 @@ service ObservabilityService {
   rpc InspectGlobal(InspectGlobalRequest) returns (stream InspectRow);
   rpc GetClusterView(GetClusterViewRequest) returns (GetClusterViewResponse);
   rpc GraphExplore(GraphExploreRequest) returns (GraphExploreResponse);
+  // AdminPut writes a KV record for testing from the node UI, coordinated by a chosen cluster
+  // member (target_member_id) so the operator can pick which node originates the write.
+  rpc AdminPut(AdminPutRequest) returns (AdminPutResponse);
+}
+
+// AdminPutRequest is a test/admin KV write issued from the node UI (design/26). The write is
+// forwarded to target_member_id's data port so that member becomes the write coordinator/origin;
+// an empty target_member_id means the node serving this request coordinates.
+message AdminPutRequest {
+  string namespace = 1;
+  bytes key = 2;
+  bytes value = 3;
+  optional int64 ttl_ms = 4;
+  string target_member_id = 5;
+}
+
+// AdminPutResponse reports the outcome of an AdminPut, including which member coordinated it.
+message AdminPutResponse {
+  bool ok = 1;
+  Version version = 2;
+  uint32 acked_nearby_replicas = 3;
+  string coordinator_member_id = 4;
+  string error = 5;
 }
