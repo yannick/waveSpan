@@ -35,6 +35,7 @@ type IntraAntiEntropy struct {
 	fetch      PeerFetch
 	namespaces []string
 	batch      int
+	cursor     map[string][]byte // per-namespace resume point for the incremental sweep
 }
 
 // NewIntraAntiEntropy wires the worker. namespaces is the set whose keys are reconciled.
@@ -42,10 +43,13 @@ func NewIntraAntiEntropy(store *recordstore.Store, self membership.Member, clust
 	if len(namespaces) == 0 {
 		namespaces = []string{"default"}
 	}
-	return &IntraAntiEntropy{store: store, self: self, cluster: cluster, fetch: fetch, namespaces: namespaces, batch: 512}
+	return &IntraAntiEntropy{store: store, self: self, cluster: cluster, fetch: fetch, namespaces: namespaces, batch: 256, cursor: map[string][]byte{}}
 }
 
-// ReconcileOnce runs one pass and returns the number of keys updated to a newer peer version.
+// ReconcileOnce runs ONE bounded, incremental pass: it scans at most `batch` keys per namespace from
+// a rolling cursor (not the whole keyspace), reconciles them against peers, and advances the cursor
+// so successive passes sweep the namespace over time. This caps per-tick work + allocation at
+// O(batch × peers) instead of O(all keys × peers) every tick. Returns the number of keys updated.
 func (a *IntraAntiEntropy) ReconcileOnce(ctx context.Context) int {
 	peers := a.alivePeerAddrs()
 	if len(peers) == 0 {
@@ -53,14 +57,12 @@ func (a *IntraAntiEntropy) ReconcileOnce(ctx context.Context) int {
 	}
 	updated := 0
 	for _, ns := range a.namespaces {
-		recs, err := a.store.ScanRecords(ns, nil, nil)
+		recs, next, err := a.store.ScanRecordsFrom(ns, a.cursor[ns], a.batch)
 		if err != nil {
 			continue
 		}
-		for i, rec := range recs {
-			if i >= a.batch {
-				break
-			}
+		a.cursor[ns] = next // nil => start over from the top of the namespace next sweep
+		for _, rec := range recs {
 			best := rec
 			bestVer := version.FromProto(rec.GetVersion())
 			for _, addr := range peers {
