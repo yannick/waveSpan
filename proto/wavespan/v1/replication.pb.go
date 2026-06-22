@@ -576,6 +576,187 @@ func (x *CacheUpdate) GetSnapshotRequired() bool {
 	return false
 }
 
+// ScanLocalRequest asks a holder to scan its local store over a subrange (routed-eventual scan).
+type ScanLocalRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	StartKey      []byte                 `protobuf:"bytes,2,opt,name=start_key,json=startKey,proto3" json:"start_key,omitempty"`
+	EndKey        []byte                 `protobuf:"bytes,3,opt,name=end_key,json=endKey,proto3" json:"end_key,omitempty"`
+	Limit         uint32                 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanLocalRequest) Reset() {
+	*x = ScanLocalRequest{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanLocalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanLocalRequest) ProtoMessage() {}
+
+func (x *ScanLocalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanLocalRequest.ProtoReflect.Descriptor instead.
+func (*ScanLocalRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ScanLocalRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *ScanLocalRequest) GetStartKey() []byte {
+	if x != nil {
+		return x.StartKey
+	}
+	return nil
+}
+
+func (x *ScanLocalRequest) GetEndKey() []byte {
+	if x != nil {
+		return x.EndKey
+	}
+	return nil
+}
+
+func (x *ScanLocalRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ScanLocalRow struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Key             []byte                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value           []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Version         *Version               `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	ExpiresAtUnixMs *int64                 `protobuf:"varint,4,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3,oneof" json:"expires_at_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ScanLocalRow) Reset() {
+	*x = ScanLocalRow{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanLocalRow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanLocalRow) ProtoMessage() {}
+
+func (x *ScanLocalRow) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanLocalRow.ProtoReflect.Descriptor instead.
+func (*ScanLocalRow) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ScanLocalRow) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *ScanLocalRow) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *ScanLocalRow) GetVersion() *Version {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+func (x *ScanLocalRow) GetExpiresAtUnixMs() int64 {
+	if x != nil && x.ExpiresAtUnixMs != nil {
+		return *x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+type ScanLocalResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rows          []*ScanLocalRow        `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanLocalResponse) Reset() {
+	*x = ScanLocalResponse{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanLocalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanLocalResponse) ProtoMessage() {}
+
+func (x *ScanLocalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanLocalResponse.ProtoReflect.Descriptor instead.
+func (*ScanLocalResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ScanLocalResponse) GetRows() []*ScanLocalRow {
+	if x != nil {
+		return x.Rows
+	}
+	return nil
+}
+
 var File_wavespan_v1_replication_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_replication_proto_rawDesc = "" +
@@ -622,15 +803,29 @@ const file_wavespan_v1_replication_proto_rawDesc = "" +
 	"\x03key\x18\x03 \x01(\fR\x03key\x121\n" +
 	"\x06record\x18\x04 \x01(\v2\x19.wavespan.v1.StoredRecordR\x06record\x12'\n" +
 	"\x0fstream_sequence\x18\x05 \x01(\x04R\x0estreamSequence\x12+\n" +
-	"\x11snapshot_required\x18\x06 \x01(\bR\x10snapshotRequired*p\n" +
+	"\x11snapshot_required\x18\x06 \x01(\bR\x10snapshotRequired\"|\n" +
+	"\x10ScanLocalRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x1b\n" +
+	"\tstart_key\x18\x02 \x01(\fR\bstartKey\x12\x17\n" +
+	"\aend_key\x18\x03 \x01(\fR\x06endKey\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\rR\x05limit\"\xaf\x01\n" +
+	"\fScanLocalRow\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\fR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\x12.\n" +
+	"\aversion\x18\x03 \x01(\v2\x14.wavespan.v1.VersionR\aversion\x120\n" +
+	"\x12expires_at_unix_ms\x18\x04 \x01(\x03H\x00R\x0fexpiresAtUnixMs\x88\x01\x01B\x15\n" +
+	"\x13_expires_at_unix_ms\"B\n" +
+	"\x11ScanLocalResponse\x12-\n" +
+	"\x04rows\x18\x01 \x03(\v2\x19.wavespan.v1.ScanLocalRowR\x04rows*p\n" +
 	"\fReplicaClass\x12\x1d\n" +
 	"\x19REPLICA_CLASS_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cREPLICA_CLASS_NEARBY_DURABLE\x10\x01\x12\x1f\n" +
-	"\x1bREPLICA_CLASS_DYNAMIC_CACHE\x10\x022\x8c\x02\n" +
+	"\x1bREPLICA_CLASS_DYNAMIC_CACHE\x10\x022\xd8\x02\n" +
 	"\x12ReplicationService\x12S\n" +
 	"\fStoreReplica\x12 .wavespan.v1.StoreReplicaRequest\x1a!.wavespan.v1.StoreReplicaResponse\x12S\n" +
 	"\fFetchReplica\x12 .wavespan.v1.FetchReplicaRequest\x1a!.wavespan.v1.FetchReplicaResponse\x12L\n" +
-	"\fSubscribeKey\x12 .wavespan.v1.SubscribeKeyRequest\x1a\x18.wavespan.v1.CacheUpdate0\x01B\xa8\x01\n" +
+	"\fSubscribeKey\x12 .wavespan.v1.SubscribeKeyRequest\x1a\x18.wavespan.v1.CacheUpdate0\x01\x12J\n" +
+	"\tScanLocal\x12\x1d.wavespan.v1.ScanLocalRequest\x1a\x1e.wavespan.v1.ScanLocalResponseB\xa8\x01\n" +
 	"\x0fcom.wavespan.v1B\x10ReplicationProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -646,7 +841,7 @@ func file_wavespan_v1_replication_proto_rawDescGZIP() []byte {
 }
 
 var file_wavespan_v1_replication_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wavespan_v1_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_wavespan_v1_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_wavespan_v1_replication_proto_goTypes = []any{
 	(ReplicaClass)(0),            // 0: wavespan.v1.ReplicaClass
 	(*StoreReplicaRequest)(nil),  // 1: wavespan.v1.StoreReplicaRequest
@@ -656,31 +851,38 @@ var file_wavespan_v1_replication_proto_goTypes = []any{
 	(*FetchReplicaResponse)(nil), // 5: wavespan.v1.FetchReplicaResponse
 	(*SubscribeKeyRequest)(nil),  // 6: wavespan.v1.SubscribeKeyRequest
 	(*CacheUpdate)(nil),          // 7: wavespan.v1.CacheUpdate
-	(*StoredRecord)(nil),         // 8: wavespan.v1.StoredRecord
-	(*Version)(nil),              // 9: wavespan.v1.Version
-	(ConflictState)(0),           // 10: wavespan.v1.ConflictState
+	(*ScanLocalRequest)(nil),     // 8: wavespan.v1.ScanLocalRequest
+	(*ScanLocalRow)(nil),         // 9: wavespan.v1.ScanLocalRow
+	(*ScanLocalResponse)(nil),    // 10: wavespan.v1.ScanLocalResponse
+	(*StoredRecord)(nil),         // 11: wavespan.v1.StoredRecord
+	(*Version)(nil),              // 12: wavespan.v1.Version
+	(ConflictState)(0),           // 13: wavespan.v1.ConflictState
 }
 var file_wavespan_v1_replication_proto_depIdxs = []int32{
-	8,  // 0: wavespan.v1.StoreReplicaRequest.record:type_name -> wavespan.v1.StoredRecord
+	11, // 0: wavespan.v1.StoreReplicaRequest.record:type_name -> wavespan.v1.StoredRecord
 	0,  // 1: wavespan.v1.StoreReplicaRequest.replica_class:type_name -> wavespan.v1.ReplicaClass
-	9,  // 2: wavespan.v1.StoreReplicaResponse.applied_version:type_name -> wavespan.v1.Version
-	10, // 3: wavespan.v1.StoreReplicaResponse.conflict_state:type_name -> wavespan.v1.ConflictState
-	9,  // 4: wavespan.v1.FetchReplicaRequest.min_version:type_name -> wavespan.v1.Version
-	8,  // 5: wavespan.v1.FetchReplicaResponse.record:type_name -> wavespan.v1.StoredRecord
+	12, // 2: wavespan.v1.StoreReplicaResponse.applied_version:type_name -> wavespan.v1.Version
+	13, // 3: wavespan.v1.StoreReplicaResponse.conflict_state:type_name -> wavespan.v1.ConflictState
+	12, // 4: wavespan.v1.FetchReplicaRequest.min_version:type_name -> wavespan.v1.Version
+	11, // 5: wavespan.v1.FetchReplicaResponse.record:type_name -> wavespan.v1.StoredRecord
 	3,  // 6: wavespan.v1.FetchReplicaResponse.subscription_offer:type_name -> wavespan.v1.SubscriptionOffer
-	9,  // 7: wavespan.v1.SubscribeKeyRequest.from_version:type_name -> wavespan.v1.Version
-	8,  // 8: wavespan.v1.CacheUpdate.record:type_name -> wavespan.v1.StoredRecord
-	1,  // 9: wavespan.v1.ReplicationService.StoreReplica:input_type -> wavespan.v1.StoreReplicaRequest
-	4,  // 10: wavespan.v1.ReplicationService.FetchReplica:input_type -> wavespan.v1.FetchReplicaRequest
-	6,  // 11: wavespan.v1.ReplicationService.SubscribeKey:input_type -> wavespan.v1.SubscribeKeyRequest
-	2,  // 12: wavespan.v1.ReplicationService.StoreReplica:output_type -> wavespan.v1.StoreReplicaResponse
-	5,  // 13: wavespan.v1.ReplicationService.FetchReplica:output_type -> wavespan.v1.FetchReplicaResponse
-	7,  // 14: wavespan.v1.ReplicationService.SubscribeKey:output_type -> wavespan.v1.CacheUpdate
-	12, // [12:15] is the sub-list for method output_type
-	9,  // [9:12] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	12, // 7: wavespan.v1.SubscribeKeyRequest.from_version:type_name -> wavespan.v1.Version
+	11, // 8: wavespan.v1.CacheUpdate.record:type_name -> wavespan.v1.StoredRecord
+	12, // 9: wavespan.v1.ScanLocalRow.version:type_name -> wavespan.v1.Version
+	9,  // 10: wavespan.v1.ScanLocalResponse.rows:type_name -> wavespan.v1.ScanLocalRow
+	1,  // 11: wavespan.v1.ReplicationService.StoreReplica:input_type -> wavespan.v1.StoreReplicaRequest
+	4,  // 12: wavespan.v1.ReplicationService.FetchReplica:input_type -> wavespan.v1.FetchReplicaRequest
+	6,  // 13: wavespan.v1.ReplicationService.SubscribeKey:input_type -> wavespan.v1.SubscribeKeyRequest
+	8,  // 14: wavespan.v1.ReplicationService.ScanLocal:input_type -> wavespan.v1.ScanLocalRequest
+	2,  // 15: wavespan.v1.ReplicationService.StoreReplica:output_type -> wavespan.v1.StoreReplicaResponse
+	5,  // 16: wavespan.v1.ReplicationService.FetchReplica:output_type -> wavespan.v1.FetchReplicaResponse
+	7,  // 17: wavespan.v1.ReplicationService.SubscribeKey:output_type -> wavespan.v1.CacheUpdate
+	10, // 18: wavespan.v1.ReplicationService.ScanLocal:output_type -> wavespan.v1.ScanLocalResponse
+	15, // [15:19] is the sub-list for method output_type
+	11, // [11:15] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_replication_proto_init() }
@@ -691,13 +893,14 @@ func file_wavespan_v1_replication_proto_init() {
 	file_wavespan_v1_common_proto_init()
 	file_wavespan_v1_replication_proto_msgTypes[3].OneofWrappers = []any{}
 	file_wavespan_v1_replication_proto_msgTypes[4].OneofWrappers = []any{}
+	file_wavespan_v1_replication_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_replication_proto_rawDesc), len(file_wavespan_v1_replication_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

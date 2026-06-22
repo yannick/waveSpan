@@ -21,6 +21,62 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ScanMode selects the range-scan strategy (design/03 "Range scans").
+type ScanMode int32
+
+const (
+	ScanMode_SCAN_MODE_UNSPECIFIED ScanMode = 0
+	ScanMode_CACHE_FAST            ScanMode = 1 // local cache/durable only; fast, may be incomplete; never COMPLETE
+	ScanMode_CACHE_COMPLETE        ScanMode = 2 // local cache, COMPLETE only with a valid coverage certificate
+	ScanMode_ROUTED_EVENTUAL       ScanMode = 3 // contact known holders per subrange and merge
+	ScanMode_LOCAL_ONLY            ScanMode = 4 // local store only (debugging/analytics)
+)
+
+// Enum value maps for ScanMode.
+var (
+	ScanMode_name = map[int32]string{
+		0: "SCAN_MODE_UNSPECIFIED",
+		1: "CACHE_FAST",
+		2: "CACHE_COMPLETE",
+		3: "ROUTED_EVENTUAL",
+		4: "LOCAL_ONLY",
+	}
+	ScanMode_value = map[string]int32{
+		"SCAN_MODE_UNSPECIFIED": 0,
+		"CACHE_FAST":            1,
+		"CACHE_COMPLETE":        2,
+		"ROUTED_EVENTUAL":       3,
+		"LOCAL_ONLY":            4,
+	}
+)
+
+func (x ScanMode) Enum() *ScanMode {
+	p := new(ScanMode)
+	*p = x
+	return p
+}
+
+func (x ScanMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ScanMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_wavespan_v1_kv_proto_enumTypes[0].Descriptor()
+}
+
+func (ScanMode) Type() protoreflect.EnumType {
+	return &file_wavespan_v1_kv_proto_enumTypes[0]
+}
+
+func (x ScanMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ScanMode.Descriptor instead.
+func (ScanMode) EnumDescriptor() ([]byte, []int) {
+	return file_wavespan_v1_kv_proto_rawDescGZIP(), []int{0}
+}
+
 type PutRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Namespace string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
@@ -439,19 +495,96 @@ func (x *DeleteResult) GetAckedNearbyReplicas() uint32 {
 	return 0
 }
 
-// ScanHeader is the first message of a range scan stream (design/03 "Range scans"). The Scan
-// RPC and its body land at M6; the header is defined here so the wire shape is stable.
+type ScanRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	StartKey      []byte                 `protobuf:"bytes,2,opt,name=start_key,json=startKey,proto3" json:"start_key,omitempty"`
+	EndKey        []byte                 `protobuf:"bytes,3,opt,name=end_key,json=endKey,proto3" json:"end_key,omitempty"`
+	Limit         uint32                 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	Mode          ScanMode               `protobuf:"varint,5,opt,name=mode,proto3,enum=wavespan.v1.ScanMode" json:"mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanRequest) Reset() {
+	*x = ScanRequest{}
+	mi := &file_wavespan_v1_kv_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanRequest) ProtoMessage() {}
+
+func (x *ScanRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_kv_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanRequest.ProtoReflect.Descriptor instead.
+func (*ScanRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_kv_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ScanRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *ScanRequest) GetStartKey() []byte {
+	if x != nil {
+		return x.StartKey
+	}
+	return nil
+}
+
+func (x *ScanRequest) GetEndKey() []byte {
+	if x != nil {
+		return x.EndKey
+	}
+	return nil
+}
+
+func (x *ScanRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ScanRequest) GetMode() ScanMode {
+	if x != nil {
+		return x.Mode
+	}
+	return ScanMode_SCAN_MODE_UNSPECIFIED
+}
+
+// ScanHeader is the first message of a range scan stream; it declares the actual completeness so a
+// partial cache scan is never silently presented as complete (design/03 "Do not silently return").
 type ScanHeader struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Meta          *ResponseMeta          `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
-	Completeness  Completeness           `protobuf:"varint,2,opt,name=completeness,proto3,enum=wavespan.v1.Completeness" json:"completeness,omitempty"`
+	Mode          ScanMode               `protobuf:"varint,2,opt,name=mode,proto3,enum=wavespan.v1.ScanMode" json:"mode,omitempty"`
+	Completeness  Completeness           `protobuf:"varint,3,opt,name=completeness,proto3,enum=wavespan.v1.Completeness" json:"completeness,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ScanHeader) Reset() {
 	*x = ScanHeader{}
-	mi := &file_wavespan_v1_kv_proto_msgTypes[6]
+	mi := &file_wavespan_v1_kv_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -463,7 +596,7 @@ func (x *ScanHeader) String() string {
 func (*ScanHeader) ProtoMessage() {}
 
 func (x *ScanHeader) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_kv_proto_msgTypes[6]
+	mi := &file_wavespan_v1_kv_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -476,7 +609,7 @@ func (x *ScanHeader) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScanHeader.ProtoReflect.Descriptor instead.
 func (*ScanHeader) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_kv_proto_rawDescGZIP(), []int{6}
+	return file_wavespan_v1_kv_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ScanHeader) GetMeta() *ResponseMeta {
@@ -486,11 +619,340 @@ func (x *ScanHeader) GetMeta() *ResponseMeta {
 	return nil
 }
 
+func (x *ScanHeader) GetMode() ScanMode {
+	if x != nil {
+		return x.Mode
+	}
+	return ScanMode_SCAN_MODE_UNSPECIFIED
+}
+
 func (x *ScanHeader) GetCompleteness() Completeness {
 	if x != nil {
 		return x.Completeness
 	}
 	return Completeness_COMPLETENESS_UNSPECIFIED
+}
+
+type ScanRow struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Key             []byte                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value           []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Version         *Version               `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	ExpiresAtUnixMs *int64                 `protobuf:"varint,4,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3,oneof" json:"expires_at_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ScanRow) Reset() {
+	*x = ScanRow{}
+	mi := &file_wavespan_v1_kv_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanRow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanRow) ProtoMessage() {}
+
+func (x *ScanRow) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_kv_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanRow.ProtoReflect.Descriptor instead.
+func (*ScanRow) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_kv_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ScanRow) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *ScanRow) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *ScanRow) GetVersion() *Version {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+func (x *ScanRow) GetExpiresAtUnixMs() int64 {
+	if x != nil && x.ExpiresAtUnixMs != nil {
+		return *x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+type ScanTrailer struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	RowsReturned      uint64                 `protobuf:"varint,1,opt,name=rows_returned,json=rowsReturned,proto3" json:"rows_returned,omitempty"`
+	FinalCompleteness Completeness           `protobuf:"varint,2,opt,name=final_completeness,json=finalCompleteness,proto3,enum=wavespan.v1.Completeness" json:"final_completeness,omitempty"`
+	Warnings          []string               `protobuf:"bytes,3,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ScanTrailer) Reset() {
+	*x = ScanTrailer{}
+	mi := &file_wavespan_v1_kv_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanTrailer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanTrailer) ProtoMessage() {}
+
+func (x *ScanTrailer) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_kv_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanTrailer.ProtoReflect.Descriptor instead.
+func (*ScanTrailer) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_kv_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ScanTrailer) GetRowsReturned() uint64 {
+	if x != nil {
+		return x.RowsReturned
+	}
+	return 0
+}
+
+func (x *ScanTrailer) GetFinalCompleteness() Completeness {
+	if x != nil {
+		return x.FinalCompleteness
+	}
+	return Completeness_COMPLETENESS_UNSPECIFIED
+}
+
+func (x *ScanTrailer) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
+type ScanResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*ScanResponse_Header
+	//	*ScanResponse_Row
+	//	*ScanResponse_Trailer
+	Msg           isScanResponse_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanResponse) Reset() {
+	*x = ScanResponse{}
+	mi := &file_wavespan_v1_kv_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanResponse) ProtoMessage() {}
+
+func (x *ScanResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_kv_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanResponse.ProtoReflect.Descriptor instead.
+func (*ScanResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_kv_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ScanResponse) GetMsg() isScanResponse_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *ScanResponse) GetHeader() *ScanHeader {
+	if x != nil {
+		if x, ok := x.Msg.(*ScanResponse_Header); ok {
+			return x.Header
+		}
+	}
+	return nil
+}
+
+func (x *ScanResponse) GetRow() *ScanRow {
+	if x != nil {
+		if x, ok := x.Msg.(*ScanResponse_Row); ok {
+			return x.Row
+		}
+	}
+	return nil
+}
+
+func (x *ScanResponse) GetTrailer() *ScanTrailer {
+	if x != nil {
+		if x, ok := x.Msg.(*ScanResponse_Trailer); ok {
+			return x.Trailer
+		}
+	}
+	return nil
+}
+
+type isScanResponse_Msg interface {
+	isScanResponse_Msg()
+}
+
+type ScanResponse_Header struct {
+	Header *ScanHeader `protobuf:"bytes,1,opt,name=header,proto3,oneof"`
+}
+
+type ScanResponse_Row struct {
+	Row *ScanRow `protobuf:"bytes,2,opt,name=row,proto3,oneof"`
+}
+
+type ScanResponse_Trailer struct {
+	Trailer *ScanTrailer `protobuf:"bytes,3,opt,name=trailer,proto3,oneof"`
+}
+
+func (*ScanResponse_Header) isScanResponse_Msg() {}
+
+func (*ScanResponse_Row) isScanResponse_Msg() {}
+
+func (*ScanResponse_Trailer) isScanResponse_Msg() {}
+
+// RangeCoverageCertificate lets a node claim a cache-complete scan over [start_key, end_key): it is
+// issued by the range owner to a subscriber with an active range subscription or recent snapshot
+// (design/03 "Cache range coverage certificate"). A cache-complete scan reports COMPLETE only with
+// a valid (current-epoch, unexpired, covering) certificate.
+type RangeCoverageCertificate struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Namespace        string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	StartKey         []byte                 `protobuf:"bytes,2,opt,name=start_key,json=startKey,proto3" json:"start_key,omitempty"`
+	EndKey           []byte                 `protobuf:"bytes,3,opt,name=end_key,json=endKey,proto3" json:"end_key,omitempty"`
+	OwnerMemberId    string                 `protobuf:"bytes,4,opt,name=owner_member_id,json=ownerMemberId,proto3" json:"owner_member_id,omitempty"`
+	OwnerEpoch       uint64                 `protobuf:"varint,5,opt,name=owner_epoch,json=ownerEpoch,proto3" json:"owner_epoch,omitempty"`
+	HighWatermark    *Version               `protobuf:"bytes,6,opt,name=high_watermark,json=highWatermark,proto3" json:"high_watermark,omitempty"`
+	ValidUntilUnixMs int64                  `protobuf:"varint,7,opt,name=valid_until_unix_ms,json=validUntilUnixMs,proto3" json:"valid_until_unix_ms,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *RangeCoverageCertificate) Reset() {
+	*x = RangeCoverageCertificate{}
+	mi := &file_wavespan_v1_kv_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RangeCoverageCertificate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RangeCoverageCertificate) ProtoMessage() {}
+
+func (x *RangeCoverageCertificate) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_kv_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RangeCoverageCertificate.ProtoReflect.Descriptor instead.
+func (*RangeCoverageCertificate) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_kv_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RangeCoverageCertificate) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *RangeCoverageCertificate) GetStartKey() []byte {
+	if x != nil {
+		return x.StartKey
+	}
+	return nil
+}
+
+func (x *RangeCoverageCertificate) GetEndKey() []byte {
+	if x != nil {
+		return x.EndKey
+	}
+	return nil
+}
+
+func (x *RangeCoverageCertificate) GetOwnerMemberId() string {
+	if x != nil {
+		return x.OwnerMemberId
+	}
+	return ""
+}
+
+func (x *RangeCoverageCertificate) GetOwnerEpoch() uint64 {
+	if x != nil {
+		return x.OwnerEpoch
+	}
+	return 0
+}
+
+func (x *RangeCoverageCertificate) GetHighWatermark() *Version {
+	if x != nil {
+		return x.HighWatermark
+	}
+	return nil
+}
+
+func (x *RangeCoverageCertificate) GetValidUntilUnixMs() int64 {
+	if x != nil {
+		return x.ValidUntilUnixMs
+	}
+	return 0
 }
 
 var File_wavespan_v1_kv_proto protoreflect.FileDescriptor
@@ -534,15 +996,55 @@ const file_wavespan_v1_kv_proto_rawDesc = "" +
 	"\fDeleteResult\x12-\n" +
 	"\x04meta\x18\x01 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\x12.\n" +
 	"\aversion\x18\x02 \x01(\v2\x14.wavespan.v1.VersionR\aversion\x122\n" +
-	"\x15acked_nearby_replicas\x18\x03 \x01(\rR\x13ackedNearbyReplicas\"z\n" +
+	"\x15acked_nearby_replicas\x18\x03 \x01(\rR\x13ackedNearbyReplicas\"\xa2\x01\n" +
+	"\vScanRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x1b\n" +
+	"\tstart_key\x18\x02 \x01(\fR\bstartKey\x12\x17\n" +
+	"\aend_key\x18\x03 \x01(\fR\x06endKey\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\rR\x05limit\x12)\n" +
+	"\x04mode\x18\x05 \x01(\x0e2\x15.wavespan.v1.ScanModeR\x04mode\"\xa5\x01\n" +
 	"\n" +
 	"ScanHeader\x12-\n" +
-	"\x04meta\x18\x01 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\x12=\n" +
-	"\fcompleteness\x18\x02 \x01(\x0e2\x19.wavespan.v1.CompletenessR\fcompleteness2\xbc\x01\n" +
+	"\x04meta\x18\x01 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\x12)\n" +
+	"\x04mode\x18\x02 \x01(\x0e2\x15.wavespan.v1.ScanModeR\x04mode\x12=\n" +
+	"\fcompleteness\x18\x03 \x01(\x0e2\x19.wavespan.v1.CompletenessR\fcompleteness\"\xaa\x01\n" +
+	"\aScanRow\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\fR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\x12.\n" +
+	"\aversion\x18\x03 \x01(\v2\x14.wavespan.v1.VersionR\aversion\x120\n" +
+	"\x12expires_at_unix_ms\x18\x04 \x01(\x03H\x00R\x0fexpiresAtUnixMs\x88\x01\x01B\x15\n" +
+	"\x13_expires_at_unix_ms\"\x98\x01\n" +
+	"\vScanTrailer\x12#\n" +
+	"\rrows_returned\x18\x01 \x01(\x04R\frowsReturned\x12H\n" +
+	"\x12final_completeness\x18\x02 \x01(\x0e2\x19.wavespan.v1.CompletenessR\x11finalCompleteness\x12\x1a\n" +
+	"\bwarnings\x18\x03 \x03(\tR\bwarnings\"\xa8\x01\n" +
+	"\fScanResponse\x121\n" +
+	"\x06header\x18\x01 \x01(\v2\x17.wavespan.v1.ScanHeaderH\x00R\x06header\x12(\n" +
+	"\x03row\x18\x02 \x01(\v2\x14.wavespan.v1.ScanRowH\x00R\x03row\x124\n" +
+	"\atrailer\x18\x03 \x01(\v2\x18.wavespan.v1.ScanTrailerH\x00R\atrailerB\x05\n" +
+	"\x03msg\"\xa3\x02\n" +
+	"\x18RangeCoverageCertificate\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x1b\n" +
+	"\tstart_key\x18\x02 \x01(\fR\bstartKey\x12\x17\n" +
+	"\aend_key\x18\x03 \x01(\fR\x06endKey\x12&\n" +
+	"\x0fowner_member_id\x18\x04 \x01(\tR\rownerMemberId\x12\x1f\n" +
+	"\vowner_epoch\x18\x05 \x01(\x04R\n" +
+	"ownerEpoch\x12;\n" +
+	"\x0ehigh_watermark\x18\x06 \x01(\v2\x14.wavespan.v1.VersionR\rhighWatermark\x12-\n" +
+	"\x13valid_until_unix_ms\x18\a \x01(\x03R\x10validUntilUnixMs*n\n" +
+	"\bScanMode\x12\x19\n" +
+	"\x15SCAN_MODE_UNSPECIFIED\x10\x00\x12\x0e\n" +
+	"\n" +
+	"CACHE_FAST\x10\x01\x12\x12\n" +
+	"\x0eCACHE_COMPLETE\x10\x02\x12\x13\n" +
+	"\x0fROUTED_EVENTUAL\x10\x03\x12\x0e\n" +
+	"\n" +
+	"LOCAL_ONLY\x10\x042\xfb\x01\n" +
 	"\tKvService\x126\n" +
 	"\x03Put\x12\x17.wavespan.v1.PutRequest\x1a\x16.wavespan.v1.PutResult\x126\n" +
 	"\x03Get\x12\x17.wavespan.v1.GetRequest\x1a\x16.wavespan.v1.GetResult\x12?\n" +
-	"\x06Delete\x12\x1a.wavespan.v1.DeleteRequest\x1a\x19.wavespan.v1.DeleteResultB\x9f\x01\n" +
+	"\x06Delete\x12\x1a.wavespan.v1.DeleteRequest\x1a\x19.wavespan.v1.DeleteResult\x12=\n" +
+	"\x04Scan\x12\x18.wavespan.v1.ScanRequest\x1a\x19.wavespan.v1.ScanResponse0\x01B\x9f\x01\n" +
 	"\x0fcom.wavespan.v1B\aKvProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -557,38 +1059,55 @@ func file_wavespan_v1_kv_proto_rawDescGZIP() []byte {
 	return file_wavespan_v1_kv_proto_rawDescData
 }
 
-var file_wavespan_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_wavespan_v1_kv_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_wavespan_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_wavespan_v1_kv_proto_goTypes = []any{
-	(*PutRequest)(nil),    // 0: wavespan.v1.PutRequest
-	(*PutResult)(nil),     // 1: wavespan.v1.PutResult
-	(*GetRequest)(nil),    // 2: wavespan.v1.GetRequest
-	(*GetResult)(nil),     // 3: wavespan.v1.GetResult
-	(*DeleteRequest)(nil), // 4: wavespan.v1.DeleteRequest
-	(*DeleteResult)(nil),  // 5: wavespan.v1.DeleteResult
-	(*ScanHeader)(nil),    // 6: wavespan.v1.ScanHeader
-	(*ResponseMeta)(nil),  // 7: wavespan.v1.ResponseMeta
-	(*Version)(nil),       // 8: wavespan.v1.Version
-	(Completeness)(0),     // 9: wavespan.v1.Completeness
+	(ScanMode)(0),                    // 0: wavespan.v1.ScanMode
+	(*PutRequest)(nil),               // 1: wavespan.v1.PutRequest
+	(*PutResult)(nil),                // 2: wavespan.v1.PutResult
+	(*GetRequest)(nil),               // 3: wavespan.v1.GetRequest
+	(*GetResult)(nil),                // 4: wavespan.v1.GetResult
+	(*DeleteRequest)(nil),            // 5: wavespan.v1.DeleteRequest
+	(*DeleteResult)(nil),             // 6: wavespan.v1.DeleteResult
+	(*ScanRequest)(nil),              // 7: wavespan.v1.ScanRequest
+	(*ScanHeader)(nil),               // 8: wavespan.v1.ScanHeader
+	(*ScanRow)(nil),                  // 9: wavespan.v1.ScanRow
+	(*ScanTrailer)(nil),              // 10: wavespan.v1.ScanTrailer
+	(*ScanResponse)(nil),             // 11: wavespan.v1.ScanResponse
+	(*RangeCoverageCertificate)(nil), // 12: wavespan.v1.RangeCoverageCertificate
+	(*ResponseMeta)(nil),             // 13: wavespan.v1.ResponseMeta
+	(*Version)(nil),                  // 14: wavespan.v1.Version
+	(Completeness)(0),                // 15: wavespan.v1.Completeness
 }
 var file_wavespan_v1_kv_proto_depIdxs = []int32{
-	7,  // 0: wavespan.v1.PutResult.meta:type_name -> wavespan.v1.ResponseMeta
-	8,  // 1: wavespan.v1.PutResult.version:type_name -> wavespan.v1.Version
-	7,  // 2: wavespan.v1.GetResult.meta:type_name -> wavespan.v1.ResponseMeta
-	7,  // 3: wavespan.v1.DeleteResult.meta:type_name -> wavespan.v1.ResponseMeta
-	8,  // 4: wavespan.v1.DeleteResult.version:type_name -> wavespan.v1.Version
-	7,  // 5: wavespan.v1.ScanHeader.meta:type_name -> wavespan.v1.ResponseMeta
-	9,  // 6: wavespan.v1.ScanHeader.completeness:type_name -> wavespan.v1.Completeness
-	0,  // 7: wavespan.v1.KvService.Put:input_type -> wavespan.v1.PutRequest
-	2,  // 8: wavespan.v1.KvService.Get:input_type -> wavespan.v1.GetRequest
-	4,  // 9: wavespan.v1.KvService.Delete:input_type -> wavespan.v1.DeleteRequest
-	1,  // 10: wavespan.v1.KvService.Put:output_type -> wavespan.v1.PutResult
-	3,  // 11: wavespan.v1.KvService.Get:output_type -> wavespan.v1.GetResult
-	5,  // 12: wavespan.v1.KvService.Delete:output_type -> wavespan.v1.DeleteResult
-	10, // [10:13] is the sub-list for method output_type
-	7,  // [7:10] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	13, // 0: wavespan.v1.PutResult.meta:type_name -> wavespan.v1.ResponseMeta
+	14, // 1: wavespan.v1.PutResult.version:type_name -> wavespan.v1.Version
+	13, // 2: wavespan.v1.GetResult.meta:type_name -> wavespan.v1.ResponseMeta
+	13, // 3: wavespan.v1.DeleteResult.meta:type_name -> wavespan.v1.ResponseMeta
+	14, // 4: wavespan.v1.DeleteResult.version:type_name -> wavespan.v1.Version
+	0,  // 5: wavespan.v1.ScanRequest.mode:type_name -> wavespan.v1.ScanMode
+	13, // 6: wavespan.v1.ScanHeader.meta:type_name -> wavespan.v1.ResponseMeta
+	0,  // 7: wavespan.v1.ScanHeader.mode:type_name -> wavespan.v1.ScanMode
+	15, // 8: wavespan.v1.ScanHeader.completeness:type_name -> wavespan.v1.Completeness
+	14, // 9: wavespan.v1.ScanRow.version:type_name -> wavespan.v1.Version
+	15, // 10: wavespan.v1.ScanTrailer.final_completeness:type_name -> wavespan.v1.Completeness
+	8,  // 11: wavespan.v1.ScanResponse.header:type_name -> wavespan.v1.ScanHeader
+	9,  // 12: wavespan.v1.ScanResponse.row:type_name -> wavespan.v1.ScanRow
+	10, // 13: wavespan.v1.ScanResponse.trailer:type_name -> wavespan.v1.ScanTrailer
+	14, // 14: wavespan.v1.RangeCoverageCertificate.high_watermark:type_name -> wavespan.v1.Version
+	1,  // 15: wavespan.v1.KvService.Put:input_type -> wavespan.v1.PutRequest
+	3,  // 16: wavespan.v1.KvService.Get:input_type -> wavespan.v1.GetRequest
+	5,  // 17: wavespan.v1.KvService.Delete:input_type -> wavespan.v1.DeleteRequest
+	7,  // 18: wavespan.v1.KvService.Scan:input_type -> wavespan.v1.ScanRequest
+	2,  // 19: wavespan.v1.KvService.Put:output_type -> wavespan.v1.PutResult
+	4,  // 20: wavespan.v1.KvService.Get:output_type -> wavespan.v1.GetResult
+	6,  // 21: wavespan.v1.KvService.Delete:output_type -> wavespan.v1.DeleteResult
+	11, // 22: wavespan.v1.KvService.Scan:output_type -> wavespan.v1.ScanResponse
+	19, // [19:23] is the sub-list for method output_type
+	15, // [15:19] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_kv_proto_init() }
@@ -600,18 +1119,25 @@ func file_wavespan_v1_kv_proto_init() {
 	file_wavespan_v1_kv_proto_msgTypes[0].OneofWrappers = []any{}
 	file_wavespan_v1_kv_proto_msgTypes[3].OneofWrappers = []any{}
 	file_wavespan_v1_kv_proto_msgTypes[4].OneofWrappers = []any{}
+	file_wavespan_v1_kv_proto_msgTypes[8].OneofWrappers = []any{}
+	file_wavespan_v1_kv_proto_msgTypes[10].OneofWrappers = []any{
+		(*ScanResponse_Header)(nil),
+		(*ScanResponse_Row)(nil),
+		(*ScanResponse_Trailer)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_kv_proto_rawDesc), len(file_wavespan_v1_kv_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   7,
+			NumEnums:      1,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_wavespan_v1_kv_proto_goTypes,
 		DependencyIndexes: file_wavespan_v1_kv_proto_depIdxs,
+		EnumInfos:         file_wavespan_v1_kv_proto_enumTypes,
 		MessageInfos:      file_wavespan_v1_kv_proto_msgTypes,
 	}.Build()
 	File_wavespan_v1_kv_proto = out.File

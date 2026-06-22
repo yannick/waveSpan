@@ -39,6 +39,8 @@ const (
 	KvServiceGetProcedure = "/wavespan.v1.KvService/Get"
 	// KvServiceDeleteProcedure is the fully-qualified name of the KvService's Delete RPC.
 	KvServiceDeleteProcedure = "/wavespan.v1.KvService/Delete"
+	// KvServiceScanProcedure is the fully-qualified name of the KvService's Scan RPC.
+	KvServiceScanProcedure = "/wavespan.v1.KvService/Scan"
 )
 
 // KvServiceClient is a client for the wavespan.v1.KvService service.
@@ -46,6 +48,7 @@ type KvServiceClient interface {
 	Put(context.Context, *connect.Request[v1.PutRequest]) (*connect.Response[v1.PutResult], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResult], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResult], error)
+	Scan(context.Context, *connect.Request[v1.ScanRequest]) (*connect.ServerStreamForClient[v1.ScanResponse], error)
 }
 
 // NewKvServiceClient constructs a client for the wavespan.v1.KvService service. By default, it uses
@@ -77,6 +80,12 @@ func NewKvServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(kvServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
+		scan: connect.NewClient[v1.ScanRequest, v1.ScanResponse](
+			httpClient,
+			baseURL+KvServiceScanProcedure,
+			connect.WithSchema(kvServiceMethods.ByName("Scan")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -85,6 +94,7 @@ type kvServiceClient struct {
 	put    *connect.Client[v1.PutRequest, v1.PutResult]
 	get    *connect.Client[v1.GetRequest, v1.GetResult]
 	delete *connect.Client[v1.DeleteRequest, v1.DeleteResult]
+	scan   *connect.Client[v1.ScanRequest, v1.ScanResponse]
 }
 
 // Put calls wavespan.v1.KvService.Put.
@@ -102,11 +112,17 @@ func (c *kvServiceClient) Delete(ctx context.Context, req *connect.Request[v1.De
 	return c.delete.CallUnary(ctx, req)
 }
 
+// Scan calls wavespan.v1.KvService.Scan.
+func (c *kvServiceClient) Scan(ctx context.Context, req *connect.Request[v1.ScanRequest]) (*connect.ServerStreamForClient[v1.ScanResponse], error) {
+	return c.scan.CallServerStream(ctx, req)
+}
+
 // KvServiceHandler is an implementation of the wavespan.v1.KvService service.
 type KvServiceHandler interface {
 	Put(context.Context, *connect.Request[v1.PutRequest]) (*connect.Response[v1.PutResult], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResult], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResult], error)
+	Scan(context.Context, *connect.Request[v1.ScanRequest], *connect.ServerStream[v1.ScanResponse]) error
 }
 
 // NewKvServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -134,6 +150,12 @@ func NewKvServiceHandler(svc KvServiceHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(kvServiceMethods.ByName("Delete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	kvServiceScanHandler := connect.NewServerStreamHandler(
+		KvServiceScanProcedure,
+		svc.Scan,
+		connect.WithSchema(kvServiceMethods.ByName("Scan")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.KvService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case KvServicePutProcedure:
@@ -142,6 +164,8 @@ func NewKvServiceHandler(svc KvServiceHandler, opts ...connect.HandlerOption) (s
 			kvServiceGetHandler.ServeHTTP(w, r)
 		case KvServiceDeleteProcedure:
 			kvServiceDeleteHandler.ServeHTTP(w, r)
+		case KvServiceScanProcedure:
+			kvServiceScanHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -161,4 +185,8 @@ func (UnimplementedKvServiceHandler) Get(context.Context, *connect.Request[v1.Ge
 
 func (UnimplementedKvServiceHandler) Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.KvService.Delete is not implemented"))
+}
+
+func (UnimplementedKvServiceHandler) Scan(context.Context, *connect.Request[v1.ScanRequest], *connect.ServerStream[v1.ScanResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.KvService.Scan is not implemented"))
 }

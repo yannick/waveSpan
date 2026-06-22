@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/cwire/wavespan/internal/membership"
@@ -46,6 +47,17 @@ func (r *ConnectReplicator) StoreReplica(ctx context.Context, target membership.
 		return nil, err
 	}
 	return resp.Msg, nil
+}
+
+// ScanLocal asks a holder to scan its local store over a subrange (routed-eventual scan, M6).
+func (r *ConnectReplicator) ScanLocal(ctx context.Context, target membership.Member, namespace string, start, end []byte, limit int) ([]*wavespanv1.ScanLocalRow, error) {
+	resp, err := r.client(target.DataAddr).ScanLocal(ctx, connect.NewRequest(&wavespanv1.ScanLocalRequest{
+		Namespace: namespace, StartKey: start, EndKey: end, Limit: uint32(limit),
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg.GetRows(), nil
 }
 
 // SubscriptionSource pushes cache updates to a key subscriber (implemented by the cache package
@@ -93,6 +105,23 @@ func (s *ReplicaServer) FetchReplica(_ context.Context, req *connect.Request[wav
 	resp := &wavespanv1.FetchReplicaResponse{Found: found, Record: rec}
 	if found && req.Msg.GetWantSubscriptionOffer() {
 		resp.SubscriptionOffer = &wavespanv1.SubscriptionOffer{SourceMemberId: s.self, SourceDataAddr: s.dataAd}
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// ScanLocal scans this holder's local store over a subrange (routed-eventual scan, M6).
+func (s *ReplicaServer) ScanLocal(_ context.Context, req *connect.Request[wavespanv1.ScanLocalRequest]) (*connect.Response[wavespanv1.ScanLocalResponse], error) {
+	rows, err := s.reader.ScanRange(req.Msg.GetNamespace(), req.Msg.GetStartKey(), req.Msg.GetEndKey(), int(req.Msg.GetLimit()), time.Now().UnixMilli())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	resp := &wavespanv1.ScanLocalResponse{}
+	for _, r := range rows {
+		row := &wavespanv1.ScanLocalRow{Key: r.Key, Value: r.Value, Version: r.Version.ToProto()}
+		if r.ExpiresAtMs != nil {
+			row.ExpiresAtUnixMs = r.ExpiresAtMs
+		}
+		resp.Rows = append(resp.Rows, row)
 	}
 	return connect.NewResponse(resp), nil
 }

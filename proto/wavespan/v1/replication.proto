@@ -70,9 +70,29 @@ message CacheUpdate {
   bool snapshot_required = 6;
 }
 
+// ScanLocalRequest asks a holder to scan its local store over a subrange (routed-eventual scan).
+message ScanLocalRequest {
+  string namespace = 1;
+  bytes start_key = 2;
+  bytes end_key = 3;
+  uint32 limit = 4;
+}
+
+message ScanLocalRow {
+  bytes key = 1;
+  bytes value = 2;
+  Version version = 3;
+  optional int64 expires_at_unix_ms = 4;
+}
+
+message ScanLocalResponse {
+  repeated ScanLocalRow rows = 1;
+}
+
 // ReplicationService is the internal replica-write + cache API (mTLS-only in production, design/15).
 service ReplicationService {
   rpc StoreReplica(StoreReplicaRequest) returns (StoreReplicaResponse);
   rpc FetchReplica(FetchReplicaRequest) returns (FetchReplicaResponse);
   rpc SubscribeKey(SubscribeKeyRequest) returns (stream CacheUpdate);
+  rpc ScanLocal(ScanLocalRequest) returns (ScanLocalResponse);
 }

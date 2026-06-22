@@ -102,7 +102,10 @@ func (r *Reader) Get(ctx context.Context, namespace string, key []byte, hideExpi
 	}
 	if out.ExpiresAtMs != nil {
 		res.ExpiresAtUnixMs = out.ExpiresAtMs
-		if hideExpired && *out.ExpiresAtMs <= time.Now().UnixMilli() {
+		// best-effort hide-expired on read (design/03 "TTL semantics"): a node may hide a record
+		// it detects as expired. hideExpired only tightens the contract; default already hides.
+		_ = hideExpired
+		if *out.ExpiresAtMs <= time.Now().UnixMilli() {
 			res.Found = false
 			res.Value = nil
 		}

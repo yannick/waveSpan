@@ -129,10 +129,129 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 		{CF: storage.CFKVMeta, Key: latestKey(ns, key), Value: lpBytes},
 		{CF: storage.CFReplLog, Key: storage.ReplLogKey(ns, s.logSeq.Add(1)), Value: envBytes},
 	}
+	// index into the lazy-TTL bucket so the sweeper can find it (design/03 "TTL storage").
+	if rec.ExpiresAtUnixMs != nil && !rec.GetTombstone() {
+		ops = append(ops, storage.StoreOp{
+			CF: storage.CFKVMeta, Key: ttlKey(rec.GetExpiresAtUnixMs(), ns, key), Value: encodeVersion(recVer),
+		})
+	}
 	if err := s.local.Batch(ops); err != nil {
 		return version.Version{}, err
 	}
 	return winner, nil
+}
+
+// ScanRow is one row returned by a local range scan.
+type ScanRow struct {
+	Key         []byte
+	Value       []byte
+	Version     version.Version
+	ExpiresAtMs *int64
+}
+
+// ScanRange iterates the namespace's latest pointers in user-key order over [start, end), reading
+// each winner's value. It skips tombstones and (best-effort) records detected as expired at nowMs.
+// limit 0 means unbounded.
+func (s *Store) ScanRange(namespace string, start, end []byte, limit int, nowMs int64) ([]ScanRow, error) {
+	lo := latestKey(namespace, start)
+	if start == nil {
+		lo = namespacePrefix(namespace)
+	}
+	var hi []byte
+	if end == nil {
+		hi = prefixEnd(namespacePrefix(namespace))
+	} else {
+		hi = latestKey(namespace, end)
+	}
+	it, err := s.local.Scan(storage.CFKVMeta, lo, hi, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = it.Close() }()
+
+	nsPrefixLen := len(namespacePrefix(namespace))
+	var rows []ScanRow
+	for it.Valid() {
+		k := it.Key()
+		lp, derr := storage.DecodeLatestPointer(it.Value())
+		if derr != nil {
+			it.Next()
+			continue
+		}
+		userKey := append([]byte(nil), k[nsPrefixLen:]...)
+		win := version.FromProto(lp.GetWinner())
+		hidden := lp.GetTombstone()
+		if lp.ExpiresAtUnixMs != nil && lp.GetExpiresAtUnixMs() <= nowMs {
+			hidden = true // best-effort hide-expired on read (design/03 "TTL semantics")
+		}
+		if !hidden {
+			recBytes, found, gerr := s.local.Get(storage.CFKVData, dataKey(namespace, userKey, win))
+			if gerr == nil && found {
+				if rec, rerr := storage.DecodeStoredRecord(recBytes); rerr == nil {
+					row := ScanRow{Key: userKey, Value: rec.GetValue().GetInline(), Version: win}
+					if lp.ExpiresAtUnixMs != nil {
+						e := lp.GetExpiresAtUnixMs()
+						row.ExpiresAtMs = &e
+					}
+					rows = append(rows, row)
+					if limit > 0 && len(rows) >= limit {
+						return rows, nil
+					}
+				}
+			}
+		}
+		it.Next()
+	}
+	return rows, it.Err()
+}
+
+// ExpiredEntry is a ttl-indexed key whose bucket is due, for the sweeper. IndexKey is the raw
+// ttl-index key, used to clear the entry after sweeping.
+type ExpiredEntry struct {
+	Namespace string
+	Key       []byte
+	IndexKey  []byte
+}
+
+// ExpiredEntries returns ttl-index entries in buckets due by nowMs (design/03 lazy TTL sweeper).
+func (s *Store) ExpiredEntries(nowMs int64, limit int) ([]ExpiredEntry, error) {
+	it, err := s.local.Scan(storage.CFKVMeta, ttlLowBound(), ttlScanBound(nowMs), 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = it.Close() }()
+	var out []ExpiredEntry
+	for it.Valid() {
+		ns, key, ok := parseTTLKey(it.Key())
+		if ok {
+			out = append(out, ExpiredEntry{
+				Namespace: ns, Key: append([]byte(nil), key...), IndexKey: append([]byte(nil), it.Key()...),
+			})
+			if limit > 0 && len(out) >= limit {
+				return out, nil
+			}
+		}
+		it.Next()
+	}
+	return out, it.Err()
+}
+
+// ClearTTLIndex removes a swept ttl-index entry by its raw key.
+func (s *Store) ClearTTLIndex(indexKey []byte) error {
+	return s.local.Batch([]storage.StoreOp{{CF: storage.CFKVMeta, Key: indexKey, Delete: true}})
+}
+
+// ExpiresAt returns the latest pointer's expiry for a key, if any (used to clear the ttl entry).
+func (s *Store) ExpiresAt(namespace string, key []byte) (int64, bool) {
+	cur, found, err := s.local.Get(storage.CFKVMeta, latestKey(namespace, key))
+	if err != nil || !found {
+		return 0, false
+	}
+	lp, err := storage.DecodeLatestPointer(cur)
+	if err != nil || lp.ExpiresAtUnixMs == nil {
+		return 0, false
+	}
+	return lp.GetExpiresAtUnixMs(), true
 }
 
 // GetRecord returns the winning StoredRecord for a key (used by repair to re-replicate the
