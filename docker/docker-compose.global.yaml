@@ -1,0 +1,87 @@
+# Two-cluster active-active topology for global-replication integration tests (M7, design/06).
+# Cluster A (test-a: a1,a2) and cluster B (test-b: b1,b2) share a docker network but gossip only
+# within their own cluster (seeds are intra-cluster); the ONLY cross-cluster path is the configured
+# GlobalReplication peers. Each cluster runs origin+1 (target 1, so a write needs one nearby
+# replica). The "siblings" namespace uses the keep-siblings resolver.
+#
+# Build context is the repo PARENT so the sibling `wavesdb` module is visible.
+name: wavespan-global
+
+x-node: &node
+  build:
+    context: ../..
+    dockerfile: waveSpan/docker/Dockerfile
+  image: wavespan/node:dev
+  restart: unless-stopped
+
+services:
+  a1:
+    <<: *node
+    environment:
+      WAVESPAN_RUNTIME: docker
+      WAVESPAN_CLUSTER_ID: test-a
+      WAVESPAN_SEEDS: a1:7700,a2:7700
+      WAVESPAN_MEMBER_ID: a1
+      WAVESPAN_ZONE: zone-a
+      WAVESPAN_STORAGE_PATH: /var/lib/wavespan
+      WAVESPAN_TARGET_NEARBY_REPLICAS: "1"
+      WAVESPAN_GLOBAL_MODE: active-active-async
+      WAVESPAN_GLOBAL_PEERS: test-b@b1:7800,test-b@b2:7800
+      WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
+      WAVESPAN_INSECURE_DEV_MODE: "true"
+    ports: ["7951:7900", "7861:7800"]
+    volumes: ["a1-data:/var/lib/wavespan"]
+  a2:
+    <<: *node
+    environment:
+      WAVESPAN_RUNTIME: docker
+      WAVESPAN_CLUSTER_ID: test-a
+      WAVESPAN_SEEDS: a1:7700,a2:7700
+      WAVESPAN_MEMBER_ID: a2
+      WAVESPAN_ZONE: zone-a
+      WAVESPAN_STORAGE_PATH: /var/lib/wavespan
+      WAVESPAN_TARGET_NEARBY_REPLICAS: "1"
+      WAVESPAN_GLOBAL_MODE: active-active-async
+      WAVESPAN_GLOBAL_PEERS: test-b@b1:7800,test-b@b2:7800
+      WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
+      WAVESPAN_INSECURE_DEV_MODE: "true"
+    ports: ["7952:7900", "7862:7800"]
+    volumes: ["a2-data:/var/lib/wavespan"]
+  b1:
+    <<: *node
+    environment:
+      WAVESPAN_RUNTIME: docker
+      WAVESPAN_CLUSTER_ID: test-b
+      WAVESPAN_SEEDS: b1:7700,b2:7700
+      WAVESPAN_MEMBER_ID: b1
+      WAVESPAN_ZONE: zone-b
+      WAVESPAN_STORAGE_PATH: /var/lib/wavespan
+      WAVESPAN_TARGET_NEARBY_REPLICAS: "1"
+      WAVESPAN_GLOBAL_MODE: active-active-async
+      WAVESPAN_GLOBAL_PEERS: test-a@a1:7800,test-a@a2:7800
+      WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
+      WAVESPAN_INSECURE_DEV_MODE: "true"
+    ports: ["7953:7900", "7863:7800"]
+    volumes: ["b1-data:/var/lib/wavespan"]
+  b2:
+    <<: *node
+    environment:
+      WAVESPAN_RUNTIME: docker
+      WAVESPAN_CLUSTER_ID: test-b
+      WAVESPAN_SEEDS: b1:7700,b2:7700
+      WAVESPAN_MEMBER_ID: b2
+      WAVESPAN_ZONE: zone-b
+      WAVESPAN_STORAGE_PATH: /var/lib/wavespan
+      WAVESPAN_TARGET_NEARBY_REPLICAS: "1"
+      WAVESPAN_GLOBAL_MODE: active-active-async
+      WAVESPAN_GLOBAL_PEERS: test-a@a1:7800,test-a@a2:7800
+      WAVESPAN_KEEP_SIBLINGS_NAMESPACES: siblings
+      WAVESPAN_INSECURE_DEV_MODE: "true"
+    ports: ["7954:7900", "7864:7800"]
+    volumes: ["b2-data:/var/lib/wavespan"]
+
+volumes:
+  a1-data:
+  a2-data:
+  b1-data:
+  b2-data:
