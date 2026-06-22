@@ -10,6 +10,7 @@ service KvService {
   rpc Put(PutRequest) returns (PutResult);
   rpc Get(GetRequest) returns (GetResult);
   rpc Delete(DeleteRequest) returns (DeleteResult);
+  rpc Scan(ScanRequest) returns (stream ScanResponse);
 }
 
 message PutRequest {
@@ -57,9 +58,62 @@ message DeleteResult {
   uint32 acked_nearby_replicas = 3;
 }
 
-// ScanHeader is the first message of a range scan stream (design/03 "Range scans"). The Scan
-// RPC and its body land at M6; the header is defined here so the wire shape is stable.
+// ScanMode selects the range-scan strategy (design/03 "Range scans").
+enum ScanMode {
+  SCAN_MODE_UNSPECIFIED = 0;
+  CACHE_FAST = 1;      // local cache/durable only; fast, may be incomplete; never COMPLETE
+  CACHE_COMPLETE = 2;  // local cache, COMPLETE only with a valid coverage certificate
+  ROUTED_EVENTUAL = 3; // contact known holders per subrange and merge
+  LOCAL_ONLY = 4;      // local store only (debugging/analytics)
+}
+
+message ScanRequest {
+  string namespace = 1;
+  bytes start_key = 2;
+  bytes end_key = 3;
+  uint32 limit = 4;
+  ScanMode mode = 5;
+}
+
+// ScanHeader is the first message of a range scan stream; it declares the actual completeness so a
+// partial cache scan is never silently presented as complete (design/03 "Do not silently return").
 message ScanHeader {
   ResponseMeta meta = 1;
-  Completeness completeness = 2;
+  ScanMode mode = 2;
+  Completeness completeness = 3;
+}
+
+message ScanRow {
+  bytes key = 1;
+  bytes value = 2;
+  Version version = 3;
+  optional int64 expires_at_unix_ms = 4;
+}
+
+message ScanTrailer {
+  uint64 rows_returned = 1;
+  Completeness final_completeness = 2;
+  repeated string warnings = 3;
+}
+
+message ScanResponse {
+  oneof msg {
+    ScanHeader header = 1;
+    ScanRow row = 2;
+    ScanTrailer trailer = 3;
+  }
+}
+
+// RangeCoverageCertificate lets a node claim a cache-complete scan over [start_key, end_key): it is
+// issued by the range owner to a subscriber with an active range subscription or recent snapshot
+// (design/03 "Cache range coverage certificate"). A cache-complete scan reports COMPLETE only with
+// a valid (current-epoch, unexpired, covering) certificate.
+message RangeCoverageCertificate {
+  string namespace = 1;
+  bytes start_key = 2;
+  bytes end_key = 3;
+  string owner_member_id = 4;
+  uint64 owner_epoch = 5;
+  Version high_watermark = 6;
+  int64 valid_until_unix_ms = 7;
 }

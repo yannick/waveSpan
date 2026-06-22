@@ -24,6 +24,7 @@ import (
 	"github.com/cwire/wavespan/internal/recordstore"
 	local "github.com/cwire/wavespan/internal/replication/local"
 	"github.com/cwire/wavespan/internal/storage"
+	"github.com/cwire/wavespan/internal/ttl"
 	"github.com/cwire/wavespan/internal/version"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -141,7 +142,19 @@ func run() error {
 	fetcher := cache.NewFetcher(self, cacheDir, svc, svc.Graph(), http.DefaultClient)
 	subscriber := cache.NewSubscriber(self, cacheStore, fetcher, http.DefaultClient)
 	reader := kv.NewReader(rstore, self).WithCache(fetcher, cacheStore).WithSubscriber(subscriber)
-	kvSvc := kv.NewService(coord, reader, self)
+	// Range scans (M6): routed-eventual via ScanLocal on holders; cache-complete gated by certs.
+	scanner := kv.NewScanner(rstore, self, svc, replicator, cache.NewCertStore(nil))
+	kvSvc := kv.NewService(coord, reader, self).WithScanner(scanner)
+	// Lazy TTL sweeper (M6): tombstone expired keys via a coordinated delete (replicates).
+	ttlTombstones := prometheus.NewCounter(prometheus.CounterOpts{Name: "kv_ttl_tombstones_written_total", Help: "tombstones emitted by the TTL sweeper"})
+	metrics.Registry.MustRegister(ttlTombstones)
+	sweeper := ttl.NewSweeper(rstore, func(c context.Context, ns string, key []byte) error {
+		if _, err := coord.Delete(c, ns, key, ""); err != nil {
+			return err
+		}
+		ttlTombstones.Inc()
+		return nil
+	}, nowMs)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -193,6 +206,7 @@ func run() error {
 	go fanout.Run(ctx)
 	go repair.Run(ctx, 200*time.Millisecond)
 	go evictor.Run(ctx, time.Minute)
+	go sweeper.Run(ctx, 30*time.Second)
 	go func() {
 		t := time.NewTicker(time.Second)
 		defer t.Stop()

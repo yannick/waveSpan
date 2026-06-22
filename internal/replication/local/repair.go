@@ -9,13 +9,16 @@ import (
 	"github.com/cwire/wavespan/internal/latencygraph"
 	"github.com/cwire/wavespan/internal/membership"
 	"github.com/cwire/wavespan/internal/placement"
+	"github.com/cwire/wavespan/internal/recordstore"
 	"github.com/cwire/wavespan/internal/version"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 )
 
-// RecordReader reads the winning local record for a key (the local recordstore).
+// RecordReader reads the winning local record for a key, and scans a local range (the local
+// recordstore).
 type RecordReader interface {
 	GetRecord(namespace string, key []byte) (*wavespanv1.StoredRecord, bool, error)
+	ScanRange(namespace string, start, end []byte, limit int, nowMs int64) ([]recordstore.ScanRow, error)
 }
 
 // RepairConfig tunes the repair engine (design/23_repair_engine.md).

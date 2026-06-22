@@ -12,16 +12,23 @@ import (
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
-// Service is the public KvService Connect handler over the coordinator and reader.
+// Service is the public KvService Connect handler over the coordinator, reader, and scanner.
 type Service struct {
-	coord  *Coordinator
-	reader *Reader
-	self   membership.Member
+	coord   *Coordinator
+	reader  *Reader
+	scanner *Scanner
+	self    membership.Member
 }
 
 // NewService wires the KV Connect service.
 func NewService(coord *Coordinator, reader *Reader, self membership.Member) *Service {
 	return &Service{coord: coord, reader: reader, self: self}
+}
+
+// WithScanner enables range scans (M6).
+func (s *Service) WithScanner(sc *Scanner) *Service {
+	s.scanner = sc
+	return s
 }
 
 // Handler returns the mountable Connect handler (path, handler) for the data port.
@@ -83,4 +90,12 @@ func (s *Service) Get(ctx context.Context, req *connect.Request[wavespanv1.GetRe
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(res), nil
+}
+
+// Scan streams a range scan (M6), always declaring the actual completeness in the header.
+func (s *Service) Scan(ctx context.Context, req *connect.Request[wavespanv1.ScanRequest], stream *connect.ServerStream[wavespanv1.ScanResponse]) error {
+	if s.scanner == nil {
+		return connect.NewError(connect.CodeUnimplemented, errors.New("kv: scan not enabled"))
+	}
+	return s.scanner.Scan(ctx, req.Msg, stream.Send)
 }
