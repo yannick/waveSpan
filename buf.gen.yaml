@@ -11,3 +11,8 @@ plugins:
   - local: protoc-gen-connect-go
     out: proto
     opt: paths=source_relative
+  # Browser client: protobuf-es v2 service+message descriptors; @connectrpc/connect v2 createClient
+  # consumes them directly. Generated into the SPA (run after `npm ci` in ui/).
+  - local: ui/node_modules/.bin/protoc-gen-es
+    out: ui/src/gen
+    opt: target=ts
