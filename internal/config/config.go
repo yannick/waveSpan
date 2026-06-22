@@ -97,9 +97,27 @@ type AdminConfig struct {
 	Listen string `yaml:"listen"`
 }
 
-// SecurityConfig holds transport-security and dev-mode toggles.
+// SecurityConfig holds transport-security material and tuning (design/15, design/27). In production
+// CertFile/KeyFile/CAFile are mounted from Kubernetes Secrets / cert-manager and enable mTLS on the
+// machine link classes; in dev, insecureDevMode permits plaintext with no certs.
 type SecurityConfig struct {
-	InsecureDevMode bool `yaml:"insecureDevMode"`
+	InsecureDevMode bool                  `yaml:"insecureDevMode"`
+	CertFile        string                `yaml:"certFile"`
+	KeyFile         string                `yaml:"keyFile"`
+	CAFile          string                `yaml:"caFile"`
+	Transport       TransportTuningConfig `yaml:"transport"`
+}
+
+// TransportTuningConfig tunes the shared inter-node connection pool so mTLS handshakes are rare
+// (design/27 "Transport performance"). All fields are pointers so an explicit 0 is distinct from
+// "unset" (defaults). Defaults live in security.DefaultTransportTuning(); ResolvedTuning applies any
+// overrides on top of those.
+type TransportTuningConfig struct {
+	MaxIdleConns           *int `yaml:"maxIdleConns"`
+	MaxIdleConnsPerHost    *int `yaml:"maxIdleConnsPerHost"`
+	IdleConnTimeoutSeconds *int `yaml:"idleConnTimeoutSeconds"`
+	TCPKeepAliveSeconds    *int `yaml:"tcpKeepAliveSeconds"`
+	DialTimeoutSeconds     *int `yaml:"dialTimeoutSeconds"`
 }
 
 // Defaults applied when fields are unset.
@@ -182,6 +200,15 @@ func (c *Config) applyEnv(get func(string) (string, bool)) {
 	if v, ok := get("WAVESPAN_INSECURE_DEV_MODE"); ok {
 		c.Security.InsecureDevMode = v == "true" || v == "1"
 	}
+	if v, ok := get("WAVESPAN_TLS_CERT_FILE"); ok {
+		c.Security.CertFile = v
+	}
+	if v, ok := get("WAVESPAN_TLS_KEY_FILE"); ok {
+		c.Security.KeyFile = v
+	}
+	if v, ok := get("WAVESPAN_TLS_CA_FILE"); ok {
+		c.Security.CAFile = v
+	}
 	if v, ok := get("WAVESPAN_TARGET_NEARBY_REPLICAS"); ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.Replication.TargetNearbyReplicas = &n
@@ -238,6 +265,25 @@ func (c *Config) Validate() error {
 	if c.Storage.Engine != defaultEngine {
 		return fmt.Errorf("config: storage.engine %q is unsupported; v1 links %q at build time",
 			c.Storage.Engine, defaultEngine)
+	}
+	if err := c.Security.validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validate rejects incomplete mTLS material: the cert, key, and CA must be supplied together or not
+// at all. (The plaintext-without-dev-mode gate itself lives in security.TLSConfig and fires when the
+// node wires its transports, keeping one source of truth.)
+func (s SecurityConfig) validate() error {
+	set := 0
+	for _, f := range []string{s.CertFile, s.KeyFile, s.CAFile} {
+		if f != "" {
+			set++
+		}
+	}
+	if set != 0 && set != 3 {
+		return fmt.Errorf("config: security.certFile, keyFile, and caFile must be set together (incomplete mTLS material)")
 	}
 	return nil
 }

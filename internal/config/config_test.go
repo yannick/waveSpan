@@ -107,6 +107,62 @@ func TestKubernetesRuntimeFromEnvOnly(t *testing.T) {
 	}
 }
 
+func TestSecurityTLSAndTuningParsed(t *testing.T) {
+	body := `
+clusterId: dev
+memberId: node1
+membership: {runtime: docker, seeds: ["s:7700"]}
+security:
+  certFile: /certs/tls.crt
+  keyFile: /certs/tls.key
+  caFile: /certs/ca.crt
+  transport:
+    maxIdleConnsPerHost: 128
+    idleConnTimeoutSeconds: 900
+`
+	cfg, err := Load(writeTemp(t, body), nil)
+	if err != nil {
+		t.Fatalf("tls config failed to load: %v", err)
+	}
+	if cfg.Security.CertFile != "/certs/tls.crt" || cfg.Security.CAFile != "/certs/ca.crt" {
+		t.Fatalf("tls material not parsed: %+v", cfg.Security)
+	}
+	if cfg.Security.Transport.MaxIdleConnsPerHost == nil || *cfg.Security.Transport.MaxIdleConnsPerHost != 128 {
+		t.Fatalf("transport tuning not parsed: %+v", cfg.Security.Transport)
+	}
+	if cfg.Security.Transport.IdleConnTimeoutSeconds == nil || *cfg.Security.Transport.IdleConnTimeoutSeconds != 900 {
+		t.Fatalf("idle timeout override not parsed: %+v", cfg.Security.Transport)
+	}
+}
+
+func TestTLSCertEnvOverride(t *testing.T) {
+	env := map[string]string{
+		"WAVESPAN_TLS_CERT_FILE": "/run/tls.crt",
+		"WAVESPAN_TLS_KEY_FILE":  "/run/tls.key",
+		"WAVESPAN_TLS_CA_FILE":   "/run/ca.crt",
+	}
+	cfg, err := Load(writeTemp(t, validYAML), env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Security.CertFile != "/run/tls.crt" || cfg.Security.KeyFile != "/run/tls.key" || cfg.Security.CAFile != "/run/ca.crt" {
+		t.Fatalf("tls env overrides failed: %+v", cfg.Security)
+	}
+}
+
+func TestIncompleteTLSMaterialRejected(t *testing.T) {
+	body := `
+clusterId: dev
+memberId: node1
+membership: {runtime: docker, seeds: ["s:7700"]}
+security:
+  certFile: /certs/tls.crt
+`
+	if _, err := Load(writeTemp(t, body), nil); err == nil {
+		t.Fatal("partial mTLS material (cert without key/ca) must fail validation")
+	}
+}
+
 func TestFailFast(t *testing.T) {
 	cases := map[string]string{
 		"empty clusterId": `

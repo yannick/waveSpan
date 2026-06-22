@@ -54,11 +54,12 @@ Read in this order:
 25. `24_container_dev_and_testing.md`
 26. `25_correctness_harness.md`
 27. `26_node_ui_and_observability.md`
-28. `adr/0001_eventual_consistency.md`
-29. `adr/0002_origin_plus_one_write_ack.md`
-30. `adr/0003_cache_replicas_are_derived.md`
-31. `adr/0004_global_active_active_conflicts.md`
-32. `adr/0005_go_and_wavesdb_engine.md`
+28. `27_transport_performance.md`
+29. `adr/0001_eventual_consistency.md`
+30. `adr/0002_origin_plus_one_write_ack.md`
+31. `adr/0003_cache_replicas_are_derived.md`
+32. `adr/0004_global_active_active_conflicts.md`
+33. `adr/0005_go_and_wavesdb_engine.md`
 
 ## Implementation stance
 

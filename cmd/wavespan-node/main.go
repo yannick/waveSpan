@@ -72,9 +72,30 @@ func run() error {
 		return fmt.Errorf("storage uuid: %w", err)
 	}
 
+	// Transport security (design/15) tuned for cheap mTLS (design/27): one shared, pooled,
+	// keepalive HTTP client is reused for every inter-node RPC so TLS handshakes are amortised to
+	// ~zero; servers run mTLS (TLS 1.3 + session resumption + HTTP/2 ALPN). In insecureDevMode with
+	// no certs this all degrades to the previous plaintext behaviour.
+	tlsCfg := security.TLSConfig{
+		CertFile: cfg.Security.CertFile, KeyFile: cfg.Security.KeyFile, CAFile: cfg.Security.CAFile,
+		InsecureDevMode: cfg.Security.InsecureDevMode,
+	}
+	httpClient, err := tlsCfg.NewHTTPClient(transportTuning(cfg))
+	if err != nil {
+		return fmt.Errorf("transport client: %w", err)
+	}
+	serverMTLS, err := tlsCfg.ServerTLS() // machine link classes: data + gossip (nil in dev mode)
+	if err != nil {
+		return fmt.Errorf("server mTLS: %w", err)
+	}
+	adminTLS, err := tlsCfg.ServerTLSOptionalClient() // admin port also serves the browser UI
+	if err != nil {
+		return fmt.Errorf("admin tls: %w", err)
+	}
+
 	// Membership service (M2).
 	self := membership.MemberFromConfig(cfg, storageUUID)
-	transport := membership.NewConnectTransport(http.DefaultClient)
+	transport := membership.NewConnectTransport(httpClient)
 	disc := membership.NewDiscovery(cfg, self.GossipAddr)
 	svc := membership.NewService(self, disc, transport, membership.DefaultServiceConfig())
 	logger.Info("member identity", "storage_uuid", storageUUID, "gossip_addr", self.GossipAddr,
@@ -110,7 +131,7 @@ func run() error {
 		RequireDistinctNodes: true,
 		Geo:                  placement.PreferLocalGeo, AllowSpilloverForDurability: true, ComplianceGeo: self.Geo,
 	}
-	replicator := local.NewConnectReplicator(http.DefaultClient)
+	replicator := local.NewConnectReplicator(httpClient)
 
 	// Target-N fanout + repair engine (M4): converge to the target durable-holder count and
 	// restore replicas under spot churn.
@@ -142,7 +163,7 @@ func run() error {
 	// written key, and target-N repair only restores MISSING holders, not STALE ones. This pull-based
 	// pass adopts the highest version of each local key from alive peers so concurrent same-key
 	// writers converge across all replicas (design/13).
-	intraAE := local.NewIntraAntiEntropy(rstore, self, svc, local.NewConnectPeerFetch(http.DefaultClient), intraAENamespaces(cfg))
+	intraAE := local.NewIntraAntiEntropy(rstore, self, svc, local.NewConnectPeerFetch(httpClient), intraAENamespaces(cfg))
 
 	// M4 metrics: under-replication estimate (spot-churn alert signal) + repair queue depth.
 	underReplicated := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_under_replicated_keys_estimate", Help: "keys below target durable-holder count"})
@@ -154,8 +175,8 @@ func run() error {
 	coord.SetOnStored(onStored) // advertise + notify on keys we originate
 	cacheStore := cache.NewStore(rstore, nowMs)
 	evictor := cache.NewEvictor(cacheStore, 10*time.Minute, nowMs)
-	fetcher := cache.NewFetcher(self, cacheDir, svc, svc.Graph(), http.DefaultClient)
-	subscriber := cache.NewSubscriber(self, cacheStore, fetcher, http.DefaultClient)
+	fetcher := cache.NewFetcher(self, cacheDir, svc, svc.Graph(), httpClient)
+	subscriber := cache.NewSubscriber(self, cacheStore, fetcher, httpClient)
 	reader := kv.NewReader(rstore, self).WithCache(fetcher, cacheStore).WithSubscriber(subscriber)
 	// Range scans (M6): routed-eventual via ScanLocal on holders; cache-complete gated by certs.
 	scanner := kv.NewScanner(rstore, self, svc, replicator, cache.NewCertStore(nil))
@@ -255,7 +276,7 @@ func run() error {
 	graphStore := graph.NewStore(store)
 	cypherSvc := cypher.NewService(graphStore, cfg.ClusterID, cfg.MemberID, newGraphVersion).
 		WithVector(vstore, indexSet.Meta, indexSet.Live).
-		WithVectorScatter(cypher.NewVectorScatter(cfg.MemberID, vectorPeers, http.DefaultClient))
+		WithVectorScatter(cypher.NewVectorScatter(cfg.MemberID, vectorPeers, httpClient))
 
 	// Data server on the data port: public KvService + Cypher + Vector + internal ReplicationService.
 	dataMux := http.NewServeMux()
@@ -270,12 +291,12 @@ func run() error {
 	// identity middleware grants admin (dev/compose); in production the role comes from the verified
 	// mTLS client certificate.
 	dataIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
-	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: dataIdentity.EnforceHTTP(dataMux), ReadHeaderTimeout: 5 * time.Second}
+	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: dataIdentity.EnforceHTTP(dataMux), ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS}
 
 	// Gossip server on the gossip port.
 	gossipMux := http.NewServeMux()
 	gossipMux.Handle(svc.GossipHandler())
-	gossipSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Gossip), Handler: gossipMux, ReadHeaderTimeout: 5 * time.Second}
+	gossipSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Gossip), Handler: gossipMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS}
 
 	// Admin server: health/metrics + membership/latency introspection.
 	adminMux := observability.AdminMux(metrics, ready)
@@ -298,24 +319,24 @@ func run() error {
 	cypherPath, cypherHandler := cypherSvc.Handler()
 	adminMux.Handle(cypherPath, adminIdentity.EnforceHTTP(cypherHandler))     // Cypher console (same origin as the UI)
 	adminMux.Handle("/", adminIdentity.EnforceHTTP(ui.NewServer().Handler())) // SPA at root (health/metrics take precedence)
-	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second}
+	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: adminTLS}
 
 	errCh := make(chan error, 3)
 	go func() {
-		logger.Info("gossip server listening", "addr", gossipSrv.Addr)
-		if err := gossipSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Info("gossip server listening", "addr", gossipSrv.Addr, "tls", gossipSrv.TLSConfig != nil)
+		if err := serve(gossipSrv); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("gossip server: %w", err)
 		}
 	}()
 	go func() {
-		logger.Info("data server listening", "addr", dataSrv.Addr)
-		if err := dataSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Info("data server listening", "addr", dataSrv.Addr, "tls", dataSrv.TLSConfig != nil)
+		if err := serve(dataSrv); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("data server: %w", err)
 		}
 	}()
 	go func() {
-		logger.Info("admin server listening", "addr", adminSrv.Addr)
-		if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Info("admin server listening", "addr", adminSrv.Addr, "tls", adminSrv.TLSConfig != nil)
+		if err := serve(adminSrv); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("admin server: %w", err)
 		}
 	}()
@@ -387,6 +408,38 @@ func run() error {
 		logger.Info("clean shutdown complete")
 		return nil
 	}
+}
+
+// serve runs an HTTP server over mTLS when a TLSConfig is present (certs are embedded in it, so the
+// empty ListenAndServeTLS args are correct), and plaintext otherwise (insecureDevMode).
+func serve(srv *http.Server) error {
+	if srv.TLSConfig != nil {
+		return srv.ListenAndServeTLS("", "")
+	}
+	return srv.ListenAndServe()
+}
+
+// transportTuning resolves the connection-pool tuning: start from the cheap-mTLS defaults and apply
+// any explicit overrides from security.transport (design/27).
+func transportTuning(cfg *config.Config) security.TransportTuning {
+	t := security.DefaultTransportTuning()
+	o := cfg.Security.Transport
+	if o.MaxIdleConns != nil {
+		t.MaxIdleConns = *o.MaxIdleConns
+	}
+	if o.MaxIdleConnsPerHost != nil {
+		t.MaxIdleConnsPerHost = *o.MaxIdleConnsPerHost
+	}
+	if o.IdleConnTimeoutSeconds != nil {
+		t.IdleConnTimeout = time.Duration(*o.IdleConnTimeoutSeconds) * time.Second
+	}
+	if o.TCPKeepAliveSeconds != nil {
+		t.TCPKeepAlive = time.Duration(*o.TCPKeepAliveSeconds) * time.Second
+	}
+	if o.DialTimeoutSeconds != nil {
+		t.DialTimeout = time.Duration(*o.DialTimeoutSeconds) * time.Second
+	}
+	return t
 }
 
 func membershipHandler(svc *membership.Service) http.HandlerFunc {
