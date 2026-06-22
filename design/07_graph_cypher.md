@@ -82,6 +82,68 @@ MATCH (node)-[:PART_OF]->(d:Document)
 RETURN d.title, node.text, score
 ```
 
+## KV built-ins
+
+Expose the namespaced, versioned, replicated KV store (the same store the gRPC KV API
+exposes) directly from Cypher. Reads route through the same routed reader (local-first +
+closest-holder fetch); writes go through the same coordinator (origin+1 durability +
+replication fanout). This is one coherent store, not a side channel.
+
+### `kv.get(namespace, key)` — scalar function
+
+Usable inline in any expression (`RETURN`, `WHERE`, computed properties, etc.).
+
+Returns the value as a string, or `null` if the key is absent, tombstoned, or expired.
+A `null` result always means "key genuinely absent" — it is never a silent error.
+
+### `CALL kv.put(namespace, key, value [, options])` — procedure
+
+Writes `value` (a UTF-8 string) under `namespace`/`key`. Yields a single `version` column
+containing the committed HLC version's stable id.
+
+The optional fourth argument is an options map:
+
+```text
+{ttlMs: <integer>}   // per-key TTL using the engine's native TTL mechanism
+```
+
+### `CALL kv.delete(namespace, key)` — procedure
+
+Tombstones the key. Yields a single `version` column.
+
+### Semantics and constraints
+
+**Namespace is always explicit.** Matches the KV API's namespaced addressing; there is no
+implicit default namespace.
+
+**Each write is independent.** `kv.put` and `kv.delete` each issue their own KV write
+(origin+1 + replication fanout), committed independently of any graph mutation in the same
+Cypher statement. A statement that both `CREATE`s graph data and calls `kv.put` commits the
+two separately — the KV write does NOT join the graph mutation's `wavesdb` transaction.
+
+**Argument validation is strict.** `namespace`, `key`, and `value` must be strings;
+`ttlMs` must be an integer. A wrong type is a hard query error, not a silent null.
+
+**Values are strings** (UTF-8 bytes). Structured data must be serialised by the caller.
+
+### Examples
+
+```cypher
+// read inline, joined against a graph match
+MATCH (u:User {id: 'u1'})
+RETURN u.name, kv.get('profile', u.id) AS profile
+
+// filter graph rows on KV state
+MATCH (u:User) WHERE kv.get('flags', u.id) = 'banned' RETURN u
+
+// write (yields version) and delete
+CALL kv.put('profile', 'u1', '{"v":2}') YIELD version RETURN version
+CALL kv.delete('profile', 'u1')
+
+// write with TTL
+CALL kv.put('session', 'tok-abc', 'active', {ttlMs: 3600000}) YIELD version RETURN version
+```
+
 ## Key encoding
 
 Node record:
@@ -383,6 +445,7 @@ Unbounded graph traversal will destroy the system. Enforce guardrails from day o
 - [ ] Basic MATCH/WHERE/RETURN implemented.
 - [ ] CREATE/SET/DELETE implemented.
 - [ ] Vector procedure call hook implemented.
+- [ ] KV built-in function (`kv.get`) and procedures (`kv.put`, `kv.delete`) implemented.
 - [ ] Distributed fragment execution implemented.
 - [ ] Query guardrails implemented.
 
