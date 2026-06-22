@@ -17,13 +17,14 @@ import (
 
 // Service is the Cypher Connect handler over the local graph store, with optional vector search.
 type Service struct {
-	store       *graph.Store
-	clusterID   string
-	memberID    string
-	newVersion  func() *wavespanv1.Version
-	vectorStore *vector.Store
-	vectorIndex func(name string) (*vector.IndexMeta, bool)
-	vectorLive  func(name string) (*vector.LiveIndex, bool)
+	store         *graph.Store
+	clusterID     string
+	memberID      string
+	newVersion    func() *wavespanv1.Version
+	vectorStore   *vector.Store
+	vectorIndex   func(name string) (*vector.IndexMeta, bool)
+	vectorLive    func(name string) (*vector.LiveIndex, bool)
+	vectorScatter ScatterFunc
 }
 
 // NewService wires the Cypher service. newVersion supplies an HLC version for graph mutations
@@ -41,13 +42,20 @@ func (s *Service) WithVector(vstore *vector.Store, index func(name string) (*vec
 	return s
 }
 
+// WithVectorScatter makes vector search cluster-wide: the query coordinator scatters SearchLocal to
+// holder peers and merges the fragments (design/08). Without it, search covers only local vectors.
+func (s *Service) WithVectorScatter(scatter ScatterFunc) *Service {
+	s.vectorScatter = scatter
+	return s
+}
+
 // Handler returns the mountable Connect handler for the data port.
 func (s *Service) Handler() (string, http.Handler) {
 	return wavespanv1connect.NewCypherHandler(s)
 }
 
 // Query parses, plans, executes, and streams the result of a Cypher query.
-func (s *Service) Query(_ context.Context, req *connect.Request[wavespanv1.CypherRequest], stream *connect.ServerStream[wavespanv1.CypherResult]) error {
+func (s *Service) Query(ctx context.Context, req *connect.Request[wavespanv1.CypherRequest], stream *connect.ServerStream[wavespanv1.CypherResult]) error {
 	ast, err := parser.Parse(req.Msg.GetQuery())
 	if err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, err)
@@ -57,6 +65,7 @@ func (s *Service) Query(_ context.Context, req *connect.Request[wavespanv1.Cyphe
 		Router: planner.LocalRouter{Self: s.memberID}, SelfCluster: s.clusterID, SelfMember: s.memberID,
 		Params: req.Msg.GetParameters(), NewVersion: s.newVersion,
 		VectorStore: s.vectorStore, VectorIndex: s.vectorIndex, VectorLive: s.vectorLive,
+		Ctx: ctx, VectorScatter: s.vectorScatter,
 	}
 	res, err := exec.Execute(ast)
 	if err != nil {

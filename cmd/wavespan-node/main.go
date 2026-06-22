@@ -234,12 +234,28 @@ func run() error {
 		logger.Info("global replication enabled", "peers", len(peers))
 	}
 
-	vectorSvc := vector.NewService(vstore, newGraphVersion).WithHooks(indexSet.OnWrite, vectorGlobalTap)
+	// SearchLocal serves the per-node fragment a query coordinator scatters to holders (design/08).
+	vectorSvc := vector.NewService(vstore, newGraphVersion).
+		WithHooks(indexSet.OnWrite, vectorGlobalTap).
+		WithSearch(indexSet.Meta, indexSet.Live)
+
+	// Vector search scatters SearchLocal to alive peers and merges, so a query spans the whole
+	// cluster even when vectors are sharded (not fully replicated).
+	vectorPeers := func() []cypher.Peer {
+		var peers []cypher.Peer
+		for _, m := range svc.Members() {
+			if m.State == membership.StateAlive {
+				peers = append(peers, cypher.Peer{Member: m.Member.MemberID, DataAddr: m.Member.DataAddr})
+			}
+		}
+		return peers
+	}
 
 	// Graph + Cypher (M8/M9/M10): plans and executes against the local graph store, with vector search.
 	graphStore := graph.NewStore(store)
 	cypherSvc := cypher.NewService(graphStore, cfg.ClusterID, cfg.MemberID, newGraphVersion).
-		WithVector(vstore, indexSet.Meta, indexSet.Live)
+		WithVector(vstore, indexSet.Meta, indexSet.Live).
+		WithVectorScatter(cypher.NewVectorScatter(cfg.MemberID, vectorPeers, http.DefaultClient))
 
 	// Data server on the data port: public KvService + Cypher + Vector + internal ReplicationService.
 	dataMux := http.NewServeMux()

@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -38,9 +39,23 @@ type Executor struct {
 	VectorIndex func(name string) (*vector.IndexMeta, bool)
 	VectorLive  func(name string) (*vector.LiveIndex, bool)
 
-	pods    map[string]bool
-	warns   []string
-	columns []string
+	// Ctx scopes remote fragment RPCs. VectorScatter, when set, queries holder peers' SearchLocal and
+	// returns their fragments plus the count of unreachable holders, so a vector search spans the
+	// whole cluster instead of only the coordinator's local shard (design/08 scatter-gather).
+	Ctx           context.Context //nolint:containedctx // executor is request-scoped, not long-lived
+	VectorScatter func(ctx context.Context, indexName string, query []float32, k, efSearch int, exact, rerank bool) (fragments [][]vector.Hit, unreachable int)
+
+	pods          map[string]bool
+	warns         []string
+	columns       []string
+	forcedPartial bool
+}
+
+// MarkPartial flags the result as possibly incomplete (e.g. a holder was unreachable during a vector
+// scatter), surfacing through QueryMeta.PartialGraphPossible + a warning.
+func (e *Executor) MarkPartial(reason string) {
+	e.forcedPartial = true
+	e.warns = append(e.warns, reason)
 }
 
 // Procedure is a CALL-able procedure: it extends a binding row with YIELD bindings.
@@ -86,7 +101,7 @@ func (e *Executor) meta() *wavespanv1.QueryMeta {
 		pods = append(pods, p)
 	}
 	sort.Strings(pods)
-	partial := len(e.pods) > 1
+	partial := len(e.pods) > 1 || e.forcedPartial
 	completeness := wavespanv1.Completeness_COMPLETE
 	if partial {
 		completeness = wavespanv1.Completeness_PARTIAL

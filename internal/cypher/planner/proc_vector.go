@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/cwire/wavespan/internal/vector"
@@ -13,8 +14,9 @@ func init() {
 }
 
 // vectorSearchApprox implements CALL vector.searchApprox(indexName, queryVector, k, {efSearch, rerank})
-// (design/08). It searches the live index (main ANN segments + delta), filters tombstoned/missing
-// records against the authoritative store, optionally exact-reranks, and binds node + score.
+// (design/08). It searches the local live ANN index, scatters the same query to holder peers, merges
+// the per-node fragments into the global top-k, and binds node + score. Each fragment is exact-scored
+// so the merged top-k is exact over the candidate union.
 func vectorSearchApprox(e *Executor, args []*wavespanv1.Value, _ []string, row bindingRow) ([]bindingRow, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("vector.searchApprox(indexName, queryVector, k, opts?) requires at least 3 arguments")
@@ -36,31 +38,43 @@ func vectorSearchApprox(e *Executor, args []*wavespanv1.Value, _ []string, row b
 		return nil, fmt.Errorf("vector.searchApprox: no live index for %q", indexName)
 	}
 
-	fetch := k
-	if rerank {
-		fetch = k * 4 // over-fetch ANN candidates, then exact-rerank down to k
-	}
-	cands := live.Search(query, fetch, efSearch)
-	if rerank {
-		cands = vector.Rerank(e.VectorStore, meta.Collection, query, cands, k, meta.Metric)
-	}
+	local := vector.LocalSearch(e.VectorStore, meta, live, query, k, efSearch, false, rerank)
+	hits := e.gatherVector(indexName, query, k, efSearch, false, rerank, local)
+	return e.bindVectorHits(hits, k, row), nil
+}
 
-	out := make([]bindingRow, 0, k)
-	for _, c := range cands {
-		// authoritative filter: a record tombstoned since the ANN scan is excluded (winner-only).
-		rec, found, _ := e.VectorStore.Get(meta.Collection, c.ID)
-		if !found {
-			continue
+// gatherVector merges the coordinator's local fragment with the fragments returned by holder peers
+// (scatter-gather, design/08). When a holder is unreachable the result is flagged partial.
+func (e *Executor) gatherVector(indexName string, query []float32, k, efSearch int, exact, rerank bool, local []vector.Hit) []vector.Hit {
+	fragments := [][]vector.Hit{local}
+	if e.VectorScatter != nil {
+		ctx := e.Ctx
+		if ctx == nil {
+			ctx = context.Background()
 		}
+		remote, unreachable := e.VectorScatter(ctx, indexName, query, k, efSearch, exact, rerank)
+		fragments = append(fragments, remote...)
+		if unreachable > 0 {
+			e.MarkPartial(fmt.Sprintf("vector.search: %d holder(s) unreachable; top-k may be partial", unreachable))
+		}
+	}
+	return vector.MergeTopK(fragments, k)
+}
+
+// bindVectorHits binds each merged hit's graph node (local lookup, else its id) to `node` and its
+// similarity to `score`. Per-fragment results were already authoritatively filtered by their holder.
+func (e *Executor) bindVectorHits(hits []vector.Hit, k int, row bindingRow) []bindingRow {
+	out := make([]bindingRow, 0, len(hits))
+	for _, h := range hits {
 		nr := cloneRow(row)
-		nr["node"] = e.vectorNodeBinding(rec.GetGraphNodeId(), c.ID)
-		nr["score"] = vFloat(vector.Score(meta.Metric, query, rec.GetValues()))
+		nr["node"] = e.vectorNodeBinding(h.GraphNodeID, h.VectorID)
+		nr["score"] = vFloat(h.Score)
 		out = append(out, nr)
 		if len(out) >= k {
 			break
 		}
 	}
-	return out, nil
+	return out
 }
 
 // readApproxOpts reads the optional 4th-arg map {efSearch: int, rerank: bool}.
@@ -91,9 +105,9 @@ func (e *Executor) vectorNodeBinding(graphNodeID, vectorID string) any {
 }
 
 // vectorSearchExact implements CALL vector.searchExact(indexName, queryVector, k) YIELD node, score
-// (design/08). It resolves the index, exact-searches the locally visible vectors, and binds each
-// hit's graph node (or vector id) to `node` and its similarity to `score`. Results are eventual
-// (locally visible records only).
+// (design/08). It exact-searches the coordinator's local vectors, scatters the same query to holder
+// peers, and merges the fragments into the exact global top-k. Results are eventual (each holder
+// scans its locally visible, winner-only records).
 func vectorSearchExact(e *Executor, args []*wavespanv1.Value, _ []string, row bindingRow) ([]bindingRow, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("vector.searchExact(indexName, queryVector, k) requires 3 arguments")
@@ -109,29 +123,9 @@ func vectorSearchExact(e *Executor, args []*wavespanv1.Value, _ []string, row bi
 	if !ok {
 		return nil, fmt.Errorf("vector.searchExact: unknown index %q", indexName)
 	}
-	candidates, err := e.VectorStore.ScanCollection(meta.Collection)
-	if err != nil {
-		return nil, err
-	}
-	hits := vector.SearchPartition(candidates, query, k, meta.Metric, nil)
-
-	out := make([]bindingRow, 0, len(hits))
-	for _, h := range hits {
-		nr := cloneRow(row)
-		if h.GraphNodeID != "" {
-			if n, found, _ := e.Store.GetNode(e.GraphID, h.GraphNodeID); found {
-				nr["node"] = n
-				e.touch(h.GraphNodeID)
-			} else {
-				nr["node"] = vStr(h.GraphNodeID)
-			}
-		} else {
-			nr["node"] = vStr(h.VectorID)
-		}
-		nr["score"] = vFloat(h.Score)
-		out = append(out, nr)
-	}
-	return out, nil
+	local := vector.LocalSearch(e.VectorStore, meta, nil, query, k, 0, true, false)
+	hits := e.gatherVector(indexName, query, k, 0, true, false, local)
+	return e.bindVectorHits(hits, k, row), nil
 }
 
 // toFloat32 converts a Value (list of numbers) to a query vector.

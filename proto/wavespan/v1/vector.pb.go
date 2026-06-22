@@ -288,6 +288,216 @@ func (*PutVectorResponse) Descriptor() ([]byte, []int) {
 	return file_wavespan_v1_vector_proto_rawDescGZIP(), []int{3}
 }
 
+// SearchLocalRequest asks a node to search ONLY the vectors it holds locally and return its
+// fragment of the top-k (design/08 "scatter to partition-holders"). The query coordinator merges
+// fragments from every holder. exact=true scans the collection; otherwise the ANN live index is
+// used with ef_search. Hits are exact-scored from the stored vector regardless, so the merged
+// global top-k is exact over the candidate union.
+type SearchLocalRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IndexName     string                 `protobuf:"bytes,1,opt,name=index_name,json=indexName,proto3" json:"index_name,omitempty"`
+	Query         []float32              `protobuf:"fixed32,2,rep,packed,name=query,proto3" json:"query,omitempty"`
+	K             int32                  `protobuf:"varint,3,opt,name=k,proto3" json:"k,omitempty"`
+	EfSearch      int32                  `protobuf:"varint,4,opt,name=ef_search,json=efSearch,proto3" json:"ef_search,omitempty"`
+	Exact         bool                   `protobuf:"varint,5,opt,name=exact,proto3" json:"exact,omitempty"`
+	Rerank        bool                   `protobuf:"varint,6,opt,name=rerank,proto3" json:"rerank,omitempty"` // over-fetch ANN candidates before exact scoring
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchLocalRequest) Reset() {
+	*x = SearchLocalRequest{}
+	mi := &file_wavespan_v1_vector_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchLocalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchLocalRequest) ProtoMessage() {}
+
+func (x *SearchLocalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_vector_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchLocalRequest.ProtoReflect.Descriptor instead.
+func (*SearchLocalRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_vector_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *SearchLocalRequest) GetIndexName() string {
+	if x != nil {
+		return x.IndexName
+	}
+	return ""
+}
+
+func (x *SearchLocalRequest) GetQuery() []float32 {
+	if x != nil {
+		return x.Query
+	}
+	return nil
+}
+
+func (x *SearchLocalRequest) GetK() int32 {
+	if x != nil {
+		return x.K
+	}
+	return 0
+}
+
+func (x *SearchLocalRequest) GetEfSearch() int32 {
+	if x != nil {
+		return x.EfSearch
+	}
+	return 0
+}
+
+func (x *SearchLocalRequest) GetExact() bool {
+	if x != nil {
+		return x.Exact
+	}
+	return false
+}
+
+func (x *SearchLocalRequest) GetRerank() bool {
+	if x != nil {
+		return x.Rerank
+	}
+	return false
+}
+
+// VectorHit is one local search result (exact-scored).
+type VectorHit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Collection    string                 `protobuf:"bytes,1,opt,name=collection,proto3" json:"collection,omitempty"`
+	VectorId      string                 `protobuf:"bytes,2,opt,name=vector_id,json=vectorId,proto3" json:"vector_id,omitempty"`
+	GraphNodeId   string                 `protobuf:"bytes,3,opt,name=graph_node_id,json=graphNodeId,proto3" json:"graph_node_id,omitempty"`
+	Distance      float64                `protobuf:"fixed64,4,opt,name=distance,proto3" json:"distance,omitempty"` // smaller = closer (ranking)
+	Score         float64                `protobuf:"fixed64,5,opt,name=score,proto3" json:"score,omitempty"`       // larger = more similar (user-facing)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VectorHit) Reset() {
+	*x = VectorHit{}
+	mi := &file_wavespan_v1_vector_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VectorHit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VectorHit) ProtoMessage() {}
+
+func (x *VectorHit) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_vector_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VectorHit.ProtoReflect.Descriptor instead.
+func (*VectorHit) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_vector_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *VectorHit) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+func (x *VectorHit) GetVectorId() string {
+	if x != nil {
+		return x.VectorId
+	}
+	return ""
+}
+
+func (x *VectorHit) GetGraphNodeId() string {
+	if x != nil {
+		return x.GraphNodeId
+	}
+	return ""
+}
+
+func (x *VectorHit) GetDistance() float64 {
+	if x != nil {
+		return x.Distance
+	}
+	return 0
+}
+
+func (x *VectorHit) GetScore() float64 {
+	if x != nil {
+		return x.Score
+	}
+	return 0
+}
+
+type SearchLocalResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hits          []*VectorHit           `protobuf:"bytes,1,rep,name=hits,proto3" json:"hits,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchLocalResponse) Reset() {
+	*x = SearchLocalResponse{}
+	mi := &file_wavespan_v1_vector_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchLocalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchLocalResponse) ProtoMessage() {}
+
+func (x *SearchLocalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_vector_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchLocalResponse.ProtoReflect.Descriptor instead.
+func (*SearchLocalResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_vector_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SearchLocalResponse) GetHits() []*VectorHit {
+	if x != nil {
+		return x.Hits
+	}
+	return nil
+}
+
 var File_wavespan_v1_vector_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_vector_proto_rawDesc = "" +
@@ -323,9 +533,28 @@ const file_wavespan_v1_vector_proto_rawDesc = "" +
 	"\rgraph_node_id\x18\x05 \x01(\tR\vgraphNodeId\"E\n" +
 	"\x10PutVectorRequest\x121\n" +
 	"\x06record\x18\x01 \x01(\v2\x19.wavespan.v1.VectorRecordR\x06record\"\x13\n" +
-	"\x11PutVectorResponse2U\n" +
+	"\x11PutVectorResponse\"\xa2\x01\n" +
+	"\x12SearchLocalRequest\x12\x1d\n" +
+	"\n" +
+	"index_name\x18\x01 \x01(\tR\tindexName\x12\x14\n" +
+	"\x05query\x18\x02 \x03(\x02R\x05query\x12\f\n" +
+	"\x01k\x18\x03 \x01(\x05R\x01k\x12\x1b\n" +
+	"\tef_search\x18\x04 \x01(\x05R\befSearch\x12\x14\n" +
+	"\x05exact\x18\x05 \x01(\bR\x05exact\x12\x16\n" +
+	"\x06rerank\x18\x06 \x01(\bR\x06rerank\"\x9e\x01\n" +
+	"\tVectorHit\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x01 \x01(\tR\n" +
+	"collection\x12\x1b\n" +
+	"\tvector_id\x18\x02 \x01(\tR\bvectorId\x12\"\n" +
+	"\rgraph_node_id\x18\x03 \x01(\tR\vgraphNodeId\x12\x1a\n" +
+	"\bdistance\x18\x04 \x01(\x01R\bdistance\x12\x14\n" +
+	"\x05score\x18\x05 \x01(\x01R\x05score\"A\n" +
+	"\x13SearchLocalResponse\x12*\n" +
+	"\x04hits\x18\x01 \x03(\v2\x16.wavespan.v1.VectorHitR\x04hits2\xa7\x01\n" +
 	"\rVectorService\x12D\n" +
-	"\x03Put\x12\x1d.wavespan.v1.PutVectorRequest\x1a\x1e.wavespan.v1.PutVectorResponseB\xa3\x01\n" +
+	"\x03Put\x12\x1d.wavespan.v1.PutVectorRequest\x1a\x1e.wavespan.v1.PutVectorResponse\x12P\n" +
+	"\vSearchLocal\x12\x1f.wavespan.v1.SearchLocalRequest\x1a .wavespan.v1.SearchLocalResponseB\xa3\x01\n" +
 	"\x0fcom.wavespan.v1B\vVectorProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -340,28 +569,34 @@ func file_wavespan_v1_vector_proto_rawDescGZIP() []byte {
 	return file_wavespan_v1_vector_proto_rawDescData
 }
 
-var file_wavespan_v1_vector_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_wavespan_v1_vector_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_wavespan_v1_vector_proto_goTypes = []any{
-	(*VectorRecord)(nil),      // 0: wavespan.v1.VectorRecord
-	(*VectorMeta)(nil),        // 1: wavespan.v1.VectorMeta
-	(*PutVectorRequest)(nil),  // 2: wavespan.v1.PutVectorRequest
-	(*PutVectorResponse)(nil), // 3: wavespan.v1.PutVectorResponse
-	nil,                       // 4: wavespan.v1.VectorRecord.MetadataEntry
-	(*Version)(nil),           // 5: wavespan.v1.Version
-	(*Value)(nil),             // 6: wavespan.v1.Value
+	(*VectorRecord)(nil),        // 0: wavespan.v1.VectorRecord
+	(*VectorMeta)(nil),          // 1: wavespan.v1.VectorMeta
+	(*PutVectorRequest)(nil),    // 2: wavespan.v1.PutVectorRequest
+	(*PutVectorResponse)(nil),   // 3: wavespan.v1.PutVectorResponse
+	(*SearchLocalRequest)(nil),  // 4: wavespan.v1.SearchLocalRequest
+	(*VectorHit)(nil),           // 5: wavespan.v1.VectorHit
+	(*SearchLocalResponse)(nil), // 6: wavespan.v1.SearchLocalResponse
+	nil,                         // 7: wavespan.v1.VectorRecord.MetadataEntry
+	(*Version)(nil),             // 8: wavespan.v1.Version
+	(*Value)(nil),               // 9: wavespan.v1.Value
 }
 var file_wavespan_v1_vector_proto_depIdxs = []int32{
-	4, // 0: wavespan.v1.VectorRecord.metadata:type_name -> wavespan.v1.VectorRecord.MetadataEntry
-	5, // 1: wavespan.v1.VectorRecord.version:type_name -> wavespan.v1.Version
+	7, // 0: wavespan.v1.VectorRecord.metadata:type_name -> wavespan.v1.VectorRecord.MetadataEntry
+	8, // 1: wavespan.v1.VectorRecord.version:type_name -> wavespan.v1.Version
 	0, // 2: wavespan.v1.PutVectorRequest.record:type_name -> wavespan.v1.VectorRecord
-	6, // 3: wavespan.v1.VectorRecord.MetadataEntry.value:type_name -> wavespan.v1.Value
-	2, // 4: wavespan.v1.VectorService.Put:input_type -> wavespan.v1.PutVectorRequest
-	3, // 5: wavespan.v1.VectorService.Put:output_type -> wavespan.v1.PutVectorResponse
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	5, // 3: wavespan.v1.SearchLocalResponse.hits:type_name -> wavespan.v1.VectorHit
+	9, // 4: wavespan.v1.VectorRecord.MetadataEntry.value:type_name -> wavespan.v1.Value
+	2, // 5: wavespan.v1.VectorService.Put:input_type -> wavespan.v1.PutVectorRequest
+	4, // 6: wavespan.v1.VectorService.SearchLocal:input_type -> wavespan.v1.SearchLocalRequest
+	3, // 7: wavespan.v1.VectorService.Put:output_type -> wavespan.v1.PutVectorResponse
+	6, // 8: wavespan.v1.VectorService.SearchLocal:output_type -> wavespan.v1.SearchLocalResponse
+	7, // [7:9] is the sub-list for method output_type
+	5, // [5:7] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_vector_proto_init() }
@@ -377,7 +612,7 @@ func file_wavespan_v1_vector_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_vector_proto_rawDesc), len(file_wavespan_v1_vector_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

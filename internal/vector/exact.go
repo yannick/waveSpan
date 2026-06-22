@@ -22,13 +22,22 @@ func SearchPartition(candidates []*wavespanv1.VectorRecord, query []float32, k i
 	return tk.Result()
 }
 
-// MergeTopK merges per-fragment top-k results into the global top-k (coordinator step).
+// MergeTopK merges per-fragment top-k results into the global top-k (coordinator step). Because a
+// vector may be replicated to several holders, the same id can appear in multiple fragments; it is
+// deduplicated by (collection, vector id), keeping the closest occurrence, so it consumes one slot.
 func MergeTopK(fragments [][]Hit, k int) []Hit {
-	tk := NewTopK(k)
+	best := make(map[string]Hit)
 	for _, frag := range fragments {
 		for _, h := range frag {
-			tk.Add(h)
+			id := h.Collection + "\x00" + h.VectorID
+			if cur, ok := best[id]; !ok || h.Distance < cur.Distance {
+				best[id] = h
+			}
 		}
+	}
+	tk := NewTopK(k)
+	for _, h := range best {
+		tk.Add(h)
 	}
 	return tk.Result()
 }

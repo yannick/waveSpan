@@ -16,6 +16,8 @@ type Service struct {
 	newVersion func() *wavespanv1.Version
 	onWrite    func(*wavespanv1.VectorRecord)                            // update the local live index
 	globalTap  func(ns string, key []byte, rec *wavespanv1.StoredRecord) // ship to peer clusters
+	index      func(name string) (*IndexMeta, bool)                      // resolve an index (for SearchLocal)
+	live       func(name string) (*LiveIndex, bool)                      // resolve the live ANN index
 }
 
 // NewService wires the vector ingest service.
@@ -28,6 +30,38 @@ func (s *Service) WithHooks(onWrite func(*wavespanv1.VectorRecord), globalTap fu
 	s.onWrite = onWrite
 	s.globalTap = globalTap
 	return s
+}
+
+// WithSearch enables the SearchLocal RPC (the per-node fragment search a query coordinator scatters
+// to holders, design/08).
+func (s *Service) WithSearch(index func(name string) (*IndexMeta, bool), live func(name string) (*LiveIndex, bool)) *Service {
+	s.index = index
+	s.live = live
+	return s
+}
+
+// SearchLocal searches only the vectors this node holds and returns its fragment of the top-k.
+func (s *Service) SearchLocal(_ context.Context, req *connect.Request[wavespanv1.SearchLocalRequest]) (*connect.Response[wavespanv1.SearchLocalResponse], error) {
+	if s.index == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, connectError("vector: search not configured"))
+	}
+	m := req.Msg
+	meta, ok := s.index(m.GetIndexName())
+	if !ok {
+		return nil, connect.NewError(connect.CodeNotFound, connectError("vector: unknown index "+m.GetIndexName()))
+	}
+	var live *LiveIndex
+	if s.live != nil {
+		live, _ = s.live(m.GetIndexName())
+	}
+	hits := LocalSearch(s.store, meta, live, m.GetQuery(), int(m.GetK()), int(m.GetEfSearch()), m.GetExact(), m.GetRerank())
+	resp := &wavespanv1.SearchLocalResponse{Hits: make([]*wavespanv1.VectorHit, 0, len(hits))}
+	for _, h := range hits {
+		resp.Hits = append(resp.Hits, &wavespanv1.VectorHit{
+			Collection: h.Collection, VectorId: h.VectorID, GraphNodeId: h.GraphNodeID, Distance: h.Distance, Score: h.Score,
+		})
+	}
+	return connect.NewResponse(resp), nil
 }
 
 // Handler returns the mountable Connect handler for the data port.
