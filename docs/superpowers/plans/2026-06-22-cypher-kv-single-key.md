@@ -343,6 +343,8 @@ func (e *Executor) setEvalErr(err error) {
 }
 ```
 
+> Note (edge case, not covered by a test): `procCall` (`executor.go:171-187`) evaluates a procedure's args via `evalScalar` and then calls the proc without re-checking `e.evalErr` in between. If a procedure arg were itself a failing scalar function (e.g. `CALL kv.put('a', kv.get('bad'), 'v')`), the proc would run on a `vNull()` arg before the post-op `evalErr` check aborts the query. The spec's surface uses literal args, so this is benign; if you want belt-and-suspenders, add `if e.evalErr != nil { return nil, e.evalErr }` after the arg-eval loop in `procCall`.
+
 - [ ] **Step 5: Run to verify pass**
 
 Run: `go test ./internal/cypher/planner/ -run 'TestScalarFunction|TestUnknownFunction' -v`
@@ -366,12 +368,15 @@ git commit -m "feat(cypher): scalar-function registry, KVAccess interface, eval 
 - [ ] **Step 1: Write failing tests** — add a fake backend + behavior tests to `proc_kv_test.go`:
 
 ```go
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 type fakeKV struct {
-	data    map[string]string
-	ver     int
-	getErr  error
+	data   map[string]string
+	ver    int
+	getErr error
 }
 
 func nsKey(ns string, key []byte) string { return ns + "\x00" + string(key) }
@@ -392,12 +397,12 @@ func (f *fakeKV) Put(_ context.Context, ns string, key, value []byte, _ *int64) 
 	}
 	f.data[nsKey(ns, key)] = string(value)
 	f.ver++
-	return "v" + string(rune('0'+f.ver)), nil
+	return fmt.Sprintf("v%d", f.ver), nil
 }
 func (f *fakeKV) Delete(_ context.Context, ns string, key []byte) (string, error) {
 	delete(f.data, nsKey(ns, key))
 	f.ver++
-	return "v" + string(rune('0'+f.ver)), nil
+	return fmt.Sprintf("v%d", f.ver), nil
 }
 
 func TestKVPutThenGet(t *testing.T) {
@@ -599,7 +604,7 @@ func kvDelete(e *Executor, args []*wavespanv1.Value, _ []string, row bindingRow)
 Run: `go test ./internal/cypher/planner/ -run TestKV -v`
 Expected: PASS.
 
-- [ ] **Step 5: Add an inline-use test** (kv.get inside WHERE, graph-backed) using the existing planner fixture. Inspect `fixture_test.go` for the helper that builds an `Executor` with a populated graph `Store` (e.g. `newFixture(t)`); set `.KV = &fakeKV{...}` on it and assert:
+- [ ] **Step 5: Add an inline-use test** (kv.get inside WHERE, graph-backed) using the existing planner fixture. The helper is **`loadFixture(t *testing.T, e *Executor)`** (`fixture_test.go:13`) — it populates a graph into an Executor you already built (it does NOT return one). Pattern: `e := &Executor{KV: &fakeKV{data: ...}}; loadFixture(t, e)`, then run the query. Assert:
 
 ```go
 func TestKVGetInWhereFiltersRows(t *testing.T) {
@@ -630,7 +635,7 @@ git commit -m "feat(cypher): kv.get/kv.put/kv.delete built-ins with strict arg v
 - Create: `internal/kv/cypher_access.go`
 - Test: `internal/kv/cypher_access_test.go`
 
-- [ ] **Step 1: Write a failing test** reusing the single-node helpers in `coordinator_test.go` (`member`, `cluster`, `defaultPolicy`, the `n1` node helper, a `repl`). Inspect that file first for exact helper names/shapes.
+- [ ] **Step 1: Write a failing test** reusing the in-package helpers from `coordinator_test.go`. **Do NOT use `defaultPolicy()`** — it is `MinAckNearbyReplicas: 1` (`coordinator_test.go:63-65`), and a single-node cluster with that policy makes `Put` fail with `ErrInsufficientNearbyReplicas` (proven by `TestOriginPlusOneFailsWithNoCandidates`, `coordinator_test.go:87-100`; see `coordinator.go:118-130`). Use a custom policy with `MinAckNearbyReplicas: 0`. The exact, verified setup (real helper names: `newNode` → `*node` with `.store`; `staticCluster`/`aliveView`; `latencygraph.New(latencygraph.DefaultConfig())`):
 
 ```go
 package kv
@@ -638,45 +643,47 @@ package kv
 import (
 	"context"
 	"testing"
+	"time"
+
+	"github.com/cwire/wavespan/internal/latencygraph"
+	"github.com/cwire/wavespan/internal/placement"
+	"github.com/cwire/wavespan/internal/replication/local"
 )
 
 func TestCypherKVRoundTrip(t *testing.T) {
-	// Build a single-node coordinator + reader over one store (mirror coordinator_test.go setup).
-	n1 := /* node fixture from coordinator_test.go */
-	coord := NewCoordinator(n1.store, member("node1"), cluster, latencygraphNew(), repl, defaultPolicy(), local.NewIdempotency(0), nil, nil, time.Second)
+	n1 := newNode(t, "node1")
+	repl := &fakeReplicator{nodes: map[string]*node{"node1": n1}, down: map[string]bool{}}
+	cluster := staticCluster{aliveView("node1")}
+	policy := placement.Policy{TargetNearbyReplicas: 1, MinAckNearbyReplicas: 0, RequireDistinctNodes: true, Geo: placement.LatencyOnly}
+	coord := NewCoordinator(n1.store, member("node1"), cluster, latencygraph.New(latencygraph.DefaultConfig()), repl, policy, local.NewIdempotency(0), nil, nil, time.Second)
 	reader := NewReader(n1.store, member("node1"))
-	kv := NewCypherKV(reader, coord)
+	kvAdapter := NewCypherKV(reader, coord)
 
 	ctx := context.Background()
-	ver, err := kv.Put(ctx, "profile", []byte("u1"), []byte("hello"), nil)
+	ver, err := kvAdapter.Put(ctx, "profile", []byte("u1"), []byte("hello"), nil)
 	if err != nil {
 		t.Fatalf("put: %v", err)
 	}
 	if ver == "" {
 		t.Fatal("expected non-empty version")
 	}
-	got, found, err := kv.Get(ctx, "profile", []byte("u1"))
+	got, found, err := kvAdapter.Get(ctx, "profile", []byte("u1"))
 	if err != nil || !found || string(got) != "hello" {
 		t.Fatalf("get: got=%q found=%v err=%v", got, found, err)
 	}
-
-	if _, _, _ = kv.Get(ctx, "profile", []byte("absent")); false {
-	}
-	_, found, _ = kv.Get(ctx, "profile", []byte("absent"))
-	if found {
+	if _, found, _ := kvAdapter.Get(ctx, "profile", []byte("absent")); found {
 		t.Fatal("absent key should not be found")
 	}
-
-	if _, err := kv.Delete(ctx, "profile", []byte("u1")); err != nil {
+	if _, err := kvAdapter.Delete(ctx, "profile", []byte("u1")); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, found, _ := kv.Get(ctx, "profile", []byte("u1")); found {
+	if _, found, _ := kvAdapter.Get(ctx, "profile", []byte("u1")); found {
 		t.Fatal("deleted key should not be found")
 	}
 }
 ```
 
-> The exact fixture wiring (`defaultPolicy` may need `MinAckNearbyReplicas: 0` for single-node ack) must match `coordinator_test.go`. Copy its working setup rather than guessing.
+> Before running, open `coordinator_test.go` and confirm `newNode`, `node`, `fakeReplicator`, `staticCluster`, `aliveView`, `member` are spelled exactly as above (they were verified against the file, but it is the source of truth). The verb names there are stable; copy them rather than inventing.
 
 - [ ] **Step 2: Run to verify failure**
 
