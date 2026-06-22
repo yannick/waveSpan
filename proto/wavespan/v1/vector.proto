@@ -29,3 +29,15 @@ message VectorMeta {
   string metric = 4;
   string graph_node_id = 5;
 }
+
+message PutVectorRequest {
+  VectorRecord record = 1;
+}
+
+message PutVectorResponse {}
+
+// VectorService ingests raw vectors (design/08). Search is exposed via the Cypher
+// vector.searchExact procedure, not a dedicated RPC.
+service VectorService {
+  rpc Put(PutVectorRequest) returns (PutVectorResponse);
+}

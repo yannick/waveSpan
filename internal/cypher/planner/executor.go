@@ -6,6 +6,7 @@ import (
 
 	"github.com/cwire/wavespan/internal/cypher/parser"
 	"github.com/cwire/wavespan/internal/graph"
+	"github.com/cwire/wavespan/internal/vector"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 )
 
@@ -31,10 +32,23 @@ type Executor struct {
 	Params      map[string]*wavespanv1.Value
 	NewVersion  func() *wavespanv1.Version
 
+	// Vector search support (M9): the vector store and an index-name resolver enable the
+	// vector.searchExact procedure.
+	VectorStore *vector.Store
+	VectorIndex func(name string) (*vector.IndexMeta, bool)
+
 	pods    map[string]bool
 	warns   []string
 	columns []string
 }
+
+// Procedure is a CALL-able procedure: it extends a binding row with YIELD bindings.
+type Procedure func(e *Executor, args []*wavespanv1.Value, yields []string, row bindingRow) ([]bindingRow, error)
+
+var procedures = map[string]Procedure{}
+
+// RegisterProcedure registers a CALL-able procedure by name (e.g. "vector.searchExact").
+func RegisterProcedure(name string, fn Procedure) { procedures[name] = fn }
 
 // Execute plans and runs a parsed query.
 func (e *Executor) Execute(q *parser.Query) (*Result, error) {
@@ -132,8 +146,30 @@ func (e *Executor) apply(op LogicalOp, rows []bindingRow) ([]bindingRow, error) 
 		return rows, e.set(o, rows)
 	case *DeleteVars:
 		return rows, e.del(o, rows)
+	case *ProcCall:
+		return e.procCall(o, rows)
 	}
 	return rows, fmt.Errorf("cypher: unsupported operator %s", op.opName())
+}
+
+func (e *Executor) procCall(o *ProcCall, rows []bindingRow) ([]bindingRow, error) {
+	proc, ok := procedures[o.Procedure]
+	if !ok {
+		return nil, fmt.Errorf("cypher: unknown procedure %s", o.Procedure)
+	}
+	var out []bindingRow
+	for _, r := range rows {
+		args := make([]*wavespanv1.Value, len(o.Args))
+		for i, a := range o.Args {
+			args[i] = e.evalScalar(a, r)
+		}
+		prows, err := proc(e, args, o.Yields, r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, prows...)
+	}
+	return out, nil
 }
 
 func (e *Executor) nodesByID(ids []string) ([]*wavespanv1.NodeRecord, error) {
@@ -147,12 +183,22 @@ func (e *Executor) nodesByID(ids []string) ([]*wavespanv1.NodeRecord, error) {
 }
 
 func (e *Executor) scan(rows []bindingRow, variable string, fetch func() ([]*wavespanv1.NodeRecord, error)) ([]bindingRow, error) {
-	nodes, err := fetch()
-	if err != nil {
-		return nil, err
-	}
+	var nodes []*wavespanv1.NodeRecord
+	var fetched bool
 	var out []bindingRow
 	for _, r := range rows {
+		// a variable already bound by a prior CALL/MATCH is a constraint, not a fresh scan.
+		if _, ok := r[variable].(*wavespanv1.NodeRecord); ok {
+			out = append(out, r)
+			continue
+		}
+		if !fetched {
+			n, err := fetch()
+			if err != nil {
+				return nil, err
+			}
+			nodes, fetched = n, true
+		}
 		for _, n := range nodes {
 			nr := cloneRow(r)
 			nr[variable] = n

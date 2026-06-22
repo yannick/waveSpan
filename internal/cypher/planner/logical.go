@@ -58,6 +58,13 @@ type SetItems struct{ Items []parser.SetItem }
 // DeleteVars is the DELETE updating operator.
 type DeleteVars struct{ Variables []string }
 
+// ProcCall invokes a registered procedure (CALL ... YIELD ...).
+type ProcCall struct {
+	Procedure string
+	Args      []parser.Expr
+	Yields    []string
+}
+
 func (*LabelScan) opName() string      { return "LabelScan" }
 func (*AllNodesScan) opName() string   { return "AllNodesScan" }
 func (*PropertyFilter) opName() string { return "PropertyFilter" }
@@ -70,6 +77,7 @@ func (*SkipLimit) opName() string      { return "SkipLimit" }
 func (*CreatePatterns) opName() string { return "CreatePatterns" }
 func (*SetItems) opName() string       { return "SetItems" }
 func (*DeleteVars) opName() string     { return "DeleteVars" }
+func (*ProcCall) opName() string       { return "ProcCall" }
 
 // Plan lowers a parsed query into a linear logical plan.
 func Plan(q *parser.Query) ([]LogicalOp, error) {
@@ -86,6 +94,8 @@ func Plan(q *parser.Query) ([]LogicalOp, error) {
 			ops = append(ops, &DeleteVars{Variables: cl.Variables})
 		case *parser.UnwindClause:
 			ops = append(ops, &Unwind{Expr: cl.Expr, Alias: cl.Alias})
+		case *parser.CallClause:
+			ops = append(ops, &ProcCall{Procedure: cl.Procedure, Args: cl.Args, Yields: cl.Yields})
 		case *parser.WithClause:
 			ops = append(ops, &Project{Items: cl.Items, Distinct: cl.Distinct})
 			if cl.Where != nil {

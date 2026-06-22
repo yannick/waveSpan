@@ -208,6 +208,86 @@ func (x *VectorMeta) GetGraphNodeId() string {
 	return ""
 }
 
+type PutVectorRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Record        *VectorRecord          `protobuf:"bytes,1,opt,name=record,proto3" json:"record,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutVectorRequest) Reset() {
+	*x = PutVectorRequest{}
+	mi := &file_wavespan_v1_vector_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutVectorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutVectorRequest) ProtoMessage() {}
+
+func (x *PutVectorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_vector_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutVectorRequest.ProtoReflect.Descriptor instead.
+func (*PutVectorRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_vector_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PutVectorRequest) GetRecord() *VectorRecord {
+	if x != nil {
+		return x.Record
+	}
+	return nil
+}
+
+type PutVectorResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutVectorResponse) Reset() {
+	*x = PutVectorResponse{}
+	mi := &file_wavespan_v1_vector_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutVectorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutVectorResponse) ProtoMessage() {}
+
+func (x *PutVectorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_vector_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutVectorResponse.ProtoReflect.Descriptor instead.
+func (*PutVectorResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_vector_proto_rawDescGZIP(), []int{3}
+}
+
 var File_wavespan_v1_vector_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_vector_proto_rawDesc = "" +
@@ -240,7 +320,12 @@ const file_wavespan_v1_vector_proto_rawDesc = "" +
 	"dimensions\x18\x03 \x01(\rR\n" +
 	"dimensions\x12\x16\n" +
 	"\x06metric\x18\x04 \x01(\tR\x06metric\x12\"\n" +
-	"\rgraph_node_id\x18\x05 \x01(\tR\vgraphNodeIdB\xa3\x01\n" +
+	"\rgraph_node_id\x18\x05 \x01(\tR\vgraphNodeId\"E\n" +
+	"\x10PutVectorRequest\x121\n" +
+	"\x06record\x18\x01 \x01(\v2\x19.wavespan.v1.VectorRecordR\x06record\"\x13\n" +
+	"\x11PutVectorResponse2U\n" +
+	"\rVectorService\x12D\n" +
+	"\x03Put\x12\x1d.wavespan.v1.PutVectorRequest\x1a\x1e.wavespan.v1.PutVectorResponseB\xa3\x01\n" +
 	"\x0fcom.wavespan.v1B\vVectorProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -255,23 +340,28 @@ func file_wavespan_v1_vector_proto_rawDescGZIP() []byte {
 	return file_wavespan_v1_vector_proto_rawDescData
 }
 
-var file_wavespan_v1_vector_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_wavespan_v1_vector_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_wavespan_v1_vector_proto_goTypes = []any{
-	(*VectorRecord)(nil), // 0: wavespan.v1.VectorRecord
-	(*VectorMeta)(nil),   // 1: wavespan.v1.VectorMeta
-	nil,                  // 2: wavespan.v1.VectorRecord.MetadataEntry
-	(*Version)(nil),      // 3: wavespan.v1.Version
-	(*Value)(nil),        // 4: wavespan.v1.Value
+	(*VectorRecord)(nil),      // 0: wavespan.v1.VectorRecord
+	(*VectorMeta)(nil),        // 1: wavespan.v1.VectorMeta
+	(*PutVectorRequest)(nil),  // 2: wavespan.v1.PutVectorRequest
+	(*PutVectorResponse)(nil), // 3: wavespan.v1.PutVectorResponse
+	nil,                       // 4: wavespan.v1.VectorRecord.MetadataEntry
+	(*Version)(nil),           // 5: wavespan.v1.Version
+	(*Value)(nil),             // 6: wavespan.v1.Value
 }
 var file_wavespan_v1_vector_proto_depIdxs = []int32{
-	2, // 0: wavespan.v1.VectorRecord.metadata:type_name -> wavespan.v1.VectorRecord.MetadataEntry
-	3, // 1: wavespan.v1.VectorRecord.version:type_name -> wavespan.v1.Version
-	4, // 2: wavespan.v1.VectorRecord.MetadataEntry.value:type_name -> wavespan.v1.Value
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 0: wavespan.v1.VectorRecord.metadata:type_name -> wavespan.v1.VectorRecord.MetadataEntry
+	5, // 1: wavespan.v1.VectorRecord.version:type_name -> wavespan.v1.Version
+	0, // 2: wavespan.v1.PutVectorRequest.record:type_name -> wavespan.v1.VectorRecord
+	6, // 3: wavespan.v1.VectorRecord.MetadataEntry.value:type_name -> wavespan.v1.Value
+	2, // 4: wavespan.v1.VectorService.Put:input_type -> wavespan.v1.PutVectorRequest
+	3, // 5: wavespan.v1.VectorService.Put:output_type -> wavespan.v1.PutVectorResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_vector_proto_init() }
@@ -287,9 +377,9 @@ func file_wavespan_v1_vector_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_vector_proto_rawDesc), len(file_wavespan_v1_vector_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   5,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_wavespan_v1_vector_proto_goTypes,
 		DependencyIndexes: file_wavespan_v1_vector_proto_depIdxs,
