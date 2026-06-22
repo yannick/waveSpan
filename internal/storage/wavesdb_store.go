@@ -76,12 +76,24 @@ func (s *WavesdbStore) Delete(cf ColumnFamily, key []byte) error {
 }
 
 func (s *WavesdbStore) Batch(ops []StoreOp) error {
+	return s.batch(ops, wavesdb.Snapshot)
+}
+
+// BatchRC applies ops at ReadCommitted isolation: it skips wavesdb's write-write conflict check,
+// which takes a global write lock and serializes ALL commits on a node. The recordstore guarantees
+// its own per-key ordering (a striped lock around the latest-pointer read-modify-write), so
+// independent keys can commit fully in parallel — the write-throughput unlock (design/05).
+func (s *WavesdbStore) BatchRC(ops []StoreOp) error {
+	return s.batch(ops, wavesdb.ReadCommitted)
+}
+
+func (s *WavesdbStore) batch(ops []StoreOp, isolation wavesdb.IsolationLevel) error {
 	for _, op := range ops {
 		if !op.CF.valid() {
 			return ErrUnknownColumnFamily
 		}
 	}
-	txn, err := s.db.Begin()
+	txn, err := s.db.BeginWithIsolation(isolation)
 	if err != nil {
 		return mapErr(err)
 	}

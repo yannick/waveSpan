@@ -21,11 +21,43 @@ type Store struct {
 	clusterID string
 	memberID  string
 	logSeq    atomic.Uint64
+	// stripes serialize the latest-pointer read-modify-write PER KEY so that, under the engine's
+	// ReadCommitted commits (which run concurrently), two writes to the same key still produce a
+	// correct LWW pointer while writes to different keys proceed in parallel.
+	stripes [numStripes]sync.Mutex
+	// latestVer caches the current winning version per key (guarded by the key's stripe). The common
+	// monotonic write (incoming version > the cached winner) then skips the read-modify-write storage
+	// Get + pointer decode entirely. Capped per stripe; on overflow a stripe's cache is cleared (a
+	// miss simply falls back to the storage read, so correctness is unaffected).
+	latestVer [numStripes]map[string]version.Version
 }
+
+const (
+	numStripes     = 512
+	maxVerCachePer = 8192 // per-stripe cap before the cache is reset (bounds memory)
+)
 
 // NewStore wires a local KV store.
 func NewStore(local storage.LocalStore, clusterID, memberID string, clock *version.Clock, seq *version.Sequencer) *Store {
-	return &Store{local: local, clock: clock, seq: seq, clusterID: clusterID, memberID: memberID}
+	s := &Store{local: local, clock: clock, seq: seq, clusterID: clusterID, memberID: memberID}
+	for i := range s.latestVer {
+		s.latestVer[i] = make(map[string]version.Version)
+	}
+	return s
+}
+
+// stripeIdx hashes a namespace/key to its stripe (FNV-1a).
+func stripeIdx(ns string, key []byte) uint32 {
+	h := uint32(2166136261)
+	for i := 0; i < len(ns); i++ {
+		h = (h ^ uint32(ns[i])) * 16777619
+	}
+	for _, b := range key {
+		h = (h ^ uint32(b)) * 16777619
+	}
+	// the stripe only distributes locks, so a ns/key boundary collision just shares a lock (harmless);
+	// the authoritative cache key (ckey) carries an explicit separator.
+	return h % numStripes
 }
 
 // NextVersion stamps a new version for an originated mutation (coordinator path).
@@ -71,6 +103,12 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 	key := rec.GetLogicalKey()
 	recVer := version.FromProto(rec.GetVersion())
 
+	// Serialize the read-modify-write of THIS key's latest pointer (different keys run in parallel).
+	si := stripeIdx(ns, key)
+	s.stripes[si].Lock()
+	defer s.stripes[si].Unlock()
+	ckey := ns + "\x00" + string(key)
+
 	// current latest pointer
 	winner := recVer
 	winnerTombstone := rec.GetTombstone()
@@ -79,22 +117,26 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 		e := rec.GetExpiresAtUnixMs()
 		winnerExpiry = &e
 	}
-	if cur, found, err := s.local.Get(storage.CFKVMeta, latestKey(ns, key)); err != nil {
-		return version.Version{}, err
-	} else if found {
-		lp, err := storage.DecodeLatestPointer(cur)
-		if err != nil {
+	// Fast path: if the cached winner is older than the incoming version (the monotonic common case),
+	// the incoming record wins outright — skip the storage read + pointer decode. Otherwise read the
+	// authoritative pointer to pick the winner and carry its tombstone/expiry.
+	if cached, ok := s.latestVer[si][ckey]; !ok || recVer.Compare(cached) <= 0 {
+		if cur, found, err := s.local.Get(storage.CFKVMeta, latestKey(ns, key)); err != nil {
 			return version.Version{}, err
-		}
-		curWin := version.FromProto(lp.GetWinner())
-		if curWin.Compare(recVer) >= 0 {
-			// existing winner stands; still persist the incoming record version below
-			winner = curWin
-			winnerTombstone = lp.GetTombstone()
-			winnerExpiry = nil
-			if lp.ExpiresAtUnixMs != nil {
-				e := lp.GetExpiresAtUnixMs()
-				winnerExpiry = &e
+		} else if found {
+			lp, err := storage.DecodeLatestPointer(cur)
+			if err != nil {
+				return version.Version{}, err
+			}
+			curWin := version.FromProto(lp.GetWinner())
+			if curWin.Compare(recVer) >= 0 {
+				winner = curWin
+				winnerTombstone = lp.GetTombstone()
+				winnerExpiry = nil
+				if lp.ExpiresAtUnixMs != nil {
+					e := lp.GetExpiresAtUnixMs()
+					winnerExpiry = &e
+				}
 			}
 		}
 	}
@@ -148,11 +190,17 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 			CF: storage.CFKVMeta, Key: ttlKey(rec.GetExpiresAtUnixMs(), ns, key), Value: encodeVersion(recVer),
 		})
 	}
-	err = s.local.Batch(ops)
+	err = s.local.BatchRC(ops)
 	*bp = buf
 	encBufPool.Put(bp) // safe: Batch has copied every value
 	if err != nil {
 		return version.Version{}, err
+	}
+	// Record the new winner so subsequent monotonic writes to this key skip the storage read.
+	if m := s.latestVer[si]; len(m) < maxVerCachePer {
+		m[ckey] = winner
+	} else {
+		s.latestVer[si] = map[string]version.Version{ckey: winner} // bounded reset
 	}
 	return winner, nil
 }
@@ -363,6 +411,10 @@ func (s *Store) ApplySiblings(namespace string, key []byte, siblings []*wavespan
 	if len(siblings) == 0 {
 		return nil
 	}
+	si := stripeIdx(namespace, key) // order against concurrent Apply/ApplySiblings on this key
+	s.stripes[si].Lock()
+	defer s.stripes[si].Unlock()
+	delete(s.latestVer[si], namespace+"\x00"+string(key)) // siblings rewrite the pointer; force a re-read next Apply
 	winner := siblings[0]
 	for _, r := range siblings[1:] {
 		if version.FromProto(r.GetVersion()).Compare(version.FromProto(winner.GetVersion())) > 0 {
@@ -387,7 +439,7 @@ func (s *Store) ApplySiblings(namespace string, key []byte, siblings []*wavespan
 		return err
 	}
 	ops = append(ops, storage.StoreOp{CF: storage.CFKVMeta, Key: latestKey(namespace, key), Value: lpBytes})
-	return s.local.Batch(ops)
+	return s.local.BatchRC(ops)
 }
 
 // EncodeStoredRecordRaw marshals a StoredRecord (exposed for ApplySiblings).

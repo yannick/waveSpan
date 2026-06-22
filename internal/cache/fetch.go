@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/cwire/wavespan/internal/latencygraph"
 	"github.com/cwire/wavespan/internal/membership"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
@@ -39,7 +40,7 @@ type Fetcher struct {
 
 // NewFetcher wires a fetcher.
 func NewFetcher(self membership.Member, dir *Directory, cluster Cluster, graph *latencygraph.Graph, hc *http.Client) *Fetcher {
-	var c connect.HTTPClient = http.DefaultClient
+	var c connect.HTTPClient = rpcopts.H2CClient()
 	if hc != nil {
 		c = hc
 	}

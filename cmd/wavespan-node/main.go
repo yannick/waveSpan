@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -29,6 +30,7 @@ import (
 	"github.com/cwire/wavespan/internal/recordstore"
 	global "github.com/cwire/wavespan/internal/replication/global"
 	local "github.com/cwire/wavespan/internal/replication/local"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	"github.com/cwire/wavespan/internal/security"
 	"github.com/cwire/wavespan/internal/storage"
 	"github.com/cwire/wavespan/internal/ttl"
@@ -97,6 +99,12 @@ func run() error {
 	httpClient, err := tlsCfg.NewHTTPClient(transportTuning(cfg))
 	if err != nil {
 		return fmt.Errorf("transport client: %w", err)
+	}
+	// On the plaintext dev/cluster path, multiplex inter-node RPCs over HTTP/2 cleartext (h2c) so
+	// the origin+1 replication + anti-entropy calls don't serialize on HTTP/1.1 connections. With
+	// mTLS, NewHTTPClient already negotiates HTTP/2 via ALPN.
+	if cfg.Security.InsecureDevMode {
+		httpClient = rpcopts.H2CClient()
 	}
 	serverMTLS, err := tlsCfg.ServerTLS() // machine link classes: data + gossip (nil in dev mode)
 	if err != nil {
@@ -305,12 +313,12 @@ func run() error {
 	// identity middleware grants admin (dev/compose); in production the role comes from the verified
 	// mTLS client certificate.
 	dataIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
-	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: dataIdentity.EnforceHTTP(dataMux), ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS, ConnState: connStateGauge(openConns.WithLabelValues("data"))}
+	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: maybeH2C(dataIdentity.EnforceHTTP(dataMux), serverMTLS), ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS, ConnState: connStateGauge(openConns.WithLabelValues("data"))}
 
 	// Gossip server on the gossip port.
 	gossipMux := http.NewServeMux()
 	gossipMux.Handle(svc.GossipHandler())
-	gossipSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Gossip), Handler: gossipMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS, ConnState: connStateGauge(openConns.WithLabelValues("gossip"))}
+	gossipSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Gossip), Handler: maybeH2C(gossipMux, serverMTLS), ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS, ConnState: connStateGauge(openConns.WithLabelValues("gossip"))}
 
 	// Admin server: health/metrics + membership/latency introspection.
 	adminMux := observability.AdminMux(metrics, ready)
@@ -526,6 +534,15 @@ func latencyHandler(svc *membership.Service) http.HandlerFunc {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// maybeH2C enables HTTP/2 cleartext (multiplexed) on a plaintext server; a TLS server already gets
+// HTTP/2 via ALPN, so it is returned unwrapped.
+func maybeH2C(h http.Handler, tlsConfig *tls.Config) http.Handler {
+	if tlsConfig != nil {
+		return h
+	}
+	return rpcopts.H2CHandler(h)
 }
 
 // intraAENamespaces is the set of namespaces reconciled by intra-cluster anti-entropy (default +

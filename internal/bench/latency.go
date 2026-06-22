@@ -5,20 +5,20 @@ package bench
 
 import (
 	"fmt"
-	"net/http"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/cwire/wavespan/internal/rpcopts"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 func kvClient(addr string) wavespanv1connect.KvServiceClient {
-	return wavespanv1connect.NewKvServiceClient(http.DefaultClient, "http://"+addr)
+	return wavespanv1connect.NewKvServiceClient(rpcopts.H2CClient(), "http://"+addr)
 }
 
 func cypherClient(addr string) wavespanv1connect.CypherClient {
-	return wavespanv1connect.NewCypherClient(http.DefaultClient, "http://"+addr)
+	return wavespanv1connect.NewCypherClient(rpcopts.H2CClient(), "http://"+addr)
 }
 
 // Latencies accumulates op latencies for percentile reporting.

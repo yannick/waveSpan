@@ -71,6 +71,9 @@ func (s *MemStore) Batch(ops []StoreOp) error {
 	return nil
 }
 
+// BatchRC is identical to Batch for the in-memory store (isolation is moot without an LSM engine).
+func (s *MemStore) BatchRC(ops []StoreOp) error { return s.Batch(ops) }
+
 func (s *MemStore) Scan(cf ColumnFamily, start, end []byte, limit int) (Iterator, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
