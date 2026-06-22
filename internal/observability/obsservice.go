@@ -60,6 +60,7 @@ type ObsService struct {
 	tunables    *tunables.Registry
 	overrides   *tunables.Overrides
 	configFetch ConfigFetcher
+	configSet   ConfigSetter
 }
 
 // KvWriter forwards a KV Put to a target member's data-port KvService, returning the result. It lets

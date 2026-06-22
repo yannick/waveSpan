@@ -6,13 +6,15 @@ import (
 )
 
 // Override is a runtime tunable override: a value set at runtime (via the admin API) that takes
-// precedence over default/file/env. Overrides gossip cluster-wide and merge last-write-wins by
-// (Version, Origin).
+// precedence over default/file/env. Cluster overrides gossip and merge last-write-wins by
+// (Version, Origin). Node-local overrides (Local=true) pin on a single node: they are not gossiped
+// and they resist incoming cluster deltas for the same key.
 type Override struct {
 	Key     string `json:"key"`
 	Value   string `json:"value"`
 	Version uint64 `json:"version"`
 	Origin  string `json:"origin"`
+	Local   bool   `json:"local,omitempty"`
 }
 
 // newer reports whether a should win over b under LWW (higher version, then higher origin id).
@@ -49,10 +51,11 @@ func NewOverrides(reg *Registry, origin string, persist func([]Override)) *Overr
 	}
 }
 
-// Set applies a local runtime override for key=value: it validates against the registry, assigns a
-// monotonic version, applies it (Hot params take effect live), records it, and persists. It returns
-// the assigned version and whether the tunable is Static (so the caller can report requires-restart).
-func (o *Overrides) Set(key, value string) (version uint64, requiresRestart bool, err error) {
+// Set applies a runtime override for key=value: it validates against the registry, assigns a
+// monotonic version, applies it (Hot params take effect live), records it, and persists. local=true
+// pins it on this node only (not gossiped, resists cluster deltas); local=false makes it a cluster
+// override advertised via gossip. Returns the assigned version and whether the tunable is Static.
+func (o *Overrides) Set(key, value string, local bool) (version uint64, requiresRestart bool, err error) {
 	p := o.reg.Get(key)
 	if p == nil {
 		return 0, false, errUnknown(key)
@@ -64,13 +67,40 @@ func (o *Overrides) Set(key, value string) (version uint64, requiresRestart bool
 		v = o.lastVer + 1
 	}
 	o.lastVer = v
-	od := Override{Key: key, Value: value, Version: v, Origin: o.origin}
+	od := Override{Key: key, Value: value, Version: v, Origin: o.origin, Local: local}
 	if err := o.reg.Set(key, value, FromRuntime, v); err != nil {
 		return 0, false, err
 	}
 	o.set[key] = od
 	o.persistLocked()
 	return v, p.Category == Static, nil
+}
+
+// Scope returns the override scope for a key: "node" (local pin), "cluster" (gossiped), or "" (none).
+func (o *Overrides) Scope(key string) string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	od, ok := o.set[key]
+	if !ok {
+		return ""
+	}
+	if od.Local {
+		return "node"
+	}
+	return "cluster"
+}
+
+// GossipSet returns only the cluster-scoped overrides (node-local pins are never advertised).
+func (o *Overrides) GossipSet() []Override {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	var out []Override
+	for _, k := range sortedOverrideKeys(o.set) {
+		if !o.set[k].Local {
+			out = append(out, o.set[k])
+		}
+	}
+	return out
 }
 
 // ApplyRemote merges gossiped overrides by LWW and returns the ones that actually changed local
@@ -80,8 +110,13 @@ func (o *Overrides) ApplyRemote(deltas []Override) []Override {
 	defer o.mu.Unlock()
 	var changed []Override
 	for _, d := range deltas {
-		if cur, ok := o.set[d.Key]; ok && !newer(d, cur) {
-			continue
+		if cur, ok := o.set[d.Key]; ok {
+			if cur.Local {
+				continue // node-local pin wins over incoming cluster deltas for this key
+			}
+			if !newer(d, cur) {
+				continue
+			}
 		}
 		if o.reg.Get(d.Key) == nil {
 			continue

@@ -174,7 +174,7 @@ func run() error {
 	// LWW-merges peers' deltas into the registry, so a change made anywhere converges cluster-wide.
 	svc.SetConfigHooks(
 		func() []membership.ConfigDeltaWire {
-			set := overrides.List()
+			set := overrides.GossipSet() // cluster-scoped overrides only; node-local pins never gossip
 			out := make([]membership.ConfigDeltaWire, 0, len(set))
 			for _, o := range set {
 				out = append(out, membership.ConfigDeltaWire{Key: o.Key, Value: o.Value, Version: o.Version, Origin: o.Origin})
@@ -376,7 +376,7 @@ func run() error {
 	dataMux := http.NewServeMux()
 	dataMux.Handle(kvSvc.Handler())
 	dataMux.Handle(replicaSrv.Handler())
-	dataMux.Handle(observability.NewConfigServer(tun, cfg.ClusterID, cfg.MemberID).Handler()) // peer-reachable config reads
+	dataMux.Handle(observability.NewConfigServer(tun, overrides, cfg.ClusterID, cfg.MemberID).Handler()) // peer-reachable config reads + node-local set
 	dataMux.Handle(cypherSvc.Handler())
 	dataMux.Handle(vectorSvc.Handler())
 	if globalSrv != nil {
@@ -429,14 +429,23 @@ func run() error {
 			}
 			return resp.Msg, nil
 		}).
-		WithTunables(tun, overrides, func(ctx context.Context, target membership.Member) (*wavespanv1.NodeConfig, error) {
-			// Read a peer's effective config over its data-port ConfigService (UI Config tab).
-			resp, err := wavespanv1connect.NewConfigServiceClient(httpClient, "http://"+target.DataAddr).GetConfig(ctx, connect.NewRequest(&wavespanv1.GetConfigRequest{}))
-			if err != nil {
-				return nil, err
-			}
-			return resp.Msg, nil
-		})
+		WithTunables(tun, overrides,
+			func(ctx context.Context, target membership.Member) (*wavespanv1.NodeConfig, error) {
+				// Read a peer's effective config over its data-port ConfigService (UI Config tab).
+				resp, err := wavespanv1connect.NewConfigServiceClient(httpClient, "http://"+target.DataAddr).GetConfig(ctx, connect.NewRequest(&wavespanv1.GetConfigRequest{}))
+				if err != nil {
+					return nil, err
+				}
+				return resp.Msg, nil
+			},
+			func(ctx context.Context, target membership.Member, key, value string) (*wavespanv1.SetTunableResponse, error) {
+				// Pin a node-local override on a chosen peer over its data-port ConfigService.
+				resp, err := wavespanv1connect.NewConfigServiceClient(httpClient, "http://"+target.DataAddr).SetTunable(ctx, connect.NewRequest(&wavespanv1.SetTunableRequest{Key: key, Value: value}))
+				if err != nil {
+					return nil, err
+				}
+				return resp.Msg, nil
+			})
 	adminIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
 	obsPath, obsHandler := obsSvc.Handler()
 	adminMux.Handle(obsPath, adminIdentity.EnforceHTTP(obsHandler)) // ObservabilityService (admin auth)

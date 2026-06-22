@@ -64,6 +64,9 @@ const (
 	ObservabilityServiceAdminSetTunableProcedure = "/wavespan.v1.ObservabilityService/AdminSetTunable"
 	// ConfigServiceGetConfigProcedure is the fully-qualified name of the ConfigService's GetConfig RPC.
 	ConfigServiceGetConfigProcedure = "/wavespan.v1.ConfigService/GetConfig"
+	// ConfigServiceSetTunableProcedure is the fully-qualified name of the ConfigService's SetTunable
+	// RPC.
+	ConfigServiceSetTunableProcedure = "/wavespan.v1.ConfigService/SetTunable"
 )
 
 // ObservabilityServiceClient is a client for the wavespan.v1.ObservabilityService service.
@@ -365,6 +368,9 @@ func (UnimplementedObservabilityServiceHandler) AdminSetTunable(context.Context,
 // ConfigServiceClient is a client for the wavespan.v1.ConfigService service.
 type ConfigServiceClient interface {
 	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.NodeConfig], error)
+	// SetTunable pins a node-local override on this node (no gossip). The admin AdminSetTunable
+	// forwards here when cluster_wide=false and a non-self target is chosen.
+	SetTunable(context.Context, *connect.Request[v1.SetTunableRequest]) (*connect.Response[v1.SetTunableResponse], error)
 }
 
 // NewConfigServiceClient constructs a client for the wavespan.v1.ConfigService service. By default,
@@ -384,12 +390,19 @@ func NewConfigServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(configServiceMethods.ByName("GetConfig")),
 			connect.WithClientOptions(opts...),
 		),
+		setTunable: connect.NewClient[v1.SetTunableRequest, v1.SetTunableResponse](
+			httpClient,
+			baseURL+ConfigServiceSetTunableProcedure,
+			connect.WithSchema(configServiceMethods.ByName("SetTunable")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // configServiceClient implements ConfigServiceClient.
 type configServiceClient struct {
-	getConfig *connect.Client[v1.GetConfigRequest, v1.NodeConfig]
+	getConfig  *connect.Client[v1.GetConfigRequest, v1.NodeConfig]
+	setTunable *connect.Client[v1.SetTunableRequest, v1.SetTunableResponse]
 }
 
 // GetConfig calls wavespan.v1.ConfigService.GetConfig.
@@ -397,9 +410,17 @@ func (c *configServiceClient) GetConfig(ctx context.Context, req *connect.Reques
 	return c.getConfig.CallUnary(ctx, req)
 }
 
+// SetTunable calls wavespan.v1.ConfigService.SetTunable.
+func (c *configServiceClient) SetTunable(ctx context.Context, req *connect.Request[v1.SetTunableRequest]) (*connect.Response[v1.SetTunableResponse], error) {
+	return c.setTunable.CallUnary(ctx, req)
+}
+
 // ConfigServiceHandler is an implementation of the wavespan.v1.ConfigService service.
 type ConfigServiceHandler interface {
 	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.NodeConfig], error)
+	// SetTunable pins a node-local override on this node (no gossip). The admin AdminSetTunable
+	// forwards here when cluster_wide=false and a non-self target is chosen.
+	SetTunable(context.Context, *connect.Request[v1.SetTunableRequest]) (*connect.Response[v1.SetTunableResponse], error)
 }
 
 // NewConfigServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -415,10 +436,18 @@ func NewConfigServiceHandler(svc ConfigServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(configServiceMethods.ByName("GetConfig")),
 		connect.WithHandlerOptions(opts...),
 	)
+	configServiceSetTunableHandler := connect.NewUnaryHandler(
+		ConfigServiceSetTunableProcedure,
+		svc.SetTunable,
+		connect.WithSchema(configServiceMethods.ByName("SetTunable")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.ConfigService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ConfigServiceGetConfigProcedure:
 			configServiceGetConfigHandler.ServeHTTP(w, r)
+		case ConfigServiceSetTunableProcedure:
+			configServiceSetTunableHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -430,4 +459,8 @@ type UnimplementedConfigServiceHandler struct{}
 
 func (UnimplementedConfigServiceHandler) GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.NodeConfig], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ConfigService.GetConfig is not implemented"))
+}
+
+func (UnimplementedConfigServiceHandler) SetTunable(context.Context, *connect.Request[v1.SetTunableRequest]) (*connect.Response[v1.SetTunableResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ConfigService.SetTunable is not implemented"))
 }

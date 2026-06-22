@@ -11,7 +11,7 @@ func TestOverrideSetAppliesAndPersists(t *testing.T) {
 	var saved []Override
 	o := NewOverrides(r, "node1", func(set []Override) { saved = set })
 
-	v, restart, err := o.Set("ttl.sweepInterval", "5s")
+	v, restart, err := o.Set("ttl.sweepInterval", "5s", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,12 +32,48 @@ func TestOverrideSetAppliesAndPersists(t *testing.T) {
 	}
 
 	// Static tunable reports requires-restart.
-	_, restart, err = o.Set("storage.engine.writeBufferSize", "128MiB")
+	_, restart, err = o.Set("storage.engine.writeBufferSize", "128MiB", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !restart {
 		t.Error("storage.engine.writeBufferSize is Static, should require restart")
+	}
+}
+
+func TestNodeLocalPin(t *testing.T) {
+	r := Default()
+	o := NewOverrides(r, "node1", nil)
+
+	// node-local pin applies, is scoped "node", and is NOT advertised to gossip.
+	if _, _, err := o.Set("ttl.batch", "42", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Get("ttl.batch").Int(); got != 42 {
+		t.Fatalf("local pin value = %d, want 42", got)
+	}
+	if o.Scope("ttl.batch") != "node" {
+		t.Errorf("scope = %q, want node", o.Scope("ttl.batch"))
+	}
+	if len(o.GossipSet()) != 0 {
+		t.Errorf("node-local pin must not be gossiped, got %d in GossipSet", len(o.GossipSet()))
+	}
+
+	// an incoming cluster delta (even newer) must NOT override a node-local pin.
+	o.ApplyRemote([]Override{{Key: "ttl.batch", Value: "7", Version: 1 << 62, Origin: "node2"}})
+	if got := r.Get("ttl.batch").Int(); got != 42 {
+		t.Errorf("node-local pin should resist cluster delta, got %d", got)
+	}
+
+	// a cluster set (local=false) is gossiped and scoped "cluster".
+	if _, _, err := o.Set("cache.idleTTL", "3m", false); err != nil {
+		t.Fatal(err)
+	}
+	if o.Scope("cache.idleTTL") != "cluster" {
+		t.Errorf("scope = %q, want cluster", o.Scope("cache.idleTTL"))
+	}
+	if len(o.GossipSet()) != 1 {
+		t.Errorf("cluster override should be in GossipSet, got %d", len(o.GossipSet()))
 	}
 }
 
@@ -75,7 +111,7 @@ func TestOverrideSnapshotRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if _, _, err := o1.Set("cache.idleTTL", "2m"); err != nil {
+	if _, _, err := o1.Set("cache.idleTTL", "2m", false); err != nil {
 		t.Fatal(err)
 	}
 

@@ -64,20 +64,27 @@ export function Config() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target]);
 
-  const set = async (t: TunableState) => {
+  const set = async (t: TunableState, clusterWide: boolean) => {
     const value = drafts[t.key] ?? t.value;
     setSetting(t.key);
     setNotice(null);
     setError(null);
     try {
-      const res = await obs.adminSetTunable({ key: t.key, value });
+      // Node-local set targets the node currently being viewed; cluster set gossips everywhere.
+      const res = await obs.adminSetTunable({
+        key: t.key,
+        value,
+        targetMemberId: clusterWide ? "" : target,
+        clusterWide,
+      });
       if (!res.ok) {
         setError(res.error || "set failed");
       } else {
+        const where = clusterWide ? "whole cluster (gossiping)" : `node ${memberId || "this node"} only`;
         setNotice(
           res.requiresRestart
-            ? `${t.key} staged (static — applies on restart) · gossiping cluster-wide`
-            : `${t.key} applied live · gossiping cluster-wide`,
+            ? `${t.key} staged on ${where} — static, applies on restart`
+            : `${t.key} applied live on ${where}`,
         );
         await load();
       }
@@ -108,8 +115,9 @@ export function Config() {
       <h2 className="ws-title ws-view__title">Configuration</h2>
       <p className="ws-view__intro">
         Effective tunables on each node — value, where it came from (default / file / env / runtime),
-        and what it does. Hot tunables can be changed live; the change gossips cluster-wide (LWW) and
-        is persisted. Static tunables are staged and apply on restart.
+        and what it does. <strong>Set node</strong> pins a value on the selected node only (no gossip);
+        <strong>Set cluster</strong> gossips it to every node (LWW). Hot tunables apply live; static
+        ones are staged for restart. Both are persisted.
       </p>
 
       <Toolbar style={{ marginBottom: "var(--ws-space-md)" }}>
@@ -188,21 +196,39 @@ export function Config() {
                           <div className="ws-caption">default: {t.defaultValue}</div>
                         )}
                       </td>
-                      <td><Badge tone={SOURCE_TONE[t.source] ?? "neutral"} dot>{t.source}</Badge></td>
+                      <td>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "var(--ws-space-xxs)", alignItems: "flex-start" }}>
+                          <Badge tone={SOURCE_TONE[t.source] ?? "neutral"} dot>{t.source}</Badge>
+                          {t.overrideScope && (
+                            <Badge tone={t.overrideScope === "node" ? "warning" : "info"}>{t.overrideScope}</Badge>
+                          )}
+                        </div>
+                      </td>
                       <td>
                         <Badge tone={t.category === "hot" ? "success" : "neutral"}>{t.category}</Badge>
                         <div className="ws-caption">{t.kind}</div>
                       </td>
-                      <td style={{ textAlign: "right" }}>
-                        <Button
-                          size="sm"
-                          variant={dirty ? "primary" : "ghost"}
-                          disabled={!dirty || setting === t.key}
-                          onClick={() => set(t)}
-                          title={t.category === "hot" ? "Apply live + gossip" : "Stage for restart + gossip"}
-                        >
-                          {setting === t.key ? "…" : "Set"}
-                        </Button>
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        <div style={{ display: "inline-flex", gap: "var(--ws-space-xs)" }}>
+                          <Button
+                            size="sm"
+                            variant={dirty ? "secondary" : "ghost"}
+                            disabled={!dirty || setting === t.key}
+                            onClick={() => set(t, false)}
+                            title={`Pin on ${memberId || "this node"} only (node-local, no gossip)`}
+                          >
+                            Set node
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={dirty ? "primary" : "ghost"}
+                            disabled={!dirty || setting === t.key}
+                            onClick={() => set(t, true)}
+                            title="Set on the whole cluster (gossips to every node)"
+                          >
+                            Set cluster
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );

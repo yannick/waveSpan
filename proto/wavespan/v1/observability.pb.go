@@ -1746,17 +1746,18 @@ func (x *GraphExploreResponse) GetTruncated() bool {
 // TunableState is one tunable's effective state on a node (used by the Config tab).
 type TunableState struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                                       // dotted key, e.g. "ttl.sweepInterval"
-	Group         string                 `protobuf:"bytes,2,opt,name=group,proto3" json:"group,omitempty"`                                   // subsystem group
-	Value         string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`                                   // current effective value, canonical string
-	DefaultValue  string                 `protobuf:"bytes,4,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"` // built-in default
-	Source        string                 `protobuf:"bytes,5,opt,name=source,proto3" json:"source,omitempty"`                                 // default | file | env | runtime
-	Kind          string                 `protobuf:"bytes,6,opt,name=kind,proto3" json:"kind,omitempty"`                                     // duration | int | int64 | bytes | float | bool | string
-	Category      string                 `protobuf:"bytes,7,opt,name=category,proto3" json:"category,omitempty"`                             // static | hot
-	Doc           string                 `protobuf:"bytes,8,opt,name=doc,proto3" json:"doc,omitempty"`                                       // what it controls
-	Why           string                 `protobuf:"bytes,9,opt,name=why,proto3" json:"why,omitempty"`                                       // why it defaults to its value
-	Version       uint64                 `protobuf:"varint,10,opt,name=version,proto3" json:"version,omitempty"`                             // runtime-override version (0 if not runtime-set)
-	EnvVar        string                 `protobuf:"bytes,11,opt,name=env_var,json=envVar,proto3" json:"env_var,omitempty"`                  // the WAVESPAN_TUNABLE_* override name
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                                           // dotted key, e.g. "ttl.sweepInterval"
+	Group         string                 `protobuf:"bytes,2,opt,name=group,proto3" json:"group,omitempty"`                                       // subsystem group
+	Value         string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`                                       // current effective value, canonical string
+	DefaultValue  string                 `protobuf:"bytes,4,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`     // built-in default
+	Source        string                 `protobuf:"bytes,5,opt,name=source,proto3" json:"source,omitempty"`                                     // default | file | env | runtime
+	Kind          string                 `protobuf:"bytes,6,opt,name=kind,proto3" json:"kind,omitempty"`                                         // duration | int | int64 | bytes | float | bool | string
+	Category      string                 `protobuf:"bytes,7,opt,name=category,proto3" json:"category,omitempty"`                                 // static | hot
+	Doc           string                 `protobuf:"bytes,8,opt,name=doc,proto3" json:"doc,omitempty"`                                           // what it controls
+	Why           string                 `protobuf:"bytes,9,opt,name=why,proto3" json:"why,omitempty"`                                           // why it defaults to its value
+	Version       uint64                 `protobuf:"varint,10,opt,name=version,proto3" json:"version,omitempty"`                                 // runtime-override version (0 if not runtime-set)
+	EnvVar        string                 `protobuf:"bytes,11,opt,name=env_var,json=envVar,proto3" json:"env_var,omitempty"`                      // the WAVESPAN_TUNABLE_* override name
+	OverrideScope string                 `protobuf:"bytes,12,opt,name=override_scope,json=overrideScope,proto3" json:"override_scope,omitempty"` // "" (not overridden) | "node" (local pin) | "cluster" (gossiped)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1868,6 +1869,13 @@ func (x *TunableState) GetEnvVar() string {
 	return ""
 }
 
+func (x *TunableState) GetOverrideScope() string {
+	if x != nil {
+		return x.OverrideScope
+	}
+	return ""
+}
+
 // NodeConfig is a node's full effective tunable set.
 type NodeConfig struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1965,6 +1973,126 @@ func (*GetConfigRequest) Descriptor() ([]byte, []int) {
 	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{22}
 }
 
+type SetTunableRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetTunableRequest) Reset() {
+	*x = SetTunableRequest{}
+	mi := &file_wavespan_v1_observability_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetTunableRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetTunableRequest) ProtoMessage() {}
+
+func (x *SetTunableRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_observability_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetTunableRequest.ProtoReflect.Descriptor instead.
+func (*SetTunableRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *SetTunableRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *SetTunableRequest) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+type SetTunableResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Ok              bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Error           string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	RequiresRestart bool                   `protobuf:"varint,3,opt,name=requires_restart,json=requiresRestart,proto3" json:"requires_restart,omitempty"`
+	Version         uint64                 `protobuf:"varint,4,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SetTunableResponse) Reset() {
+	*x = SetTunableResponse{}
+	mi := &file_wavespan_v1_observability_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetTunableResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetTunableResponse) ProtoMessage() {}
+
+func (x *SetTunableResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_observability_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetTunableResponse.ProtoReflect.Descriptor instead.
+func (*SetTunableResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *SetTunableResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *SetTunableResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *SetTunableResponse) GetRequiresRestart() bool {
+	if x != nil {
+		return x.RequiresRestart
+	}
+	return false
+}
+
+func (x *SetTunableResponse) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
 // GetNodeConfigRequest selects which node's config to read (empty = the serving node).
 type GetNodeConfigRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -1975,7 +2103,7 @@ type GetNodeConfigRequest struct {
 
 func (x *GetNodeConfigRequest) Reset() {
 	*x = GetNodeConfigRequest{}
-	mi := &file_wavespan_v1_observability_proto_msgTypes[23]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1987,7 +2115,7 @@ func (x *GetNodeConfigRequest) String() string {
 func (*GetNodeConfigRequest) ProtoMessage() {}
 
 func (x *GetNodeConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_observability_proto_msgTypes[23]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2000,7 +2128,7 @@ func (x *GetNodeConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNodeConfigRequest.ProtoReflect.Descriptor instead.
 func (*GetNodeConfigRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{23}
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetNodeConfigRequest) GetTargetMemberId() string {
@@ -2010,18 +2138,22 @@ func (x *GetNodeConfigRequest) GetTargetMemberId() string {
 	return ""
 }
 
-// AdminSetTunableRequest sets a runtime override for one tunable, cluster-wide via gossip.
+// AdminSetTunableRequest sets a runtime override for one tunable. cluster_wide=true applies on this
+// node and gossips to every node (LWW). cluster_wide=false pins it on target_member_id only (empty =
+// the serving node) without gossiping — a node-local override that also resists incoming cluster deltas.
 type AdminSetTunableRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Key            string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value          string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	TargetMemberId string                 `protobuf:"bytes,3,opt,name=target_member_id,json=targetMemberId,proto3" json:"target_member_id,omitempty"` // node-local target (cluster_wide=false); empty = serving node
+	ClusterWide    bool                   `protobuf:"varint,4,opt,name=cluster_wide,json=clusterWide,proto3" json:"cluster_wide,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AdminSetTunableRequest) Reset() {
 	*x = AdminSetTunableRequest{}
-	mi := &file_wavespan_v1_observability_proto_msgTypes[24]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2033,7 +2165,7 @@ func (x *AdminSetTunableRequest) String() string {
 func (*AdminSetTunableRequest) ProtoMessage() {}
 
 func (x *AdminSetTunableRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_observability_proto_msgTypes[24]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2046,7 +2178,7 @@ func (x *AdminSetTunableRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSetTunableRequest.ProtoReflect.Descriptor instead.
 func (*AdminSetTunableRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{24}
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *AdminSetTunableRequest) GetKey() string {
@@ -2063,6 +2195,20 @@ func (x *AdminSetTunableRequest) GetValue() string {
 	return ""
 }
 
+func (x *AdminSetTunableRequest) GetTargetMemberId() string {
+	if x != nil {
+		return x.TargetMemberId
+	}
+	return ""
+}
+
+func (x *AdminSetTunableRequest) GetClusterWide() bool {
+	if x != nil {
+		return x.ClusterWide
+	}
+	return false
+}
+
 // AdminSetTunableResponse reports the outcome of a runtime tunable change.
 type AdminSetTunableResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
@@ -2076,7 +2222,7 @@ type AdminSetTunableResponse struct {
 
 func (x *AdminSetTunableResponse) Reset() {
 	*x = AdminSetTunableResponse{}
-	mi := &file_wavespan_v1_observability_proto_msgTypes[25]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2088,7 +2234,7 @@ func (x *AdminSetTunableResponse) String() string {
 func (*AdminSetTunableResponse) ProtoMessage() {}
 
 func (x *AdminSetTunableResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_observability_proto_msgTypes[25]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2101,7 +2247,7 @@ func (x *AdminSetTunableResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSetTunableResponse.ProtoReflect.Descriptor instead.
 func (*AdminSetTunableResponse) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{25}
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *AdminSetTunableResponse) GetOk() bool {
@@ -2148,7 +2294,7 @@ type AdminPutRequest struct {
 
 func (x *AdminPutRequest) Reset() {
 	*x = AdminPutRequest{}
-	mi := &file_wavespan_v1_observability_proto_msgTypes[26]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2160,7 +2306,7 @@ func (x *AdminPutRequest) String() string {
 func (*AdminPutRequest) ProtoMessage() {}
 
 func (x *AdminPutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_observability_proto_msgTypes[26]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2173,7 +2319,7 @@ func (x *AdminPutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminPutRequest.ProtoReflect.Descriptor instead.
 func (*AdminPutRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{26}
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *AdminPutRequest) GetNamespace() string {
@@ -2225,7 +2371,7 @@ type AdminPutResponse struct {
 
 func (x *AdminPutResponse) Reset() {
 	*x = AdminPutResponse{}
-	mi := &file_wavespan_v1_observability_proto_msgTypes[27]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2237,7 +2383,7 @@ func (x *AdminPutResponse) String() string {
 func (*AdminPutResponse) ProtoMessage() {}
 
 func (x *AdminPutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_observability_proto_msgTypes[27]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2250,7 +2396,7 @@ func (x *AdminPutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminPutResponse.ProtoReflect.Descriptor instead.
 func (*AdminPutResponse) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{27}
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *AdminPutResponse) GetOk() bool {
@@ -2302,7 +2448,7 @@ type AdminDeleteRequest struct {
 
 func (x *AdminDeleteRequest) Reset() {
 	*x = AdminDeleteRequest{}
-	mi := &file_wavespan_v1_observability_proto_msgTypes[28]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2314,7 +2460,7 @@ func (x *AdminDeleteRequest) String() string {
 func (*AdminDeleteRequest) ProtoMessage() {}
 
 func (x *AdminDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_observability_proto_msgTypes[28]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2327,7 +2473,7 @@ func (x *AdminDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminDeleteRequest.ProtoReflect.Descriptor instead.
 func (*AdminDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{28}
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *AdminDeleteRequest) GetNamespace() string {
@@ -2365,7 +2511,7 @@ type AdminDeleteResponse struct {
 
 func (x *AdminDeleteResponse) Reset() {
 	*x = AdminDeleteResponse{}
-	mi := &file_wavespan_v1_observability_proto_msgTypes[29]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2377,7 +2523,7 @@ func (x *AdminDeleteResponse) String() string {
 func (*AdminDeleteResponse) ProtoMessage() {}
 
 func (x *AdminDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_observability_proto_msgTypes[29]
+	mi := &file_wavespan_v1_observability_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2390,7 +2536,7 @@ func (x *AdminDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminDeleteResponse.ProtoReflect.Descriptor instead.
 func (*AdminDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{29}
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AdminDeleteResponse) GetOk() bool {
@@ -2553,7 +2699,7 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\x14GraphExploreResponse\x12,\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x16.wavespan.v1.GraphNodeR\x05nodes\x12,\n" +
 	"\x05edges\x18\x02 \x03(\v2\x16.wavespan.v1.GraphEdgeR\x05edges\x12\x1c\n" +
-	"\ttruncated\x18\x03 \x01(\bR\ttruncated\"\x90\x02\n" +
+	"\ttruncated\x18\x03 \x01(\bR\ttruncated\"\xb7\x02\n" +
 	"\fTunableState\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05group\x18\x02 \x01(\tR\x05group\x12\x14\n" +
@@ -2566,19 +2712,30 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\x03why\x18\t \x01(\tR\x03why\x12\x18\n" +
 	"\aversion\x18\n" +
 	" \x01(\x04R\aversion\x12\x17\n" +
-	"\aenv_var\x18\v \x01(\tR\x06envVar\"\x7f\n" +
+	"\aenv_var\x18\v \x01(\tR\x06envVar\x12%\n" +
+	"\x0eoverride_scope\x18\f \x01(\tR\roverrideScope\"\x7f\n" +
 	"\n" +
 	"NodeConfig\x12\x1d\n" +
 	"\n" +
 	"cluster_id\x18\x01 \x01(\tR\tclusterId\x12\x1b\n" +
 	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x125\n" +
 	"\btunables\x18\x03 \x03(\v2\x19.wavespan.v1.TunableStateR\btunables\"\x12\n" +
-	"\x10GetConfigRequest\"@\n" +
+	"\x10GetConfigRequest\";\n" +
+	"\x11SetTunableRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"\x7f\n" +
+	"\x12SetTunableResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12)\n" +
+	"\x10requires_restart\x18\x03 \x01(\bR\x0frequiresRestart\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\x04R\aversion\"@\n" +
 	"\x14GetNodeConfigRequest\x12(\n" +
-	"\x10target_member_id\x18\x01 \x01(\tR\x0etargetMemberId\"@\n" +
+	"\x10target_member_id\x18\x01 \x01(\tR\x0etargetMemberId\"\x8d\x01\n" +
 	"\x16AdminSetTunableRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"\x84\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12(\n" +
+	"\x10target_member_id\x18\x03 \x01(\tR\x0etargetMemberId\x12!\n" +
+	"\fcluster_wide\x18\x04 \x01(\bR\vclusterWide\"\x84\x01\n" +
 	"\x17AdminSetTunableResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12)\n" +
@@ -2646,9 +2803,11 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\bAdminPut\x12\x1c.wavespan.v1.AdminPutRequest\x1a\x1d.wavespan.v1.AdminPutResponse\x12P\n" +
 	"\vAdminDelete\x12\x1f.wavespan.v1.AdminDeleteRequest\x1a .wavespan.v1.AdminDeleteResponse\x12K\n" +
 	"\rGetNodeConfig\x12!.wavespan.v1.GetNodeConfigRequest\x1a\x17.wavespan.v1.NodeConfig\x12\\\n" +
-	"\x0fAdminSetTunable\x12#.wavespan.v1.AdminSetTunableRequest\x1a$.wavespan.v1.AdminSetTunableResponse2T\n" +
+	"\x0fAdminSetTunable\x12#.wavespan.v1.AdminSetTunableRequest\x1a$.wavespan.v1.AdminSetTunableResponse2\xa3\x01\n" +
 	"\rConfigService\x12C\n" +
-	"\tGetConfig\x12\x1d.wavespan.v1.GetConfigRequest\x1a\x17.wavespan.v1.NodeConfigB\xaa\x01\n" +
+	"\tGetConfig\x12\x1d.wavespan.v1.GetConfigRequest\x1a\x17.wavespan.v1.NodeConfig\x12M\n" +
+	"\n" +
+	"SetTunable\x12\x1e.wavespan.v1.SetTunableRequest\x1a\x1f.wavespan.v1.SetTunableResponseB\xaa\x01\n" +
 	"\x0fcom.wavespan.v1B\x12ObservabilityProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -2664,7 +2823,7 @@ func file_wavespan_v1_observability_proto_rawDescGZIP() []byte {
 }
 
 var file_wavespan_v1_observability_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_wavespan_v1_observability_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_wavespan_v1_observability_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_wavespan_v1_observability_proto_goTypes = []any{
 	(GossipKind)(0),                 // 0: wavespan.v1.GossipKind
 	(GossipDirection)(0),            // 1: wavespan.v1.GossipDirection
@@ -2693,21 +2852,23 @@ var file_wavespan_v1_observability_proto_goTypes = []any{
 	(*TunableState)(nil),            // 24: wavespan.v1.TunableState
 	(*NodeConfig)(nil),              // 25: wavespan.v1.NodeConfig
 	(*GetConfigRequest)(nil),        // 26: wavespan.v1.GetConfigRequest
-	(*GetNodeConfigRequest)(nil),    // 27: wavespan.v1.GetNodeConfigRequest
-	(*AdminSetTunableRequest)(nil),  // 28: wavespan.v1.AdminSetTunableRequest
-	(*AdminSetTunableResponse)(nil), // 29: wavespan.v1.AdminSetTunableResponse
-	(*AdminPutRequest)(nil),         // 30: wavespan.v1.AdminPutRequest
-	(*AdminPutResponse)(nil),        // 31: wavespan.v1.AdminPutResponse
-	(*AdminDeleteRequest)(nil),      // 32: wavespan.v1.AdminDeleteRequest
-	(*AdminDeleteResponse)(nil),     // 33: wavespan.v1.AdminDeleteResponse
-	nil,                             // 34: wavespan.v1.GraphNode.PropertiesEntry
-	(*Version)(nil),                 // 35: wavespan.v1.Version
-	(ConflictState)(0),              // 36: wavespan.v1.ConflictState
-	(Completeness)(0),               // 37: wavespan.v1.Completeness
-	(*ResponseMeta)(nil),            // 38: wavespan.v1.ResponseMeta
-	(*MemberState)(nil),             // 39: wavespan.v1.MemberState
-	(*LatencyEdge)(nil),             // 40: wavespan.v1.LatencyEdge
-	(*Value)(nil),                   // 41: wavespan.v1.Value
+	(*SetTunableRequest)(nil),       // 27: wavespan.v1.SetTunableRequest
+	(*SetTunableResponse)(nil),      // 28: wavespan.v1.SetTunableResponse
+	(*GetNodeConfigRequest)(nil),    // 29: wavespan.v1.GetNodeConfigRequest
+	(*AdminSetTunableRequest)(nil),  // 30: wavespan.v1.AdminSetTunableRequest
+	(*AdminSetTunableResponse)(nil), // 31: wavespan.v1.AdminSetTunableResponse
+	(*AdminPutRequest)(nil),         // 32: wavespan.v1.AdminPutRequest
+	(*AdminPutResponse)(nil),        // 33: wavespan.v1.AdminPutResponse
+	(*AdminDeleteRequest)(nil),      // 34: wavespan.v1.AdminDeleteRequest
+	(*AdminDeleteResponse)(nil),     // 35: wavespan.v1.AdminDeleteResponse
+	nil,                             // 36: wavespan.v1.GraphNode.PropertiesEntry
+	(*Version)(nil),                 // 37: wavespan.v1.Version
+	(ConflictState)(0),              // 38: wavespan.v1.ConflictState
+	(Completeness)(0),               // 39: wavespan.v1.Completeness
+	(*ResponseMeta)(nil),            // 40: wavespan.v1.ResponseMeta
+	(*MemberState)(nil),             // 41: wavespan.v1.MemberState
+	(*LatencyEdge)(nil),             // 42: wavespan.v1.LatencyEdge
+	(*Value)(nil),                   // 43: wavespan.v1.Value
 }
 var file_wavespan_v1_observability_proto_depIdxs = []int32{
 	0,  // 0: wavespan.v1.GossipFilter.kinds:type_name -> wavespan.v1.GossipKind
@@ -2719,51 +2880,53 @@ var file_wavespan_v1_observability_proto_depIdxs = []int32{
 	7,  // 6: wavespan.v1.GossipEvent.gap:type_name -> wavespan.v1.GapMarker
 	4,  // 7: wavespan.v1.StreamGossipRequest.filter:type_name -> wavespan.v1.GossipFilter
 	3,  // 8: wavespan.v1.InspectHolder.holder_class:type_name -> wavespan.v1.HolderClass
-	35, // 9: wavespan.v1.InspectHolder.version:type_name -> wavespan.v1.Version
-	36, // 10: wavespan.v1.InspectHolder.conflict:type_name -> wavespan.v1.ConflictState
-	35, // 11: wavespan.v1.InspectSibling.version:type_name -> wavespan.v1.Version
-	35, // 12: wavespan.v1.InspectKey.version:type_name -> wavespan.v1.Version
-	36, // 13: wavespan.v1.InspectKey.conflict:type_name -> wavespan.v1.ConflictState
+	37, // 9: wavespan.v1.InspectHolder.version:type_name -> wavespan.v1.Version
+	38, // 10: wavespan.v1.InspectHolder.conflict:type_name -> wavespan.v1.ConflictState
+	37, // 11: wavespan.v1.InspectSibling.version:type_name -> wavespan.v1.Version
+	37, // 12: wavespan.v1.InspectKey.version:type_name -> wavespan.v1.Version
+	38, // 13: wavespan.v1.InspectKey.conflict:type_name -> wavespan.v1.ConflictState
 	11, // 14: wavespan.v1.InspectKey.siblings:type_name -> wavespan.v1.InspectSibling
 	10, // 15: wavespan.v1.InspectKey.holders:type_name -> wavespan.v1.InspectHolder
-	37, // 16: wavespan.v1.InspectTrailer.final_completeness:type_name -> wavespan.v1.Completeness
-	38, // 17: wavespan.v1.InspectRow.header:type_name -> wavespan.v1.ResponseMeta
+	39, // 16: wavespan.v1.InspectTrailer.final_completeness:type_name -> wavespan.v1.Completeness
+	40, // 17: wavespan.v1.InspectRow.header:type_name -> wavespan.v1.ResponseMeta
 	12, // 18: wavespan.v1.InspectRow.key:type_name -> wavespan.v1.InspectKey
 	13, // 19: wavespan.v1.InspectRow.trailer:type_name -> wavespan.v1.InspectTrailer
 	2,  // 20: wavespan.v1.InspectLocalRequest.keyspace:type_name -> wavespan.v1.Keyspace
 	2,  // 21: wavespan.v1.InspectGlobalRequest.keyspace:type_name -> wavespan.v1.Keyspace
-	39, // 22: wavespan.v1.GetClusterViewResponse.members:type_name -> wavespan.v1.MemberState
-	40, // 23: wavespan.v1.GetClusterViewResponse.edges:type_name -> wavespan.v1.LatencyEdge
+	41, // 22: wavespan.v1.GetClusterViewResponse.members:type_name -> wavespan.v1.MemberState
+	42, // 23: wavespan.v1.GetClusterViewResponse.edges:type_name -> wavespan.v1.LatencyEdge
 	17, // 24: wavespan.v1.GetClusterViewResponse.repair:type_name -> wavespan.v1.RangeRepairStatus
-	34, // 25: wavespan.v1.GraphNode.properties:type_name -> wavespan.v1.GraphNode.PropertiesEntry
+	36, // 25: wavespan.v1.GraphNode.properties:type_name -> wavespan.v1.GraphNode.PropertiesEntry
 	20, // 26: wavespan.v1.GraphExploreResponse.nodes:type_name -> wavespan.v1.GraphNode
 	21, // 27: wavespan.v1.GraphExploreResponse.edges:type_name -> wavespan.v1.GraphEdge
 	24, // 28: wavespan.v1.NodeConfig.tunables:type_name -> wavespan.v1.TunableState
-	35, // 29: wavespan.v1.AdminPutResponse.version:type_name -> wavespan.v1.Version
-	35, // 30: wavespan.v1.AdminDeleteResponse.version:type_name -> wavespan.v1.Version
-	41, // 31: wavespan.v1.GraphNode.PropertiesEntry.value:type_name -> wavespan.v1.Value
+	37, // 29: wavespan.v1.AdminPutResponse.version:type_name -> wavespan.v1.Version
+	37, // 30: wavespan.v1.AdminDeleteResponse.version:type_name -> wavespan.v1.Version
+	43, // 31: wavespan.v1.GraphNode.PropertiesEntry.value:type_name -> wavespan.v1.Value
 	9,  // 32: wavespan.v1.ObservabilityService.StreamGossip:input_type -> wavespan.v1.StreamGossipRequest
 	15, // 33: wavespan.v1.ObservabilityService.InspectLocal:input_type -> wavespan.v1.InspectLocalRequest
 	16, // 34: wavespan.v1.ObservabilityService.InspectGlobal:input_type -> wavespan.v1.InspectGlobalRequest
 	18, // 35: wavespan.v1.ObservabilityService.GetClusterView:input_type -> wavespan.v1.GetClusterViewRequest
 	22, // 36: wavespan.v1.ObservabilityService.GraphExplore:input_type -> wavespan.v1.GraphExploreRequest
-	30, // 37: wavespan.v1.ObservabilityService.AdminPut:input_type -> wavespan.v1.AdminPutRequest
-	32, // 38: wavespan.v1.ObservabilityService.AdminDelete:input_type -> wavespan.v1.AdminDeleteRequest
-	27, // 39: wavespan.v1.ObservabilityService.GetNodeConfig:input_type -> wavespan.v1.GetNodeConfigRequest
-	28, // 40: wavespan.v1.ObservabilityService.AdminSetTunable:input_type -> wavespan.v1.AdminSetTunableRequest
+	32, // 37: wavespan.v1.ObservabilityService.AdminPut:input_type -> wavespan.v1.AdminPutRequest
+	34, // 38: wavespan.v1.ObservabilityService.AdminDelete:input_type -> wavespan.v1.AdminDeleteRequest
+	29, // 39: wavespan.v1.ObservabilityService.GetNodeConfig:input_type -> wavespan.v1.GetNodeConfigRequest
+	30, // 40: wavespan.v1.ObservabilityService.AdminSetTunable:input_type -> wavespan.v1.AdminSetTunableRequest
 	26, // 41: wavespan.v1.ConfigService.GetConfig:input_type -> wavespan.v1.GetConfigRequest
-	8,  // 42: wavespan.v1.ObservabilityService.StreamGossip:output_type -> wavespan.v1.GossipEvent
-	14, // 43: wavespan.v1.ObservabilityService.InspectLocal:output_type -> wavespan.v1.InspectRow
-	14, // 44: wavespan.v1.ObservabilityService.InspectGlobal:output_type -> wavespan.v1.InspectRow
-	19, // 45: wavespan.v1.ObservabilityService.GetClusterView:output_type -> wavespan.v1.GetClusterViewResponse
-	23, // 46: wavespan.v1.ObservabilityService.GraphExplore:output_type -> wavespan.v1.GraphExploreResponse
-	31, // 47: wavespan.v1.ObservabilityService.AdminPut:output_type -> wavespan.v1.AdminPutResponse
-	33, // 48: wavespan.v1.ObservabilityService.AdminDelete:output_type -> wavespan.v1.AdminDeleteResponse
-	25, // 49: wavespan.v1.ObservabilityService.GetNodeConfig:output_type -> wavespan.v1.NodeConfig
-	29, // 50: wavespan.v1.ObservabilityService.AdminSetTunable:output_type -> wavespan.v1.AdminSetTunableResponse
-	25, // 51: wavespan.v1.ConfigService.GetConfig:output_type -> wavespan.v1.NodeConfig
-	42, // [42:52] is the sub-list for method output_type
-	32, // [32:42] is the sub-list for method input_type
+	27, // 42: wavespan.v1.ConfigService.SetTunable:input_type -> wavespan.v1.SetTunableRequest
+	8,  // 43: wavespan.v1.ObservabilityService.StreamGossip:output_type -> wavespan.v1.GossipEvent
+	14, // 44: wavespan.v1.ObservabilityService.InspectLocal:output_type -> wavespan.v1.InspectRow
+	14, // 45: wavespan.v1.ObservabilityService.InspectGlobal:output_type -> wavespan.v1.InspectRow
+	19, // 46: wavespan.v1.ObservabilityService.GetClusterView:output_type -> wavespan.v1.GetClusterViewResponse
+	23, // 47: wavespan.v1.ObservabilityService.GraphExplore:output_type -> wavespan.v1.GraphExploreResponse
+	33, // 48: wavespan.v1.ObservabilityService.AdminPut:output_type -> wavespan.v1.AdminPutResponse
+	35, // 49: wavespan.v1.ObservabilityService.AdminDelete:output_type -> wavespan.v1.AdminDeleteResponse
+	25, // 50: wavespan.v1.ObservabilityService.GetNodeConfig:output_type -> wavespan.v1.NodeConfig
+	31, // 51: wavespan.v1.ObservabilityService.AdminSetTunable:output_type -> wavespan.v1.AdminSetTunableResponse
+	25, // 52: wavespan.v1.ConfigService.GetConfig:output_type -> wavespan.v1.NodeConfig
+	28, // 53: wavespan.v1.ConfigService.SetTunable:output_type -> wavespan.v1.SetTunableResponse
+	43, // [43:54] is the sub-list for method output_type
+	32, // [32:43] is the sub-list for method input_type
 	32, // [32:32] is the sub-list for extension type_name
 	32, // [32:32] is the sub-list for extension extendee
 	0,  // [0:32] is the sub-list for field type_name
@@ -2787,14 +2950,14 @@ func file_wavespan_v1_observability_proto_init() {
 		(*InspectRow_Key)(nil),
 		(*InspectRow_Trailer)(nil),
 	}
-	file_wavespan_v1_observability_proto_msgTypes[26].OneofWrappers = []any{}
+	file_wavespan_v1_observability_proto_msgTypes[28].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_observability_proto_rawDesc), len(file_wavespan_v1_observability_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   31,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
