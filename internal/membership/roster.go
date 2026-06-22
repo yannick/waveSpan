@@ -28,10 +28,19 @@ type MemberView struct {
 // advances on Tick by the configured timeouts; suspicion and refutation follow SWIM incarnation
 // rules (design/04 "Liveness states").
 type Roster struct {
-	mu      sync.RWMutex
-	selfID  string
-	members map[string]*memberState
-	cfg     LivenessConfig
+	mu       sync.RWMutex
+	selfID   string
+	members  map[string]*memberState
+	cfg      LivenessConfig
+	observer func(memberID string, newState State) // optional liveness-transition observer (M13)
+}
+
+// SetStateObserver installs a callback invoked on every liveness transition (for the observability
+// gossip tap). It is called without the roster lock held.
+func (r *Roster) SetStateObserver(fn func(memberID string, newState State)) {
+	r.mu.Lock()
+	r.observer = fn
+	r.mu.Unlock()
 }
 
 // NewRoster creates a roster seeded with the local member as ALIVE.
@@ -206,6 +215,11 @@ func (r *Roster) setState(ms *memberState, s State, now time.Time) {
 	if ms.state != s {
 		ms.state = s
 		ms.stateSince = unixMs(now)
+		if r.observer != nil {
+			// the observer (gossip tap -> ring) is non-blocking by contract, so calling it while
+			// the roster lock is held is safe (it never blocks or re-enters the roster).
+			r.observer(ms.member.MemberID, s)
+		}
 	}
 }
 

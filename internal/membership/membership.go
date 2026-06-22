@@ -50,6 +50,11 @@ func NewService(self Member, disc Discovery, transport *ConnectTransport, cfg Se
 // GossipHandler returns the mountable Connect handler (path, handler) for the gossip port.
 func (s *Service) GossipHandler() (string, http.Handler) { return s.server.Handler() }
 
+// SetStateObserver installs a liveness-transition observer (for the observability gossip tap, M13).
+func (s *Service) SetStateObserver(fn func(memberID string, newState State)) {
+	s.roster.SetStateObserver(fn)
+}
+
 // SetHolderHooks installs the holder-summary provider/consumer so the cache directory's bloom
 // rides gossip (design/04 "Holder summaries").
 func (s *Service) SetHolderHooks(provide func() HolderSummaryWire, consume func(HolderSummaryWire)) {

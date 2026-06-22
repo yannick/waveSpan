@@ -30,6 +30,7 @@ import (
 	"github.com/cwire/wavespan/internal/security"
 	"github.com/cwire/wavespan/internal/storage"
 	"github.com/cwire/wavespan/internal/ttl"
+	"github.com/cwire/wavespan/internal/ui"
 	"github.com/cwire/wavespan/internal/vector"
 	"github.com/cwire/wavespan/internal/vector/ann"
 	"github.com/cwire/wavespan/internal/version"
@@ -257,6 +258,20 @@ func run() error {
 	adminMux := observability.AdminMux(metrics, ready)
 	adminMux.Handle("/admin/membership", membershipHandler(svc))
 	adminMux.Handle("/admin/latency", latencyHandler(svc))
+
+	// Embedded UI + ObservabilityService (M13): a gossip ring fed by a liveness tap, the streaming
+	// introspection service, and the embedded SPA — all on the admin port behind admin auth.
+	gossipRing := observability.NewGossipRing(4096)
+	gossipTap := observability.NewGossipTap(gossipRing)
+	svc.SetStateObserver(func(memberID string, st membership.State) {
+		gossipTap.StateChange(memberID, livenessKind(st), st.String())
+	})
+	obsSvc := observability.NewObsService(gossipRing, svc, self, rstore).
+		WithUnderReplicated(func() uint64 { return uint64(holders.UnderReplicatedEstimate(targetHolders, isAlive)) })
+	adminIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
+	obsPath, obsHandler := obsSvc.Handler()
+	adminMux.Handle(obsPath, adminIdentity.EnforceHTTP(obsHandler))           // ObservabilityService (admin auth)
+	adminMux.Handle("/", adminIdentity.EnforceHTTP(ui.NewServer().Handler())) // SPA at root (health/metrics take precedence)
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second}
 
 	errCh := make(chan error, 3)
@@ -396,4 +411,18 @@ func latencyHandler(svc *membership.Service) http.HandlerFunc {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// livenessKind maps a membership liveness state to the gossip event kind surfaced in the UI.
+func livenessKind(st membership.State) wavespanv1.GossipKind {
+	switch st {
+	case membership.StateSuspect:
+		return wavespanv1.GossipKind_GOSSIP_SUSPECT
+	case membership.StateAlive:
+		return wavespanv1.GossipKind_GOSSIP_ALIVE
+	case membership.StateUnreachable:
+		return wavespanv1.GossipKind_GOSSIP_UNREACHABLE
+	default:
+		return wavespanv1.GossipKind_GOSSIP_MEMBERSHIP_DELTA
+	}
 }

@@ -8,3 +8,4 @@
 /ui/gen/
 /.wavespan-data/
 /cmd/wavespan-node/.wavespan-data/
+ui/node_modules/

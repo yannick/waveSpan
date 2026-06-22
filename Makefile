@@ -29,7 +29,7 @@ define ok
 endef
 
 .DEFAULT_GOAL := help
-.PHONY: help all build test test-race test-integration lint proto proto-check image tools docker-up docker-kill clean
+.PHONY: help all build test test-race test-integration lint proto proto-check image ui ui-dev tools docker-up docker-kill clean
 
 ## help: show this help
 help:
@@ -85,6 +85,16 @@ proto-check: proto
 image:
 	@$(call step,Building scratch image $(IMAGE) for $(PLATFORMS))
 	@docker buildx build --platform $(PLATFORMS) -f docker/Dockerfile -t $(IMAGE) --load ..
+
+## ui: build the embedded SPA into internal/ui/dist (committed, so `make build` works standalone)
+ui:
+	@$(call step,Building the embedded SPA)
+	@cd ui && npm ci && npm run build
+	@$(call ok,SPA built into internal/ui/dist)
+
+## ui-dev: run the Vite dev server (use with WAVESPAN_UI_DEV=1 on the node)
+ui-dev:
+	@cd ui && npm run dev
 
 ## tools: install code-generation plugins
 tools:
