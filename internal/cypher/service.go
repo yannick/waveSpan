@@ -26,6 +26,7 @@ type Service struct {
 	vectorIndex   func(name string) (*vector.IndexMeta, bool)
 	vectorLive    func(name string) (*vector.LiveIndex, bool)
 	vectorScatter ScatterFunc
+	kv            planner.KVAccess
 }
 
 // NewService wires the Cypher service. newVersion supplies an HLC version for graph mutations
@@ -50,6 +51,13 @@ func (s *Service) WithVectorScatter(scatter ScatterFunc) *Service {
 	return s
 }
 
+// WithKV enables the kv.* built-ins (kv.get / CALL kv.put / CALL kv.delete) over the same KV the
+// gRPC API exposes.
+func (s *Service) WithKV(kv planner.KVAccess) *Service {
+	s.kv = kv
+	return s
+}
+
 // Handler returns the mountable Connect handler for the data port.
 func (s *Service) Handler() (string, http.Handler) {
 	return wavespanv1connect.NewCypherHandler(s, rpcopts.Handler()...)
@@ -67,6 +75,7 @@ func (s *Service) Query(ctx context.Context, req *connect.Request[wavespanv1.Cyp
 		Params: req.Msg.GetParameters(), NewVersion: s.newVersion,
 		VectorStore: s.vectorStore, VectorIndex: s.vectorIndex, VectorLive: s.vectorLive,
 		Ctx: ctx, VectorScatter: s.vectorScatter,
+		KV: s.kv,
 	}
 	res, err := exec.Execute(ast)
 	if err != nil {

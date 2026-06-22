@@ -370,7 +370,8 @@ func run() error {
 	graphStore := graph.NewStore(store)
 	cypherSvc := cypher.NewService(graphStore, cfg.ClusterID, cfg.MemberID, newGraphVersion).
 		WithVector(vstore, indexSet.Meta, indexSet.Live).
-		WithVectorScatter(cypher.NewVectorScatter(cfg.MemberID, vectorPeers, httpClient))
+		WithVectorScatter(cypher.NewVectorScatter(cfg.MemberID, vectorPeers, httpClient)).
+		WithKV(kv.NewCypherKV(reader, coord))
 
 	// Data server on the data port: public KvService + Cypher + Vector + internal ReplicationService.
 	dataMux := http.NewServeMux()
