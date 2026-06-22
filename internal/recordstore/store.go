@@ -205,6 +205,44 @@ func (s *Store) ScanRange(namespace string, start, end []byte, limit int, nowMs 
 	return rows, it.Err()
 }
 
+// ScanRecords returns the full winning StoredRecords in [start, end) for a namespace, including
+// tombstones (used by anti-entropy to compare and ship records). Expired records are not hidden —
+// anti-entropy compares authoritative state.
+func (s *Store) ScanRecords(namespace string, start, end []byte) ([]*wavespanv1.StoredRecord, error) {
+	lo := latestKey(namespace, start)
+	if start == nil {
+		lo = namespacePrefix(namespace)
+	}
+	var hi []byte
+	if end == nil {
+		hi = prefixEnd(namespacePrefix(namespace))
+	} else {
+		hi = latestKey(namespace, end)
+	}
+	it, err := s.local.Scan(storage.CFKVMeta, lo, hi, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = it.Close() }()
+	nsPrefixLen := len(namespacePrefix(namespace))
+	var out []*wavespanv1.StoredRecord
+	for it.Valid() {
+		k := it.Key()
+		lp, derr := storage.DecodeLatestPointer(it.Value())
+		if derr == nil {
+			userKey := append([]byte(nil), k[nsPrefixLen:]...)
+			win := version.FromProto(lp.GetWinner())
+			if rb, found, gerr := s.local.Get(storage.CFKVData, dataKey(namespace, userKey, win)); gerr == nil && found {
+				if rec, rerr := storage.DecodeStoredRecord(rb); rerr == nil {
+					out = append(out, rec)
+				}
+			}
+		}
+		it.Next()
+	}
+	return out, it.Err()
+}
+
 // ExpiredEntry is a ttl-indexed key whose bucket is due, for the sweeper. IndexKey is the raw
 // ttl-index key, used to clear the entry after sweeping.
 type ExpiredEntry struct {
@@ -253,6 +291,44 @@ func (s *Store) ExpiresAt(namespace string, key []byte) (int64, bool) {
 	}
 	return lp.GetExpiresAtUnixMs(), true
 }
+
+// ApplySiblings stores a set of concurrent sibling records for a key (keep-siblings resolution,
+// design/06): every sibling's versioned record is written, and the latest pointer records the
+// highest-versioned sibling as winner with the rest in sibling_versions. Conflict state becomes
+// SIBLINGS_PRESENT so reads can surface them.
+func (s *Store) ApplySiblings(namespace string, key []byte, siblings []*wavespanv1.StoredRecord) error {
+	if len(siblings) == 0 {
+		return nil
+	}
+	winner := siblings[0]
+	for _, r := range siblings[1:] {
+		if version.FromProto(r.GetVersion()).Compare(version.FromProto(winner.GetVersion())) > 0 {
+			winner = r
+		}
+	}
+	lp := &wavespanv1.LatestPointer{Winner: winner.GetVersion(), Tombstone: winner.GetTombstone()}
+	var ops []storage.StoreOp
+	for _, r := range siblings {
+		rv := version.FromProto(r.GetVersion())
+		b, err := EncodeStoredRecordRaw(r)
+		if err != nil {
+			return err
+		}
+		ops = append(ops, storage.StoreOp{CF: storage.CFKVData, Key: dataKey(namespace, key, rv), Value: b})
+		if !rv.Equal(version.FromProto(winner.GetVersion())) {
+			lp.SiblingVersions = append(lp.SiblingVersions, r.GetVersion())
+		}
+	}
+	lpBytes, err := storage.EncodeLatestPointer(lp)
+	if err != nil {
+		return err
+	}
+	ops = append(ops, storage.StoreOp{CF: storage.CFKVMeta, Key: latestKey(namespace, key), Value: lpBytes})
+	return s.local.Batch(ops)
+}
+
+// EncodeStoredRecordRaw marshals a StoredRecord (exposed for ApplySiblings).
+func EncodeStoredRecordRaw(r *wavespanv1.StoredRecord) ([]byte, error) { return storage.EncodeStoredRecord(r) }
 
 // GetRecord returns the winning StoredRecord for a key (used by repair to re-replicate the
 // latest record). found is false when the key is absent locally.

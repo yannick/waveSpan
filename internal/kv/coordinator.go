@@ -39,6 +39,7 @@ type Coordinator struct {
 	holders      *local.HolderDirectory
 	fanout       *local.Fanout
 	onStored     func(namespace string, key []byte)
+	globalTap    func(namespace string, key []byte, rec *wavespanv1.StoredRecord)
 	writeTimeout time.Duration
 }
 
@@ -63,6 +64,13 @@ func (c *Coordinator) recordHolder(namespace string, key []byte, member string, 
 // SetOnStored installs a callback invoked after the origin durable write, so the node advertises
 // itself as a holder.
 func (c *Coordinator) SetOnStored(fn func(namespace string, key []byte)) { c.onStored = fn }
+
+// SetGlobalTap installs a callback invoked after the origin durable write (puts AND tombstones),
+// so the node appends the mutation to each peer cluster's outbound replication log (M7). Only the
+// origin coordinator taps — replica receivers do not — to avoid N× cross-cluster duplication.
+func (c *Coordinator) SetGlobalTap(fn func(namespace string, key []byte, rec *wavespanv1.StoredRecord)) {
+	c.globalTap = fn
+}
 
 // PutOutcome is the result of a coordinated write.
 type PutOutcome struct {
@@ -102,6 +110,9 @@ func (c *Coordinator) write(ctx context.Context, namespace string, key, value []
 	c.recordHolder(namespace, key, c.self.MemberID, v) // origin is a durable holder
 	if c.onStored != nil && !tombstone {
 		c.onStored(namespace, key)
+	}
+	if c.globalTap != nil {
+		c.globalTap(namespace, key, rec) // ship to peer clusters (puts and tombstones)
 	}
 
 	cands, err := placement.Select(c.self, c.cluster.Members(), c.graph, c.policy)
