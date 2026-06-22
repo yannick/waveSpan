@@ -179,8 +179,8 @@ func (p *parser) callClause() (Clause, error) {
 		}
 		name += "." + p.next().Val
 	}
-	if !strings.HasPrefix(name, "vector.") {
-		return nil, fmt.Errorf("cypher: procedure %s is unsupported in v1 (only vector.* procedures)", name)
+	if !strings.HasPrefix(name, "vector.") && !strings.HasPrefix(name, "kv.") {
+		return nil, fmt.Errorf("cypher: procedure %s is unsupported in v1 (only vector.* and kv.* procedures)", name)
 	}
 	if err := p.expectPunct("("); err != nil {
 		return nil, err

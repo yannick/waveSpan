@@ -115,6 +115,18 @@ func TestParsePropertyAccessStillWorks(t *testing.T) {
 	}
 }
 
+func TestParseCallKVPut(t *testing.T) {
+	if _, err := Parse("CALL kv.put('users','u1','v')"); err != nil {
+		t.Fatalf("CALL kv.put should parse: %v", err)
+	}
+}
+
+func TestParseCallUnknownNamespaceRejected(t *testing.T) {
+	if _, err := Parse("CALL foo.bar('x')"); err == nil {
+		t.Fatal("CALL foo.bar should be rejected")
+	}
+}
+
 func TestUnsupportedClauseIsExplicitError(t *testing.T) {
 	for _, q := range []string{
 		"MERGE (n:User {id:'1'})",
