@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"connectrpc.com/connect"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
@@ -199,7 +200,7 @@ func NewGossipConnectServer(g *Gossip, transport *ConnectTransport) *GossipConne
 
 // Handler returns the mountable Connect handler path and http.Handler.
 func (s *GossipConnectServer) Handler() (string, http.Handler) {
-	return wavespanv1connect.NewGossipServiceHandler(s)
+	return wavespanv1connect.NewGossipServiceHandler(s, rpcopts.Handler()...)
 }
 
 // Exchange handles a direct gossip exchange.

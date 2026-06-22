@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/cwire/wavespan/internal/membership"
+	"github.com/cwire/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
@@ -33,7 +34,7 @@ func (s *Service) WithScanner(sc *Scanner) *Service {
 
 // Handler returns the mountable Connect handler (path, handler) for the data port.
 func (s *Service) Handler() (string, http.Handler) {
-	return wavespanv1connect.NewKvServiceHandler(s)
+	return wavespanv1connect.NewKvServiceHandler(s, rpcopts.Handler()...)
 }
 
 func (s *Service) writeMeta() *wavespanv1.ResponseMeta {
