@@ -21,6 +21,10 @@ linters:
       - path: 'internal/version/'
         text: 'conflict with Go standard library'
         linters: [revive]
+      # `parser` is the idiomatic name for the Cypher parser package.
+      - path: 'internal/cypher/parser/'
+        text: 'conflict with Go standard library'
+        linters: [revive]
       # generated code
       - path: '\.pb\.go$'
         linters: [revive, staticcheck, misspell]
