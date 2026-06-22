@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useUrlState } from "../router";
 import { cypher } from "../transport";
 import { Completeness } from "../gen/wavespan/v1/common_pb";
 import { type QueryMeta, type Value } from "../gen/wavespan/v1/cypher_pb";
@@ -41,8 +42,8 @@ const EXAMPLES = [
 ];
 
 export function CypherConsole() {
-  const [graphId, setGraphId] = useState("g");
-  const [query, setQuery] = useState(EXAMPLES[0]);
+  const [graphId, setGraphId] = useUrlState("graph", "g");
+  const [query, setQuery] = useUrlState("q", EXAMPLES[0]);
   const [columns, setColumns] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [meta, setMeta] = useState<QueryMeta | null>(null);

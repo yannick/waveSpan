@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useUrlBool, useUrlState } from "../router";
 import { obs } from "../transport";
 import { Completeness } from "../gen/wavespan/v1/common_pb";
 import { type InspectKey, Keyspace } from "../gen/wavespan/v1/observability_pb";
@@ -41,15 +42,17 @@ function expiry(expiresAtUnixMs: bigint | undefined, now: number): { label: stri
 }
 
 export function DataBrowser() {
-  const [scope, setScope] = useState<Scope>("cluster");
-  const [namespace, setNamespace] = useState("default");
-  const [query, setQuery] = useState("");
-  const [includeValue, setIncludeValue] = useState(true);
-  const [hideExpired, setHideExpired] = useState(true);
+  // Filters live in the URL so a reload / shared link restores the exact table view.
+  const [scopeStr, setScope] = useUrlState("scope", "cluster");
+  const scope = scopeStr as Scope;
+  const [namespace, setNamespace] = useUrlState("ns", "default");
+  const [query, setQuery] = useUrlState("q", "");
+  const [includeValue, setIncludeValue] = useUrlBool("val", true);
+  const [hideExpired, setHideExpired] = useUrlBool("hideExp", true);
+  const [searched, setSearched] = useUrlBool("go", false); // "go" => a search was run; re-run on reload
   const [keys, setKeys] = useState<InspectKey[]>([]);
   const [completeness, setCompleteness] = useState<Completeness | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [searched, setSearched] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -86,6 +89,12 @@ export function DataBrowser() {
     }
     setKeys(collected);
   };
+
+  // Restore exactly what was last seen: if the URL says a search was run, re-run it on load.
+  useEffect(() => {
+    if (searched) void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onDelete = async (k: InspectKey) => {
     setActionError(null);
