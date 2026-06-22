@@ -3,10 +3,119 @@ package storage
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"time"
 
 	"wavesdb"
 )
+
+// EngineOptions carries the wavesdb tunables (resolved from the tunables registry by the caller) into
+// the engine at open time. The zero value is valid and reproduces wavesdb's built-in defaults; the
+// node populates it from config so the storage.engine.* tunables actually take effect (previously
+// OpenWavesdb opened with Options{Path} only and every knob used the library default).
+type EngineOptions struct {
+	// DB-level (wavesdb.Options)
+	BlockCacheSize       int64
+	MaxOpenSSTables      int
+	MaxMemoryUsage       int64
+	NumFlushThreads      int
+	NumCompactionThreads int
+
+	// Column-family level (wavesdb.ColumnFamilyOptions)
+	WriteBufferSize     int
+	LevelSizeRatio      int
+	MinLevels           int
+	KlogValueThreshold  int
+	Compression         string // none|snappy|lz4|zstd|flate
+	EnableBloomFilter   bool
+	BloomFPR            float64
+	EnableBlockIndex    bool
+	IndexSampleRatio    int
+	BlockIndexPrefixLen int
+	SyncMode            string // none|full|interval
+	SyncInterval        time.Duration
+	SkipListMaxLevel    int
+	SkipListProbability float64
+	DefaultIsolation    string // read-uncommitted|read-committed|repeatable-read|snapshot|serializable
+	L1FileCountTrigger  int
+	L0StallThreshold    int
+	UseBTree            bool
+}
+
+func (e EngineOptions) dbOptions(path string) wavesdb.Options {
+	return wavesdb.Options{
+		Path:                 path,
+		BlockCacheSize:       int(e.BlockCacheSize),
+		MaxOpenSSTables:      e.MaxOpenSSTables,
+		MaxMemoryUsage:       e.MaxMemoryUsage,
+		NumFlushThreads:      e.NumFlushThreads,
+		NumCompactionThreads: e.NumCompactionThreads,
+	}
+}
+
+func (e EngineOptions) cfOptions() wavesdb.ColumnFamilyOptions {
+	o := wavesdb.DefaultColumnFamilyOptions()
+	o.WriteBufferSize = e.WriteBufferSize
+	o.LevelSizeRatio = e.LevelSizeRatio
+	o.MinLevels = e.MinLevels
+	o.KlogValueThreshold = e.KlogValueThreshold
+	o.Compression = parseCompression(e.Compression)
+	o.EnableBloomFilter = e.EnableBloomFilter
+	o.BloomFPR = e.BloomFPR
+	o.EnableBlockIndex = e.EnableBlockIndex
+	o.IndexSampleRatio = e.IndexSampleRatio
+	o.BlockIndexPrefixLen = e.BlockIndexPrefixLen
+	o.Sync = parseSyncMode(e.SyncMode)
+	o.SyncInterval = e.SyncInterval
+	o.SkipListMaxLevel = e.SkipListMaxLevel
+	o.SkipListProbability = e.SkipListProbability
+	o.DefaultIsolation = parseIsolation(e.DefaultIsolation)
+	o.L1FileCountTrigger = e.L1FileCountTrigger
+	o.L0StallThreshold = e.L0StallThreshold
+	o.UseBTree = e.UseBTree
+	return o
+}
+
+func parseCompression(s string) wavesdb.Compression {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "snappy":
+		return wavesdb.CompressionSnappy
+	case "lz4":
+		return wavesdb.CompressionLZ4
+	case "zstd":
+		return wavesdb.CompressionZstd
+	case "flate":
+		return wavesdb.CompressionFlate
+	default:
+		return wavesdb.CompressionNone
+	}
+}
+
+func parseSyncMode(s string) wavesdb.SyncMode {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "full":
+		return wavesdb.SyncFull
+	case "interval":
+		return wavesdb.SyncInterval
+	default:
+		return wavesdb.SyncNone
+	}
+}
+
+func parseIsolation(s string) wavesdb.IsolationLevel {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "read-uncommitted":
+		return wavesdb.ReadUncommitted
+	case "read-committed":
+		return wavesdb.ReadCommitted
+	case "repeatable-read":
+		return wavesdb.RepeatableRead
+	case "serializable":
+		return wavesdb.Serializable
+	default:
+		return wavesdb.Snapshot
+	}
+}
 
 // ttlForExpiry converts an absolute expires-at unix-ms into the remaining lifetime wavesdb expects
 // as a per-key TTL. 0 (or unset) means no TTL. An already-past expiry yields a minimal positive
@@ -29,18 +138,25 @@ type WavesdbStore struct {
 	cfs map[ColumnFamily]*wavesdb.ColumnFamily
 }
 
-// OpenWavesdb opens (or creates) a wavesdb database at path and ensures all logical column
-// families exist.
+// OpenWavesdb opens (or creates) a wavesdb database at path with the library's default engine
+// tunables. Used by tests and callers that don't tune the engine.
 func OpenWavesdb(path string) (*WavesdbStore, error) {
-	db, err := wavesdb.Open(wavesdb.Options{Path: path})
+	return OpenWavesdbWith(path, defaultEngineOptions())
+}
+
+// OpenWavesdbWith opens (or creates) a wavesdb database at path with the supplied engine tunables and
+// ensures all logical column families exist. The node builds opts from the storage.engine.* tunables.
+func OpenWavesdbWith(path string, opts EngineOptions) (*WavesdbStore, error) {
+	db, err := wavesdb.Open(opts.dbOptions(path))
 	if err != nil {
 		return nil, err
 	}
+	cfOpts := opts.cfOptions()
 	s := &WavesdbStore{db: db, cfs: make(map[ColumnFamily]*wavesdb.ColumnFamily, len(allColumnFamilies))}
 	for _, cf := range allColumnFamilies {
 		h := db.GetColumnFamily(cf.Name())
 		if h == nil {
-			h, err = db.CreateColumnFamily(cf.Name(), wavesdb.DefaultColumnFamilyOptions())
+			h, err = db.CreateColumnFamily(cf.Name(), cfOpts)
 			if err != nil {
 				_ = db.Close()
 				return nil, err
@@ -49,6 +165,32 @@ func OpenWavesdb(path string) (*WavesdbStore, error) {
 		s.cfs[cf] = h
 	}
 	return s, nil
+}
+
+// defaultEngineOptions mirrors wavesdb's DefaultColumnFamilyOptions so OpenWavesdb (no tunables)
+// behaves exactly as before.
+func defaultEngineOptions() EngineOptions {
+	d := wavesdb.DefaultColumnFamilyOptions()
+	return EngineOptions{
+		WriteBufferSize:     d.WriteBufferSize,
+		LevelSizeRatio:      d.LevelSizeRatio,
+		MinLevels:           d.MinLevels,
+		KlogValueThreshold:  d.KlogValueThreshold,
+		Compression:         "none",
+		EnableBloomFilter:   d.EnableBloomFilter,
+		BloomFPR:            d.BloomFPR,
+		EnableBlockIndex:    d.EnableBlockIndex,
+		IndexSampleRatio:    d.IndexSampleRatio,
+		BlockIndexPrefixLen: d.BlockIndexPrefixLen,
+		SyncMode:            "none",
+		SyncInterval:        d.SyncInterval,
+		SkipListMaxLevel:    d.SkipListMaxLevel,
+		SkipListProbability: d.SkipListProbability,
+		DefaultIsolation:    "snapshot",
+		L1FileCountTrigger:  d.L1FileCountTrigger,
+		L0StallThreshold:    d.L0StallThreshold,
+		UseBTree:            d.UseBTree,
+	}
 }
 
 func (s *WavesdbStore) handle(cf ColumnFamily) (*wavesdb.ColumnFamily, error) {

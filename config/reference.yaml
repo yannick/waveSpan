@@ -1,0 +1,492 @@
+# WaveSpan tunables reference — generated; do not edit by hand.
+# Regenerate with: go run ./cmd/wavespan-confdoc > config/reference.yaml
+#
+# Every performance/behaviour knob across WaveSpan and the wavesdb storage engine, with its
+# default and rationale. Precedence (low→high): built-in default < this file < env var <
+# runtime override (gossip). Override any value here (k8s ConfigMap) or via its
+# WAVESPAN_TUNABLE_* env var. Category: [hot] = changeable at runtime via gossip and applied
+# live; [static] = applied at startup / engine-open, so a change needs a node restart.
+tunables:
+  storage:
+    engine:
+
+      # [bytes, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_WRITE_BUFFER_SIZE
+      # Memtable size that triggers a flush to an L0 SSTable; also the compaction output
+      # file-size target.
+      # why: 64MiB balances write amplification against memory per column family (TidesDB
+      # heritage); larger = fewer, bigger flushes but more RAM and longer recovery.
+      writeBufferSize: 64MiB
+
+      # [bytes, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_BLOCK_CACHE_SIZE
+      # Size of the shared block cache for SSTable reads (negative disables).
+      # why: 64MiB is a modest default that helps hot reads without dominating pod memory;
+      # raise on read-heavy nodes.
+      blockCacheSize: 64MiB
+
+      # [int, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_MAX_OPEN_SS_TABLES
+      # Cap on cached open SSTable file handles.
+      # why: 256 keeps file-descriptor use bounded while covering typical level fan-out; raise
+      # for very large datasets.
+      maxOpenSSTables: 256
+
+      # [bytes, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_MAX_MEMORY_USAGE
+      # Soft global memory limit for the engine in bytes (0 = unlimited).
+      # why: 0 by default so the engine is bounded by GOMEMLIMIT/pod limits rather than an
+      # internal cap.
+      maxMemoryUsage: 0
+
+      # [int, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_NUM_FLUSH_THREADS
+      # Background memtable-flush workers (0 = auto: min(NumCPU,4)).
+      # why: Auto matches flush parallelism to cores without oversubscribing a small pod.
+      numFlushThreads: 0
+
+      # [int, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_NUM_COMPACTION_THREADS
+      # Background compaction workers (0 = auto: 2).
+      # why: Two compactors keep up with steady writes without starving foreground work on
+      # small nodes.
+      numCompactionThreads: 0
+
+      # [int, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_LEVEL_SIZE_RATIO
+      # Capacity multiplier between adjacent LSM levels (Li+1 holds ~ratio× Li).
+      # why: 10 is the classic leveled-LSM ratio: good read/space amplification trade-off.
+      levelSizeRatio: 10
+
+      # [int, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_MIN_LEVELS
+      # Minimum number of on-disk levels.
+      # why: 1 lets small datasets stay shallow; the tree grows levels on demand.
+      minLevels: 1
+
+      # [bytes, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_KLOG_VALUE_THRESHOLD
+      # Value size at/above which values are stored in the value log (WiscKey key/value
+      # separation).
+      # why: 512B keeps small values inline (fast point reads) while large values avoid
+      # bloating the key log.
+      klogValueThreshold: 512
+
+      # [string, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_COMPRESSION
+      # SSTable block codec: none | snappy | lz4 | zstd | flate.
+      # why: none by default for lowest CPU and predictable latency on fast local disks;
+      # enable zstd/snappy to trade CPU for space.
+      compression: none
+
+      # [bool, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_ENABLE_BLOOM_FILTER
+      # Build a per-SSTable bloom filter to skip non-matching files on point reads.
+      # why: true: a small filter dramatically cuts disk reads for absent keys, which dominate
+      # cache-miss reads.
+      enableBloomFilter: true
+
+      # [float, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_BLOOM_FPR
+      # Target bloom-filter false-positive rate.
+      # why: 1% balances filter memory against wasted SSTable probes; lower = larger filters.
+      bloomFpr: 0.01
+
+      # [bool, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_ENABLE_BLOCK_INDEX
+      # Build a sparse in-SSTable block index for fast seeks.
+      # why: true: seeks land near the key without scanning the whole block; cost is a small
+      # index per file.
+      enableBlockIndex: true
+
+      # [int, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_INDEX_SAMPLE_RATIO
+      # Sample every Nth entry into the block index (1 = index every entry).
+      # why: 1 gives the tightest seeks; raise to shrink the index at the cost of slightly
+      # longer in-block scans.
+      indexSampleRatio: 1
+
+      # [int, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_BLOCK_INDEX_PREFIX_LEN
+      # Key-prefix length (bytes) stored per block-index entry.
+      # why: 16 bytes disambiguates typical keys while keeping the index compact.
+      blockIndexPrefixLen: 16
+
+      # [string, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_SYNC_MODE
+      # WAL durability: none (OS flush) | full (fsync per commit) | interval (periodic fsync).
+      # why: none favours throughput on the eventually-consistent, origin+1-replicated write
+      # path; a second durable replica is the real safety net, not local fsync.
+      syncMode: none
+
+      # [duration, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_SYNC_INTERVAL
+      # Flush period when syncMode = interval.
+      # why: 128ms bounds data-loss-on-crash to a fraction of a second while amortizing fsync
+      # cost.
+      syncInterval: 128ms
+
+      # [int, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_SKIP_LIST_MAX_LEVEL
+      # Maximum level of the memtable skip list.
+      # why: 12 supports millions of memtable entries with O(log n) ops before a flush.
+      skipListMaxLevel: 12
+
+      # [float, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_SKIP_LIST_PROBABILITY
+      # Promotion probability for the memtable skip list.
+      # why: 0.25 is the standard skip-list p: a good height/space trade-off.
+      skipListProbability: 0.25
+
+      # [string, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_DEFAULT_ISOLATION
+      # Default transaction isolation: read-uncommitted | read-committed | repeatable-read |
+      # snapshot | serializable.
+      # why: snapshot gives consistent reads with write-write conflict detection without full
+      # SSI overhead.
+      defaultIsolation: snapshot
+
+      # [int, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_L1_FILE_COUNT_TRIGGER
+      # Number of L0 files that triggers an L0→L1 compaction.
+      # why: 4 keeps L0 shallow (L0 files overlap, so reads scan them all) without compacting
+      # on every flush.
+      l1FileCountTrigger: 4
+
+      # [int, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_L0_STALL_THRESHOLD
+      # Immutable-memtable queue depth at which writes are back-pressured.
+      # why: 10 lets flushes burst-buffer under load before slowing writers to protect memory.
+      l0StallThreshold: 10
+
+      # [bytes, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_KLOG_BLOCK_SIZE
+      # Target key-log block size.
+      # why: 64KiB amortizes per-block overhead and matches typical read-ahead.
+      klogBlockSize: 64KiB
+
+      # [bytes, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_MIN_DISK_SPACE
+      # Minimum free disk space the engine requires before accepting writes.
+      # why: 100MiB headroom avoids wedging compaction (which needs scratch space) when a
+      # volume fills.
+      minDiskSpace: 100MiB
+
+      # [bool, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_USE_B_TREE
+      # Store the key log as a B-tree instead of sorted blocks (faster reads, slower writes).
+      # why: false: the sorted-block layout suits the write-heavy KV path; enable for
+      # read-dominated CFs.
+      useBTree: false
+  membership:
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_MEMBERSHIP_GOSSIP_INTERVAL
+    # Interval between SWIM gossip rounds (each round probes one peer and exchanges deltas).
+    # why: 1s converges membership in a few seconds for typical clusters without flooding the
+    # network.
+    gossipInterval: 1s
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_MEMBERSHIP_SUSPICION_TIMEOUT
+    # Time a SUSPECT member waits before advancing to UNREACHABLE.
+    # why: 3s (≈3 gossip rounds) tolerates a transient blip before escalating, balancing
+    # false positives vs. detection speed for spot churn.
+    suspicionTimeout: 3s
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_MEMBERSHIP_UNREACHABLE_TIMEOUT
+    # Additional time an UNREACHABLE member persists before being marked DEAD.
+    # why: 10s gives repair time to start before the member is treated as gone.
+    unreachableTimeout: 10s
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_MEMBERSHIP_DEAD_RETENTION
+    # Time a DEAD member is retained before being FORGOTTEN.
+    # why: 5m lets repair fully rebuild the dead node's replicas before its identity is
+    # dropped.
+    deadRetention: 5m
+
+    # [int, hot] env: WAVESPAN_TUNABLE_MEMBERSHIP_INDIRECT_FANOUT
+    # Number of relay peers used for a SWIM indirect probe when a direct ping fails.
+    # why: k=3 is the canonical SWIM value: high probability of reaching a live-but-slow peer
+    # without a broadcast.
+    indirectFanout: 3
+  latency:
+
+    # [float, hot] env: WAVESPAN_TUNABLE_LATENCY_EWMA_ALPHA
+    # EWMA smoothing factor for per-edge RTT (0,1).
+    # why: 0.2 weights recent samples enough to track real latency shifts while damping
+    # single-sample noise.
+    ewmaAlpha: 0.2
+
+    # [float, hot] env: WAVESPAN_TUNABLE_LATENCY_REF_MAX_RTT_MS
+    # RTT reference baseline (ms) used to normalize the latency score to [0,1].
+    # why: 50ms is a reasonable intra-region ceiling; RTTs above it saturate the score.
+    refMaxRttMs: 50
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_LATENCY_EDGE_EXPIRY
+    # Edges with no fresh sample within this window are dropped.
+    # why: 30s prevents stale latency from steering placement after a path changes.
+    edgeExpiry: 30s
+
+    # [int, hot] env: WAVESPAN_TUNABLE_LATENCY_RECENT_WINDOW
+    # Recent RTT samples kept per edge for p95 estimation.
+    # why: 64 samples gives a stable p95 without unbounded per-edge memory.
+    recentWindow: 64
+    weight:
+
+      # [float, hot] env: WAVESPAN_TUNABLE_LATENCY_WEIGHT_EWMA
+      # Placement-score weight: EWMA RTT (the dominant signal).
+      # why: 0.55 makes measured average latency the primary driver of replica placement.
+      ewma: 0.55
+
+      # [float, hot] env: WAVESPAN_TUNABLE_LATENCY_WEIGHT_P95
+      # Placement-score weight: p95 RTT (tail latency).
+      # why: 0.15 penalizes jittery links beyond their average.
+      p95: 0.15
+
+      # [float, hot] env: WAVESPAN_TUNABLE_LATENCY_WEIGHT_PACKET_LOSS
+      # Placement-score weight: packet loss.
+      # why: 0.10 demotes lossy peers that would need retransmits.
+      packetLoss: 0.10
+
+      # [float, hot] env: WAVESPAN_TUNABLE_LATENCY_WEIGHT_LOAD_PRESSURE
+      # Placement-score weight: peer load pressure.
+      # why: 0.10 steers replicas away from busy nodes.
+      loadPressure: 0.10
+
+      # [float, hot] env: WAVESPAN_TUNABLE_LATENCY_WEIGHT_DISK_PRESSURE
+      # Placement-score weight: peer disk pressure.
+      # why: 0.05 avoids placing durable replicas on near-full nodes.
+      diskPressure: 0.05
+
+      # [float, hot] env: WAVESPAN_TUNABLE_LATENCY_WEIGHT_TOPOLOGY
+      # Placement-score weight: zone/region topology hint.
+      # why: 0.05 is a tiebreaker only — measured RTT is authoritative, not labels.
+      topology: 0.05
+  replication:
+
+    # [int, hot] env: WAVESPAN_TUNABLE_REPLICATION_TARGET_NEARBY_REPLICAS
+    # Background target replica count per key (origin + N nearby durable replicas).
+    # why: 3 gives durability headroom beyond the origin+1 ACK so a node loss rarely
+    # under-replicates.
+    targetNearbyReplicas: 3
+
+    # [int, hot] env: WAVESPAN_TUNABLE_REPLICATION_MIN_ACK_NEARBY_REPLICAS
+    # Nearby durable replicas required before a write ACKs (origin+1).
+    # why: 1 = origin+1: the value survives any single pod loss before the client sees
+    # success, without quorum latency.
+    minAckNearbyReplicas: 1
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_REPLICATION_WRITE_TIMEOUT
+    # Timeout for replicating a write to a nearby durable replica.
+    # why: 2s bounds origin+1 latency under a slow peer before falling back to repair.
+    writeTimeout: 2s
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_REPLICATION_REPAIR_INTERVAL
+    # Repair worker tick interval (rate-limit; processes a bounded batch per tick).
+    # why: 200ms steadily heals under-replication without saturating the network during churn.
+    repairInterval: 200ms
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_REPLICATION_REPAIR_WRITE_TIMEOUT
+    # Timeout for pushing a repair replica to a candidate holder.
+    # why: 2s matches the foreground write timeout so a stuck peer is skipped quickly.
+    repairWriteTimeout: 2s
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_REPLICATION_FANOUT_WRITE_TIMEOUT
+    # Timeout for an async target-N fanout write after the ACK.
+    # why: 2s keeps fanout from piling up on a slow peer.
+    fanoutWriteTimeout: 2s
+
+    # [int, static] env: WAVESPAN_TUNABLE_REPLICATION_FANOUT_QUEUE_CAPACITY
+    # Buffered capacity of the post-ACK fanout job queue (overflow spills to repair).
+    # why: 4096 absorbs write bursts; overflow is safe because repair re-derives the work.
+    fanoutQueueCapacity: 4096
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_REPLICATION_ANTI_ENTROPY_INTERVAL
+    # Intra-cluster anti-entropy reconciliation interval (LWW convergence).
+    # why: 2s reconciles divergence promptly while keeping background scan cost low.
+    antiEntropyInterval: 2s
+
+    # [int, hot] env: WAVESPAN_TUNABLE_REPLICATION_ANTI_ENTROPY_BATCH
+    # Keys scanned per intra-cluster anti-entropy tick, per namespace.
+    # why: 256 bounds per-tick work so reconciliation is incremental, not a stop-the-world
+    # scan.
+    antiEntropyBatch: 256
+
+    # [int, hot] env: WAVESPAN_TUNABLE_REPLICATION_BOOTSTRAP_PAGE
+    # Page size when backfilling 'all'/'global' namespaces onto a joining node.
+    # why: 512 records per page streams efficiently without large RPC payloads.
+    bootstrapPage: 512
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_REPLICATION_BOOTSTRAP_RETRY_INTERVAL
+    # Retry interval for join-time bootstrap until a source namespace is reachable.
+    # why: 2s retries promptly during a rolling start without busy-looping.
+    bootstrapRetryInterval: 2s
+
+    # [int, hot] env: WAVESPAN_TUNABLE_REPLICATION_BACKFILL_MAX_PAGE
+    # Maximum page size accepted for a Backfill RPC response.
+    # why: 1024 caps a single response so a backfill can't be forced into huge allocations.
+    backfillMaxPage: 1024
+  global:
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_GLOBAL_SENDER_INTERVAL
+    # Interval at which the global sender drains the out-log to peer clusters.
+    # why: 1s keeps cross-cluster lag low while batching writes for efficiency.
+    senderInterval: 1s
+
+    # [int, hot] env: WAVESPAN_TUNABLE_GLOBAL_SENDER_BATCH
+    # Out-log entries drained per peer per partition per tick.
+    # why: 256 amortizes RPC overhead without holding the out-log lock too long.
+    senderBatch: 256
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_GLOBAL_RECONCILE_INTERVAL
+    # Cross-cluster anti-entropy reconciliation interval.
+    # why: 30s catches entries missed by streaming without heavy continuous cross-region
+    # traffic.
+    reconcileInterval: 30s
+
+    # [int, static] env: WAVESPAN_TUNABLE_GLOBAL_NUM_PARTITIONS
+    # Partitions per peer's out-log (so one stalled key-range doesn't block others).
+    # why: 16 gives good parallelism across peers without excessive per-peer state.
+    numPartitions: 16
+
+    # [bytes, static] env: WAVESPAN_TUNABLE_GLOBAL_OUT_LOG_DISK_BUDGET_BYTES
+    # Disk budget for a peer out-log before back-pressuring globally-durable writes (0 =
+    # unbounded).
+    # why: 0 by default; set a budget when globalDurabilityRequired namespaces must not outrun
+    # a slow peer.
+    outLogDiskBudgetBytes: 0
+  ttl:
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_TTL_SWEEP_INTERVAL
+    # Lazy TTL sweeper interval; tombstones expired keys so deletion propagates to replicas.
+    # why: 30s reclaims/propagates expiry promptly without a tight scan loop; logical expiry
+    # is already enforced on read, so this is best-effort cleanup.
+    sweepInterval: 30s
+
+    # [int, hot] env: WAVESPAN_TUNABLE_TTL_BATCH
+    # Expired entries processed per sweep tick.
+    # why: 256 keeps each tick short so the sweeper never blocks foreground work.
+    batch: 256
+  cache:
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_CACHE_IDLE_TTL
+    # Idle time after which a read-created dynamic cache replica is evicted.
+    # why: 10m keeps recently-read keys local while reclaiming cold cache entries; cache
+    # replicas are derived and safe to drop.
+    idleTTL: 10m
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_CACHE_EVICTION_INTERVAL
+    # Cache eviction sweep interval.
+    # why: 1m is frequent enough to bound cache memory without per-second scanning.
+    evictionInterval: 1m
+  kv:
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_KV_WRITE_TIMEOUT
+    # Timeout for the origin+1 coordinator write.
+    # why: 2s bounds client-visible write latency before returning an error to retry.
+    writeTimeout: 2s
+
+    # [int, static] env: WAVESPAN_TUNABLE_KV_NUM_STRIPES
+    # Per-key lock stripes serializing the latest-pointer read-modify-write.
+    # why: 512 stripes make same-key contention rare while keeping lock memory tiny;
+    # independent keys commit in parallel.
+    numStripes: 512
+
+    # [int, static] env: WAVESPAN_TUNABLE_KV_MAX_VER_CACHE_PER
+    # Per-stripe cap on the in-memory latest-version cache (cleared on overflow).
+    # why: 8192 lets monotonic writes skip the storage read on the hot path while bounding
+    # memory per stripe.
+    maxVerCachePer: 8192
+  server:
+
+    # [duration, static] env: WAVESPAN_TUNABLE_SERVER_READ_HEADER_TIMEOUT
+    # Read-header timeout for the data, gossip, and admin HTTP servers.
+    # why: 5s defends against slowloris-style stalls without cutting off legitimately slow
+    # links.
+    readHeaderTimeout: 5s
+
+    # [duration, static] env: WAVESPAN_TUNABLE_SERVER_SHUTDOWN_TIMEOUT
+    # Graceful-shutdown deadline for in-flight requests on SIGTERM.
+    # why: 10s lets active RPCs drain during a rolling restart before forced close.
+    shutdownTimeout: 10s
+
+    # [int, static] env: WAVESPAN_TUNABLE_SERVER_H2_MAX_CONCURRENT_STREAMS
+    # Max concurrent HTTP/2 streams per connection (h2c data path).
+    # why: 1024 supports high request concurrency over the shared pooled connection.
+    h2MaxConcurrentStreams: 1024
+
+    # [duration, static] env: WAVESPAN_TUNABLE_SERVER_H2_IDLE_TIMEOUT
+    # HTTP/2 server idle timeout before closing a connection.
+    # why: 2m keeps warm pooled connections alive across bursts.
+    h2IdleTimeout: 2m
+
+    # [duration, static] env: WAVESPAN_TUNABLE_SERVER_H2_READ_IDLE_TIMEOUT
+    # Send an HTTP/2 PING after this much read-idle to detect dead peers.
+    # why: 30s detects a silently-dropped connection well before TCP would.
+    h2ReadIdleTimeout: 30s
+
+    # [duration, static] env: WAVESPAN_TUNABLE_SERVER_H2_PING_TIMEOUT
+    # Close the connection if a server-side HTTP/2 PING is unanswered this long.
+    # why: 10s reclaims a half-open connection quickly.
+    h2PingTimeout: 10s
+
+    # [duration, static] env: WAVESPAN_TUNABLE_SERVER_H2_WRITE_BYTE_TIMEOUT
+    # Timeout for writing a byte to an HTTP/2 peer before giving up.
+    # why: 30s bounds a stuck write without tripping on brief back-pressure.
+    h2WriteByteTimeout: 30s
+
+    # [duration, static] env: WAVESPAN_TUNABLE_SERVER_H2_CLIENT_TIMEOUT
+    # Overall request timeout for the h2c client path.
+    # why: 30s caps a hung request; streaming RPCs use their own context deadlines.
+    h2ClientTimeout: 30s
+  transport:
+
+    # [int, static] env: WAVESPAN_TUNABLE_TRANSPORT_MAX_IDLE_CONNS
+    # Total idle connections kept warm across all peers.
+    # why: 512 keeps connections to many peers hot so mTLS handshakes stay rare (design/27).
+    maxIdleConns: 512
+
+    # [int, static] env: WAVESPAN_TUNABLE_TRANSPORT_MAX_IDLE_CONNS_PER_HOST
+    # Idle connections kept warm per peer.
+    # why: 64 sustains high concurrency to a single busy peer without re-handshaking.
+    maxIdleConnsPerHost: 64
+
+    # [duration, static] env: WAVESPAN_TUNABLE_TRANSPORT_IDLE_CONN_TIMEOUT
+    # How long an idle pooled connection survives before close.
+    # why: 10m keeps connections warm across bursty traffic, amortizing handshakes.
+    idleConnTimeout: 10m
+
+    # [duration, static] env: WAVESPAN_TUNABLE_TRANSPORT_TCP_KEEP_ALIVE
+    # OS-level TCP keepalive probe interval.
+    # why: 30s keeps NAT/conntrack entries warm so pooled connections aren't silently dropped.
+    tcpKeepAlive: 30s
+
+    # [duration, static] env: WAVESPAN_TUNABLE_TRANSPORT_DIAL_TIMEOUT
+    # Bound on establishing a new connection (including TLS handshake).
+    # why: 5s fails fast to an unreachable peer so callers fall back to another holder.
+    dialTimeout: 5s
+
+    # [duration, static] env: WAVESPAN_TUNABLE_TRANSPORT_H2_READ_IDLE_TIMEOUT
+    # Client-side HTTP/2 PING-on-idle interval (0 disables).
+    # why: 30s detects dead pooled connections proactively.
+    h2ReadIdleTimeout: 30s
+
+    # [duration, static] env: WAVESPAN_TUNABLE_TRANSPORT_H2_PING_TIMEOUT
+    # Drop a pooled connection if a client HTTP/2 PING goes unanswered this long.
+    # why: 15s reclaims a dead connection before it stalls a request.
+    h2PingTimeout: 15s
+  observability:
+
+    # [int, static] env: WAVESPAN_TUNABLE_OBSERVABILITY_GOSSIP_RING_CAPACITY
+    # Bounded ring-buffer of recent gossip events for the UI tap (overflow drops with a gap
+    # marker).
+    # why: 4096 gives the Gossip Inspector useful backfill without unbounded memory.
+    gossipRingCapacity: 4096
+
+    # [int, static] env: WAVESPAN_TUNABLE_OBSERVABILITY_SUBSCRIBER_BUFFER
+    # Per-subscriber buffered channel depth for the gossip stream.
+    # why: 512 absorbs a slow UI client before dropping events with a gap marker.
+    subscriberBuffer: 512
+
+    # [int, hot] env: WAVESPAN_TUNABLE_OBSERVABILITY_GRAPH_EXPLORE_CAP
+    # Maximum nodes returned by a GraphExplore (Node Explorer) request.
+    # why: 500 keeps the force-directed view responsive and the response bounded.
+    graphExploreCap: 500
+
+    # [int, hot] env: WAVESPAN_TUNABLE_OBSERVABILITY_INSPECT_ROW_CAP
+    # Maximum rows returned by an InspectLocal (Data Browser) scan.
+    # why: 1000 bounds a debug scan so it can't stream an entire namespace into the UI.
+    inspectRowCap: 1000
+  vector:
+
+    # [duration, hot] env: WAVESPAN_TUNABLE_VECTOR_MERGE_INTERVAL
+    # Interval at which the vector index merger folds the delta index into main segments.
+    # why: 5s keeps ANN index freshness lag low while batching segment rebuilds.
+    mergeInterval: 5s
+  runtime:
+
+    # [int, hot] env: WAVESPAN_TUNABLE_RUNTIME_GOGC
+    # Go garbage-collector target percentage (GOGC).
+    # why: 100 is the Go default; lower trades CPU for less heap, higher trades heap for less
+    # GC CPU.
+    gogc: 100
+
+    # [bytes, hot] env: WAVESPAN_TUNABLE_RUNTIME_MEM_LIMIT
+    # Soft memory limit for the Go runtime (GOMEMLIMIT; 0 = unset).
+    # why: 0 by default so the pod's cgroup limit governs; set to ~pod limit to make the GC
+    # back off before OOM.
+    memLimit: 0

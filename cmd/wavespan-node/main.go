@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"syscall"
 	"time"
@@ -35,6 +36,7 @@ import (
 	"github.com/cwire/wavespan/internal/security"
 	"github.com/cwire/wavespan/internal/storage"
 	"github.com/cwire/wavespan/internal/ttl"
+	"github.com/cwire/wavespan/internal/tunables"
 	"github.com/cwire/wavespan/internal/ui"
 	"github.com/cwire/wavespan/internal/vector"
 	"github.com/cwire/wavespan/internal/vector/ann"
@@ -60,6 +62,15 @@ func run() error {
 		return err
 	}
 
+	// Performance/behaviour tunables (koanf: defaults < the same YAML file's `tunables:` block <
+	// WAVESPAN_TUNABLE_* env). Static tunables are read here; Hot ones are re-read live by their
+	// workers (and, later, mutated via gossip). See internal/tunables + config/reference.yaml.
+	tun, err := tunables.Load(*configPath, nil)
+	if err != nil {
+		return err
+	}
+	applyRuntimeTunables(tun)
+
 	logger := observability.NewLogger(cfg.Membership.Runtime, cfg.ClusterID, cfg.MemberID)
 	metrics := observability.NewMetrics()
 	ready := observability.NewReadiness()
@@ -68,7 +79,7 @@ func run() error {
 	if err := os.MkdirAll(cfg.Storage.Path, 0o755); err != nil {
 		return fmt.Errorf("create storage dir: %w", err)
 	}
-	store, err := storage.OpenWavesdb(cfg.Storage.Path)
+	store, err := storage.OpenWavesdbWith(cfg.Storage.Path, engineOptions(tun))
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
@@ -619,4 +630,52 @@ func livenessKind(st membership.State) wavespanv1.GossipKind {
 	default:
 		return wavespanv1.GossipKind_GOSSIP_MEMBERSHIP_DELTA
 	}
+}
+
+// engineOptions resolves the storage.engine.* tunables into wavesdb open options.
+func engineOptions(t *tunables.Registry) storage.EngineOptions {
+	g := func(k string) *tunables.Param { return t.Get("storage.engine." + k) }
+	return storage.EngineOptions{
+		BlockCacheSize:       g("blockCacheSize").Int64(),
+		MaxOpenSSTables:      g("maxOpenSSTables").Int(),
+		MaxMemoryUsage:       g("maxMemoryUsage").Int64(),
+		NumFlushThreads:      g("numFlushThreads").Int(),
+		NumCompactionThreads: g("numCompactionThreads").Int(),
+		WriteBufferSize:      g("writeBufferSize").Int(),
+		LevelSizeRatio:       g("levelSizeRatio").Int(),
+		MinLevels:            g("minLevels").Int(),
+		KlogValueThreshold:   g("klogValueThreshold").Int(),
+		Compression:          g("compression").String(),
+		EnableBloomFilter:    g("enableBloomFilter").Bool(),
+		BloomFPR:             g("bloomFpr").Float(),
+		EnableBlockIndex:     g("enableBlockIndex").Bool(),
+		IndexSampleRatio:     g("indexSampleRatio").Int(),
+		BlockIndexPrefixLen:  g("blockIndexPrefixLen").Int(),
+		SyncMode:             g("syncMode").String(),
+		SyncInterval:         g("syncInterval").Duration(),
+		SkipListMaxLevel:     g("skipListMaxLevel").Int(),
+		SkipListProbability:  g("skipListProbability").Float(),
+		DefaultIsolation:     g("defaultIsolation").String(),
+		L1FileCountTrigger:   g("l1FileCountTrigger").Int(),
+		L0StallThreshold:     g("l0StallThreshold").Int(),
+		UseBTree:             g("useBTree").Bool(),
+	}
+}
+
+// applyRuntimeTunables applies the runtime.* tunables to the Go runtime and registers OnApply hooks
+// so a Hot change (later via gossip) takes effect live.
+func applyRuntimeTunables(t *tunables.Registry) {
+	gogc := t.Get("runtime.gogc")
+	apply := func(p *tunables.Param) { debug.SetGCPercent(p.Int()) }
+	apply(gogc)
+	gogc.OnApply(apply)
+
+	mem := t.Get("runtime.memLimit")
+	applyMem := func(p *tunables.Param) {
+		if v := p.Int64(); v > 0 {
+			debug.SetMemoryLimit(v)
+		}
+	}
+	applyMem(mem)
+	mem.OnApply(applyMem)
 }
