@@ -25,26 +25,31 @@ var (
 	// ErrFrozen is returned when an op targets a subrange currently frozen for a split migration; it is
 	// transient — the client retries and the write lands on the new shard after the directory cuts over.
 	ErrFrozen = errors.New("collections: subrange frozen (splitting)")
+	// ErrNotNumber is returned when HIncrBy/HIncrByFloat targets a field whose value is not a number.
+	ErrNotNumber = errors.New("collections: hash field value is not a number")
 
 	wrongType  = []byte("WRONGTYPE") // Result.Data sentinel set by the state machine
 	frozenMark = []byte("FROZEN")    // Result.Data sentinel: mutation rejected, subrange is migrating
+	notNumber  = []byte("NOTNUM")    // Result.Data sentinel: HIncr* on a non-numeric field
 )
 
 // opKind is the log-command opcode.
 type opKind byte
 
 const (
-	opSAdd     opKind = 1  // set add
-	opSRem     opKind = 2  // set remove
-	opHSet     opKind = 3  // hash set field(s)
-	opHDel     opKind = 4  // hash delete field(s)
-	opZAdd     opKind = 5  // sorted-set add (member+score)
-	opZRem     opKind = 6  // sorted-set remove
-	opExpire   opKind = 7  // leader-proposed TTL deletion (design/30 §10)
-	opIngest   opKind = 8  // migrate: write raw kv pairs into this shard (design/30 §6)
-	opPurge    opKind = 9  // migrate: delete a routeKey subrange from this shard
-	opFreeze   opKind = 10 // split: reject mutations to a routeKey subrange (design/30 §6.1)
-	opUnfreeze opKind = 11 // split: lift a freeze
+	opSAdd         opKind = 1  // set add
+	opSRem         opKind = 2  // set remove
+	opHSet         opKind = 3  // hash set field(s)
+	opHDel         opKind = 4  // hash delete field(s)
+	opZAdd         opKind = 5  // sorted-set add (member+score)
+	opZRem         opKind = 6  // sorted-set remove
+	opExpire       opKind = 7  // leader-proposed TTL deletion (design/30 §10)
+	opIngest       opKind = 8  // migrate: write raw kv pairs into this shard (design/30 §6)
+	opPurge        opKind = 9  // migrate: delete a routeKey subrange from this shard
+	opFreeze       opKind = 10 // split: reject mutations to a routeKey subrange (design/30 §6.1)
+	opUnfreeze     opKind = 11 // split: lift a freeze
+	opHIncrBy      opKind = 12 // hash: atomic integer increment of a field (HINCRBY)
+	opHIncrByFloat opKind = 13 // hash: atomic float increment of a field (HINCRBYFLOAT)
 )
 
 // mutates reports whether an op changes element state (and so must respect a subrange freeze).
@@ -66,7 +71,7 @@ func typeForOp(op opKind) collType {
 	switch op {
 	case opSAdd, opSRem:
 		return typeSet
-	case opHSet, opHDel:
+	case opHSet, opHDel, opHIncrBy, opHIncrByFloat:
 		return typeHash
 	case opZAdd, opZRem:
 		return typeZSet

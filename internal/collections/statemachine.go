@@ -1,6 +1,7 @@
 package collections
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"math"
@@ -104,6 +105,7 @@ type updateCtx struct {
 	zscore    map[string]*float64 // zset member ptr key -> current score (nil = absent)
 	cardDelta map[string]int64    // string(cardKey) -> delta
 	htype     map[string]collType // string(collScope) -> resolved type (0 = unknown/new)
+	vals      map[string][]byte   // hash field elemKey -> value-after (for HIncr; nil = deleted)
 	dedupSeq  uint64              // idempotency ring sequence (design/30 §13.12)
 }
 
@@ -157,7 +159,7 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 	}
 	u := &updateCtx{
 		s: s, exists: map[string]bool{}, zscore: map[string]*float64{},
-		cardDelta: map[string]int64{}, htype: map[string]collType{},
+		cardDelta: map[string]int64{}, htype: map[string]collType{}, vals: map[string][]byte{},
 	}
 	// Frozen ranges are read once per batch; a freeze committed in an earlier batch (Control.Split
 	// proposes it before migrating) rejects subrange mutations here. Same-batch writes still commit but
@@ -198,10 +200,10 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		// Idempotency: a repeated keyed write returns its cached result without re-applying (§13.12).
 		deduped := mutates(c.Op) && len(c.Idem) > 0
 		if deduped {
-			if cached, found, derr := s.dedupGet(c.Idem); derr != nil {
+			if cached, cdata, found, derr := s.dedupGet(c.Idem); derr != nil {
 				return nil, derr
 			} else if found {
-				entries[i].Result = sm.Result{Value: cached}
+				entries[i].Result = sm.Result{Value: cached, Data: cdata}
 				continue
 			}
 		}
@@ -215,12 +217,32 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 				continue
 			}
 		}
+		// HIncrBy/HIncrByFloat are atomic counters whose result is the new value (Data), not a count.
+		if c.Op == opHIncrBy || c.Op == opHIncrByFloat {
+			var changed int64
+			var data []byte
+			if c.Op == opHIncrBy {
+				changed, data, err = u.applyHIncrInt(c, c.Items[0])
+			} else {
+				changed, data, err = u.applyHIncrFloat(c, c.Items[0])
+			}
+			if err != nil {
+				return nil, err
+			}
+			if deduped && !bytes.Equal(data, notNumber) { // don't cache a failed (non-number) increment
+				if derr := u.dedupRecord(c.Idem, uint64(changed), data); derr != nil {
+					return nil, derr
+				}
+			}
+			entries[i].Result = sm.Result{Value: uint64(changed), Data: data}
+			continue
+		}
 		changed, err := u.applyCommand(c)
 		if err != nil {
 			return nil, err
 		}
 		if deduped {
-			if derr := u.dedupRecord(c.Idem, uint64(changed)); derr != nil {
+			if derr := u.dedupRecord(c.Idem, uint64(changed), nil); derr != nil {
 				return nil, derr
 			}
 		}
@@ -286,6 +308,7 @@ func (u *updateCtx) applyCommand(c command) (int64, error) {
 			if present {
 				u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: ek, Delete: true})
 				u.exists[string(ek)] = false
+				u.vals[string(ek)] = nil // value gone (for an in-batch HIncr)
 				u.cardDelta[ck]--
 				changed++
 			}
@@ -322,6 +345,7 @@ func (u *updateCtx) applyCommand(c command) (int64, error) {
 			}
 			u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: ek, Value: it.Val})
 			u.exists[string(ek)] = true
+			u.vals[string(ek)] = it.Val // keep the value overlay current for an in-batch HIncr
 			if !present {
 				u.cardDelta[ck]++
 				changed++ // HSET returns the number of NEW fields

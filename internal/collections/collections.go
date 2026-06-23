@@ -3,7 +3,9 @@ package collections
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
+	"math"
 	"time"
 )
 
@@ -18,10 +20,10 @@ type Collections struct {
 }
 
 // Forwarder forwards an already-encoded write to a peer when this node is not the owning shard's
-// leader (node-side leader routing, design/30 §13.13). It returns the peer's apply result, or
-// ErrWrongType. Implemented over CollectionService.ProposeForward; nil = no forwarding.
+// leader (node-side leader routing, design/30 §13.13). It returns the peer's apply result (value +
+// optional data, e.g. an HIncr new value), or ErrWrongType. nil = no forwarding.
 type Forwarder interface {
-	Forward(ctx context.Context, ns, coll, cmd []byte) (uint64, error)
+	Forward(ctx context.Context, ns, coll, cmd []byte) (uint64, []byte, error)
 }
 
 // New builds the datatype API over a RaftShard engine and a shard Directory.
@@ -43,40 +45,49 @@ func (c *Collections) WithForwarder(f Forwarder) *Collections {
 	return c
 }
 
-// proposeCmd commits a write. With a forwarder, a node that isn't the owning shard's leader forwards
-// the write to a peer instead of issuing a (blocking) local propose that would just fail; if we believe
-// we're the leader but lose it mid-propose, we fall back to forwarding (design/30 §13.13).
-func (c *Collections) proposeCmd(ctx context.Context, cmd command) (uint64, error) {
+// proposeCmd commits a write, returning the apply result (value + optional data, e.g. an HIncr new
+// value). With a forwarder, a node that isn't the owning shard's leader forwards the write to a peer
+// instead of issuing a (blocking) local propose that would just fail; if we believe we're the leader
+// but lose it mid-propose, we fall back to forwarding (design/30 §13.13).
+func (c *Collections) proposeCmd(ctx context.Context, cmd command) (uint64, []byte, error) {
 	enc := encodeCommand(cmd)
 	if c.forwarder == nil {
-		return c.proposeLocal(ctx, cmd.NS, cmd.Coll, enc)
+		return c.proposeCore(ctx, cmd.NS, cmd.Coll, enc)
 	}
 	if c.shard.IsLeader(c.dir.ShardFor(cmd.NS, cmd.Coll)) {
-		n, err := c.proposeLocal(ctx, cmd.NS, cmd.Coll, enc)
+		n, data, err := c.proposeCore(ctx, cmd.NS, cmd.Coll, enc)
 		if err == nil || !forwardable(ctx, err) {
-			return n, err
+			return n, data, err
 		}
 		// raced (lost leadership) — fall through and forward.
 	}
 	return c.forwarder.Forward(ctx, cmd.NS, cmd.Coll, enc)
 }
 
-// ProposeRaw applies an already-encoded write locally only (never forwards) — the target a peer's
-// ProposeForward calls. Returns ErrWrongType / ErrFrozen like the typed methods.
-func (c *Collections) ProposeRaw(ctx context.Context, ns, coll, enc []byte) (uint64, error) {
-	return c.proposeLocal(ctx, ns, coll, enc)
+// proposeCount is proposeCmd for ops whose result is just a count (the data payload is unused).
+func (c *Collections) proposeCount(ctx context.Context, cmd command) (uint64, error) {
+	n, _, err := c.proposeCmd(ctx, cmd)
+	return n, err
 }
 
-func (c *Collections) proposeLocal(ctx context.Context, ns, coll, enc []byte) (uint64, error) {
+// ProposeRaw applies an already-encoded write locally only (never forwards) — the target a peer's
+// ProposeForward calls. Returns the apply result, or ErrWrongType / ErrFrozen / ErrNotNumber.
+func (c *Collections) ProposeRaw(ctx context.Context, ns, coll, enc []byte) (uint64, []byte, error) {
+	return c.proposeCore(ctx, ns, coll, enc)
+}
+
+func (c *Collections) proposeCore(ctx context.Context, ns, coll, enc []byte) (uint64, []byte, error) {
 	for {
 		res, err := c.shard.Propose(ctx, c.dir.ShardFor(ns, coll), enc)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
-		if bytes.Equal(res.Data, wrongType) {
-			return 0, ErrWrongType
-		}
-		if bytes.Equal(res.Data, frozenMark) {
+		switch {
+		case bytes.Equal(res.Data, wrongType):
+			return 0, nil, ErrWrongType
+		case bytes.Equal(res.Data, notNumber):
+			return 0, nil, ErrNotNumber
+		case bytes.Equal(res.Data, frozenMark):
 			// The owning subrange is migrating (split). Refresh routing and retry until the directory cuts
 			// over to the new shard, so the write is never lost — only briefly delayed (design/30 §6.1).
 			if r, ok := c.dir.(*RangeDirectory); ok {
@@ -84,12 +95,12 @@ func (c *Collections) proposeLocal(ctx context.Context, ns, coll, enc []byte) (u
 			}
 			select {
 			case <-ctx.Done():
-				return 0, ErrFrozen
+				return 0, nil, ErrFrozen
 			case <-time.After(50 * time.Millisecond):
 			}
 			continue
 		}
-		return res.Value, nil
+		return res.Value, res.Data, nil
 	}
 }
 
@@ -118,12 +129,12 @@ func (c *Collections) read(ctx context.Context, ns, coll []byte, q interface{}, 
 
 // SAdd adds members to the set, returning the number newly added.
 func (c *Collections) SAdd(ctx context.Context, ns, coll []byte, members ...[]byte) (uint64, error) {
-	return c.proposeCmd(ctx, command{Op: opSAdd, NS: ns, Coll: coll, Items: itemsFromKeys(members)})
+	return c.proposeCount(ctx, command{Op: opSAdd, NS: ns, Coll: coll, Items: itemsFromKeys(members)})
 }
 
 // SRem removes members from the set, returning the number removed.
 func (c *Collections) SRem(ctx context.Context, ns, coll []byte, members ...[]byte) (uint64, error) {
-	return c.proposeCmd(ctx, command{Op: opSRem, NS: ns, Coll: coll, Items: itemsFromKeys(members)})
+	return c.proposeCount(ctx, command{Op: opSRem, NS: ns, Coll: coll, Items: itemsFromKeys(members)})
 }
 
 // SAddTTL adds members that expire after ttlMs. The absolute expiry is stamped here (before propose)
@@ -135,7 +146,7 @@ func (c *Collections) SAddTTL(ctx context.Context, ns, coll []byte, ttlMs int64,
 	for i, m := range members {
 		items[i] = item{Key: m, ExpiryMs: expiry}
 	}
-	return c.proposeCmd(ctx, command{Op: opSAdd, NS: ns, Coll: coll, Items: items})
+	return c.proposeCount(ctx, command{Op: opSAdd, NS: ns, Coll: coll, Items: items})
 }
 
 // SIsMember reports whether member is in the set.
@@ -171,12 +182,12 @@ func (c *Collections) HSet(ctx context.Context, ns, coll []byte, fields ...Field
 	for i, f := range fields {
 		items[i] = item{Key: f.Field, Val: f.Value}
 	}
-	return c.proposeCmd(ctx, command{Op: opHSet, NS: ns, Coll: coll, Items: items})
+	return c.proposeCount(ctx, command{Op: opHSet, NS: ns, Coll: coll, Items: items})
 }
 
 // HDel deletes hash fields, returning the number removed.
 func (c *Collections) HDel(ctx context.Context, ns, coll []byte, fields ...[]byte) (uint64, error) {
-	return c.proposeCmd(ctx, command{Op: opHDel, NS: ns, Coll: coll, Items: itemsFromKeys(fields)})
+	return c.proposeCount(ctx, command{Op: opHDel, NS: ns, Coll: coll, Items: itemsFromKeys(fields)})
 }
 
 // HGet returns a hash field's value and whether it was present.
@@ -203,6 +214,35 @@ func (c *Collections) HGetAll(ctx context.Context, ns, coll []byte, limit int, l
 	return out, nil
 }
 
+// HIncrBy atomically adds delta to a hash field's integer value and returns the new value. The whole
+// read-add-write happens in one Raft entry, so concurrent increments are exact (design/30 §13.5).
+// ErrNotNumber if the field's current value is not a base-10 integer.
+func (c *Collections) HIncrBy(ctx context.Context, ns, coll, field []byte, delta int64) (int64, error) {
+	d := make([]byte, 8)
+	binary.BigEndian.PutUint64(d, uint64(delta))
+	_, data, err := c.proposeCmd(ctx, command{Op: opHIncrBy, NS: ns, Coll: coll, Items: []item{{Key: field, Val: d}}})
+	if err != nil {
+		return 0, err
+	}
+	if len(data) != 8 {
+		return 0, ErrNotNumber
+	}
+	return int64(binary.BigEndian.Uint64(data)), nil
+}
+
+// HIncrByFloat atomically adds delta to a hash field's float value and returns the new value.
+// ErrNotNumber if the field's current value is not a number.
+func (c *Collections) HIncrByFloat(ctx context.Context, ns, coll, field []byte, delta float64) (float64, error) {
+	_, data, err := c.proposeCmd(ctx, command{Op: opHIncrByFloat, NS: ns, Coll: coll, Items: []item{{Key: field, Score: delta}}})
+	if err != nil {
+		return 0, err
+	}
+	if len(data) != 8 {
+		return 0, ErrNotNumber
+	}
+	return math.Float64frombits(binary.BigEndian.Uint64(data)), nil
+}
+
 // --- Sorted set ---
 
 // ZAdd adds or updates sorted-set members, returning the number newly added.
@@ -211,12 +251,12 @@ func (c *Collections) ZAdd(ctx context.Context, ns, coll []byte, members ...Scor
 	for i, m := range members {
 		items[i] = item{Key: m.Member, Score: m.Score}
 	}
-	return c.proposeCmd(ctx, command{Op: opZAdd, NS: ns, Coll: coll, Items: items})
+	return c.proposeCount(ctx, command{Op: opZAdd, NS: ns, Coll: coll, Items: items})
 }
 
 // ZRem removes sorted-set members, returning the number removed.
 func (c *Collections) ZRem(ctx context.Context, ns, coll []byte, members ...[]byte) (uint64, error) {
-	return c.proposeCmd(ctx, command{Op: opZRem, NS: ns, Coll: coll, Items: itemsFromKeys(members)})
+	return c.proposeCount(ctx, command{Op: opZRem, NS: ns, Coll: coll, Items: itemsFromKeys(members)})
 }
 
 // ZScore returns a member's score and whether it was present.

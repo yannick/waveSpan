@@ -30,8 +30,9 @@ func NewRPCForwarder(client connect.HTTPClient, peers func() []string) *RPCForwa
 	return &RPCForwarder{client: client, peers: peers}
 }
 
-// Forward tries the cached leader first, then the other peers, until one commits the write.
-func (f *RPCForwarder) Forward(ctx context.Context, ns, coll, cmd []byte) (uint64, error) {
+// Forward tries the cached leader first, then the other peers, until one commits the write. Returns the
+// apply result (value + optional data, e.g. an HIncr new value).
+func (f *RPCForwarder) Forward(ctx context.Context, ns, coll, cmd []byte) (uint64, []byte, error) {
 	f.mu.Lock()
 	hint := f.hint
 	f.mu.Unlock()
@@ -56,15 +57,18 @@ func (f *RPCForwarder) Forward(ctx context.Context, ns, coll, cmd []byte) (uint6
 			f.mu.Lock()
 			f.hint = addr
 			f.mu.Unlock()
-			return resp.Msg.GetCount(), nil
+			return resp.Msg.GetCount(), resp.Msg.GetData(), nil
 		}
-		if connect.CodeOf(err) == connect.CodeFailedPrecondition {
-			return 0, ErrWrongType // a datatype mismatch is definitive on any node
+		switch connect.CodeOf(err) {
+		case connect.CodeFailedPrecondition:
+			return 0, nil, ErrWrongType // a datatype mismatch is definitive on any node
+		case connect.CodeInvalidArgument:
+			return 0, nil, ErrNotNumber // a non-numeric HIncr field is definitive on any node
 		}
 		lastErr = err
 	}
 	if lastErr == nil {
 		lastErr = errors.New("collections: no peer accepted the forwarded write")
 	}
-	return 0, lastErr
+	return 0, nil, lastErr
 }

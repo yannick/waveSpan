@@ -182,6 +182,29 @@ func (cc *CollectionsClient) HGetAll(ctx context.Context, namespace string, coll
 	return out, nil
 }
 
+// HIncrBy atomically adds delta to an integer hash field and returns the new value (exact under
+// concurrency). Fails with InvalidArgument if the field's value is not an integer.
+func (cc *CollectionsClient) HIncrBy(ctx context.Context, namespace string, collection, field []byte, delta int64) (int64, error) {
+	resp, err := cc.c.collections.HIncrBy(ctx, connect.NewRequest(&wavespanv1.HIncrByRequest{
+		Namespace: namespace, Collection: collection, Field: field, Delta: delta, IdempotencyKey: cc.idemPtr(),
+	}))
+	if err != nil {
+		return 0, wrapErr("HIncrBy", err)
+	}
+	return resp.Msg.GetValue(), nil
+}
+
+// HIncrByFloat atomically adds delta to a float hash field and returns the new value.
+func (cc *CollectionsClient) HIncrByFloat(ctx context.Context, namespace string, collection, field []byte, delta float64) (float64, error) {
+	resp, err := cc.c.collections.HIncrByFloat(ctx, connect.NewRequest(&wavespanv1.HIncrByFloatRequest{
+		Namespace: namespace, Collection: collection, Field: field, Delta: delta, IdempotencyKey: cc.idemPtr(),
+	}))
+	if err != nil {
+		return 0, wrapErr("HIncrByFloat", err)
+	}
+	return resp.Msg.GetValue(), nil
+}
+
 // --- Sorted set ---
 
 // ZAdd adds or updates sorted-set members, returning the number newly added.

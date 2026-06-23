@@ -30,11 +30,11 @@ func TestIdempotentWrite(t *testing.T) {
 		Items: itemsFromKeys([][]byte{[]byte("x"), []byte("y")})}
 
 	// First apply adds both members.
-	if n, err := c.proposeCmd(ctx, keyed); err != nil || n != 2 {
+	if n, err := c.proposeCount(ctx, keyed); err != nil || n != 2 {
 		t.Fatalf("first keyed write = %d,%v want 2", n, err)
 	}
 	// Retry with the SAME key returns the cached count (2), not 0 — proof it was not re-applied.
-	if n, err := c.proposeCmd(ctx, keyed); err != nil || n != 2 {
+	if n, err := c.proposeCount(ctx, keyed); err != nil || n != 2 {
 		t.Fatalf("idempotent retry = %d,%v want cached 2 (re-applied would be 0)", n, err)
 	}
 	// State is exactly the two members (no double-apply), counter exact.
@@ -45,7 +45,7 @@ func TestIdempotentWrite(t *testing.T) {
 	// A DIFFERENT key adding the same members is a normal write: they already exist, so 0 added.
 	other := command{Op: opSAdd, NS: ns, Coll: coll, Idem: []byte("req-2"),
 		Items: itemsFromKeys([][]byte{[]byte("x"), []byte("y")})}
-	if n, err := c.proposeCmd(ctx, other); err != nil || n != 0 {
+	if n, err := c.proposeCount(ctx, other); err != nil || n != 0 {
 		t.Fatalf("different-key write = %d,%v want 0 (members already present)", n, err)
 	}
 }

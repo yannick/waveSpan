@@ -23,6 +23,8 @@ service CollectionService {
   rpc HGet(MemberRequest) returns (ValueResult);
   rpc HLen(CardRequest) returns (CountResult);
   rpc HGetAll(RangeRequest) returns (FieldsResult);
+  rpc HIncrBy(HIncrByRequest) returns (Int64Result);            // atomic integer counter
+  rpc HIncrByFloat(HIncrByFloatRequest) returns (DoubleResult); // atomic float counter
 
   // Sorted set
   rpc ZAdd(ZAddRequest) returns (CountResult);
@@ -47,6 +49,32 @@ message ProposeForwardRequest {
   string namespace = 1;
   bytes collection = 2;
   bytes command = 3; // the engine-encoded write command (opaque on the wire)
+}
+
+message HIncrByRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  bytes field = 3;
+  int64 delta = 4;
+  optional string idempotency_key = 5;
+}
+
+message HIncrByFloatRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  bytes field = 3;
+  double delta = 4;
+  optional string idempotency_key = 5;
+}
+
+message Int64Result {
+  ResponseMeta meta = 1;
+  int64 value = 2;
+}
+
+message DoubleResult {
+  ResponseMeta meta = 1;
+  double value = 2;
 }
 
 message AdmitLearnerRequest {
@@ -133,6 +161,7 @@ message ZAddRequest {
 message CountResult {
   ResponseMeta meta = 1;
   uint64 count = 2;
+  bytes data = 3; // opaque result payload (used by ProposeForward to carry an HIncr new value)
 }
 
 message BoolResult {

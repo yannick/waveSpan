@@ -2,7 +2,9 @@ package collections
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"math"
 	"net/http"
 	"time"
 
@@ -58,8 +60,11 @@ func (s *Service) meta() *wavespanv1.ResponseMeta {
 }
 
 func collErr(err error) error {
-	if errors.Is(err, ErrWrongType) {
+	switch {
+	case errors.Is(err, ErrWrongType):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, ErrNotNumber):
+		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return connect.NewError(connect.CodeInternal, err)
 }
@@ -74,7 +79,7 @@ func (s *Service) count(n uint64, err error) (*connect.Response[wavespanv1.Count
 // write builds a mutation carrying the idempotency key and proposes it (forwarding to the leader if
 // this node isn't it). idem == "" means no dedup.
 func (s *Service) write(ctx context.Context, op opKind, ns, coll []byte, idem string, items []item) (*connect.Response[wavespanv1.CountResult], error) {
-	return s.count(s.cols.proposeCmd(ctx, command{Op: op, NS: ns, Coll: coll, Idem: []byte(idem), Items: items}))
+	return s.count(s.cols.proposeCount(ctx, command{Op: op, NS: ns, Coll: coll, Idem: []byte(idem), Items: items}))
 }
 
 // --- Set ---
@@ -140,6 +145,36 @@ func (s *Service) HSet(ctx context.Context, req *connect.Request[wavespanv1.HSet
 func (s *Service) HDel(ctx context.Context, req *connect.Request[wavespanv1.KeysRequest]) (*connect.Response[wavespanv1.CountResult], error) {
 	m := req.Msg
 	return s.write(ctx, opHDel, []byte(m.GetNamespace()), m.GetCollection(), m.GetIdempotencyKey(), itemsFromKeys(m.GetKeys()))
+}
+
+// HIncrBy atomically increments an integer hash field and returns the new value.
+func (s *Service) HIncrBy(ctx context.Context, req *connect.Request[wavespanv1.HIncrByRequest]) (*connect.Response[wavespanv1.Int64Result], error) {
+	m := req.Msg
+	d := make([]byte, 8)
+	binary.BigEndian.PutUint64(d, uint64(m.GetDelta()))
+	_, data, err := s.cols.proposeCmd(ctx, command{Op: opHIncrBy, NS: []byte(m.GetNamespace()), Coll: m.GetCollection(),
+		Idem: []byte(m.GetIdempotencyKey()), Items: []item{{Key: m.GetField(), Val: d}}})
+	if err != nil {
+		return nil, collErr(err)
+	}
+	if len(data) != 8 {
+		return nil, collErr(ErrNotNumber)
+	}
+	return connect.NewResponse(&wavespanv1.Int64Result{Meta: s.meta(), Value: int64(binary.BigEndian.Uint64(data))}), nil
+}
+
+// HIncrByFloat atomically increments a float hash field and returns the new value.
+func (s *Service) HIncrByFloat(ctx context.Context, req *connect.Request[wavespanv1.HIncrByFloatRequest]) (*connect.Response[wavespanv1.DoubleResult], error) {
+	m := req.Msg
+	_, data, err := s.cols.proposeCmd(ctx, command{Op: opHIncrByFloat, NS: []byte(m.GetNamespace()), Coll: m.GetCollection(),
+		Idem: []byte(m.GetIdempotencyKey()), Items: []item{{Key: m.GetField(), Score: m.GetDelta()}}})
+	if err != nil {
+		return nil, collErr(err)
+	}
+	if len(data) != 8 {
+		return nil, collErr(ErrNotNumber)
+	}
+	return connect.NewResponse(&wavespanv1.DoubleResult{Meta: s.meta(), Value: math.Float64frombits(binary.BigEndian.Uint64(data))}), nil
 }
 
 // HGet returns a hash field value.
@@ -225,11 +260,11 @@ func (s *Service) ZRange(ctx context.Context, req *connect.Request[wavespanv1.Ra
 // propagates and the forwarder tries the next peer.
 func (s *Service) ProposeForward(ctx context.Context, req *connect.Request[wavespanv1.ProposeForwardRequest]) (*connect.Response[wavespanv1.CountResult], error) {
 	m := req.Msg
-	n, err := s.cols.ProposeRaw(ctx, []byte(m.GetNamespace()), m.GetCollection(), m.GetCommand())
+	n, data, err := s.cols.ProposeRaw(ctx, []byte(m.GetNamespace()), m.GetCollection(), m.GetCommand())
 	if err != nil {
 		return nil, collErr(err)
 	}
-	return connect.NewResponse(&wavespanv1.CountResult{Meta: s.meta(), Count: n}), nil
+	return connect.NewResponse(&wavespanv1.CountResult{Meta: s.meta(), Count: n, Data: data}), nil
 }
 
 // AdmitLearner admits a peer as a non-voting learner of a shard this node hosts (demand-fill server).

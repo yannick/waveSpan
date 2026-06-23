@@ -13,22 +13,22 @@ import (
 // directly (the peer that is the leader accepts). In the node this is the ProposeForward RPC.
 type directForwarder struct{ peers []*Collections }
 
-func (f directForwarder) Forward(ctx context.Context, ns, coll, cmd []byte) (uint64, error) {
+func (f directForwarder) Forward(ctx context.Context, ns, coll, cmd []byte) (uint64, []byte, error) {
 	var lastErr error
 	for _, p := range f.peers {
-		n, err := p.ProposeRaw(ctx, ns, coll, cmd)
+		n, data, err := p.ProposeRaw(ctx, ns, coll, cmd)
 		if err == nil {
-			return n, nil
+			return n, data, nil
 		}
-		if errors.Is(err, ErrWrongType) {
-			return 0, ErrWrongType
+		if errors.Is(err, ErrWrongType) || errors.Is(err, ErrNotNumber) {
+			return 0, nil, err
 		}
 		lastErr = err
 	}
 	if lastErr == nil {
 		lastErr = errors.New("no peer accepted the write")
 	}
-	return 0, lastErr
+	return 0, nil, lastErr
 }
 
 // TestWriteForwardsToLeader confirms node-side leader routing: a write issued to a FOLLOWER node is

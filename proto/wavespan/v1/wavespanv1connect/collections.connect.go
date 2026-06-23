@@ -56,6 +56,12 @@ const (
 	// CollectionServiceHGetAllProcedure is the fully-qualified name of the CollectionService's HGetAll
 	// RPC.
 	CollectionServiceHGetAllProcedure = "/wavespan.v1.CollectionService/HGetAll"
+	// CollectionServiceHIncrByProcedure is the fully-qualified name of the CollectionService's HIncrBy
+	// RPC.
+	CollectionServiceHIncrByProcedure = "/wavespan.v1.CollectionService/HIncrBy"
+	// CollectionServiceHIncrByFloatProcedure is the fully-qualified name of the CollectionService's
+	// HIncrByFloat RPC.
+	CollectionServiceHIncrByFloatProcedure = "/wavespan.v1.CollectionService/HIncrByFloat"
 	// CollectionServiceZAddProcedure is the fully-qualified name of the CollectionService's ZAdd RPC.
 	CollectionServiceZAddProcedure = "/wavespan.v1.CollectionService/ZAdd"
 	// CollectionServiceZRemProcedure is the fully-qualified name of the CollectionService's ZRem RPC.
@@ -90,6 +96,8 @@ type CollectionServiceClient interface {
 	HGet(context.Context, *connect.Request[v1.MemberRequest]) (*connect.Response[v1.ValueResult], error)
 	HLen(context.Context, *connect.Request[v1.CardRequest]) (*connect.Response[v1.CountResult], error)
 	HGetAll(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.FieldsResult], error)
+	HIncrBy(context.Context, *connect.Request[v1.HIncrByRequest]) (*connect.Response[v1.Int64Result], error)
+	HIncrByFloat(context.Context, *connect.Request[v1.HIncrByFloatRequest]) (*connect.Response[v1.DoubleResult], error)
 	// Sorted set
 	ZAdd(context.Context, *connect.Request[v1.ZAddRequest]) (*connect.Response[v1.CountResult], error)
 	ZRem(context.Context, *connect.Request[v1.KeysRequest]) (*connect.Response[v1.CountResult], error)
@@ -178,6 +186,18 @@ func NewCollectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(collectionServiceMethods.ByName("HGetAll")),
 			connect.WithClientOptions(opts...),
 		),
+		hIncrBy: connect.NewClient[v1.HIncrByRequest, v1.Int64Result](
+			httpClient,
+			baseURL+CollectionServiceHIncrByProcedure,
+			connect.WithSchema(collectionServiceMethods.ByName("HIncrBy")),
+			connect.WithClientOptions(opts...),
+		),
+		hIncrByFloat: connect.NewClient[v1.HIncrByFloatRequest, v1.DoubleResult](
+			httpClient,
+			baseURL+CollectionServiceHIncrByFloatProcedure,
+			connect.WithSchema(collectionServiceMethods.ByName("HIncrByFloat")),
+			connect.WithClientOptions(opts...),
+		),
 		zAdd: connect.NewClient[v1.ZAddRequest, v1.CountResult](
 			httpClient,
 			baseURL+CollectionServiceZAddProcedure,
@@ -235,6 +255,8 @@ type collectionServiceClient struct {
 	hGet           *connect.Client[v1.MemberRequest, v1.ValueResult]
 	hLen           *connect.Client[v1.CardRequest, v1.CountResult]
 	hGetAll        *connect.Client[v1.RangeRequest, v1.FieldsResult]
+	hIncrBy        *connect.Client[v1.HIncrByRequest, v1.Int64Result]
+	hIncrByFloat   *connect.Client[v1.HIncrByFloatRequest, v1.DoubleResult]
 	zAdd           *connect.Client[v1.ZAddRequest, v1.CountResult]
 	zRem           *connect.Client[v1.KeysRequest, v1.CountResult]
 	zScore         *connect.Client[v1.MemberRequest, v1.ScoreResult]
@@ -294,6 +316,16 @@ func (c *collectionServiceClient) HGetAll(ctx context.Context, req *connect.Requ
 	return c.hGetAll.CallUnary(ctx, req)
 }
 
+// HIncrBy calls wavespan.v1.CollectionService.HIncrBy.
+func (c *collectionServiceClient) HIncrBy(ctx context.Context, req *connect.Request[v1.HIncrByRequest]) (*connect.Response[v1.Int64Result], error) {
+	return c.hIncrBy.CallUnary(ctx, req)
+}
+
+// HIncrByFloat calls wavespan.v1.CollectionService.HIncrByFloat.
+func (c *collectionServiceClient) HIncrByFloat(ctx context.Context, req *connect.Request[v1.HIncrByFloatRequest]) (*connect.Response[v1.DoubleResult], error) {
+	return c.hIncrByFloat.CallUnary(ctx, req)
+}
+
 // ZAdd calls wavespan.v1.CollectionService.ZAdd.
 func (c *collectionServiceClient) ZAdd(ctx context.Context, req *connect.Request[v1.ZAddRequest]) (*connect.Response[v1.CountResult], error) {
 	return c.zAdd.CallUnary(ctx, req)
@@ -343,6 +375,8 @@ type CollectionServiceHandler interface {
 	HGet(context.Context, *connect.Request[v1.MemberRequest]) (*connect.Response[v1.ValueResult], error)
 	HLen(context.Context, *connect.Request[v1.CardRequest]) (*connect.Response[v1.CountResult], error)
 	HGetAll(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.FieldsResult], error)
+	HIncrBy(context.Context, *connect.Request[v1.HIncrByRequest]) (*connect.Response[v1.Int64Result], error)
+	HIncrByFloat(context.Context, *connect.Request[v1.HIncrByFloatRequest]) (*connect.Response[v1.DoubleResult], error)
 	// Sorted set
 	ZAdd(context.Context, *connect.Request[v1.ZAddRequest]) (*connect.Response[v1.CountResult], error)
 	ZRem(context.Context, *connect.Request[v1.KeysRequest]) (*connect.Response[v1.CountResult], error)
@@ -427,6 +461,18 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 		connect.WithSchema(collectionServiceMethods.ByName("HGetAll")),
 		connect.WithHandlerOptions(opts...),
 	)
+	collectionServiceHIncrByHandler := connect.NewUnaryHandler(
+		CollectionServiceHIncrByProcedure,
+		svc.HIncrBy,
+		connect.WithSchema(collectionServiceMethods.ByName("HIncrBy")),
+		connect.WithHandlerOptions(opts...),
+	)
+	collectionServiceHIncrByFloatHandler := connect.NewUnaryHandler(
+		CollectionServiceHIncrByFloatProcedure,
+		svc.HIncrByFloat,
+		connect.WithSchema(collectionServiceMethods.ByName("HIncrByFloat")),
+		connect.WithHandlerOptions(opts...),
+	)
 	collectionServiceZAddHandler := connect.NewUnaryHandler(
 		CollectionServiceZAddProcedure,
 		svc.ZAdd,
@@ -491,6 +537,10 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 			collectionServiceHLenHandler.ServeHTTP(w, r)
 		case CollectionServiceHGetAllProcedure:
 			collectionServiceHGetAllHandler.ServeHTTP(w, r)
+		case CollectionServiceHIncrByProcedure:
+			collectionServiceHIncrByHandler.ServeHTTP(w, r)
+		case CollectionServiceHIncrByFloatProcedure:
+			collectionServiceHIncrByFloatHandler.ServeHTTP(w, r)
 		case CollectionServiceZAddProcedure:
 			collectionServiceZAddHandler.ServeHTTP(w, r)
 		case CollectionServiceZRemProcedure:
@@ -552,6 +602,14 @@ func (UnimplementedCollectionServiceHandler) HLen(context.Context, *connect.Requ
 
 func (UnimplementedCollectionServiceHandler) HGetAll(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.FieldsResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.HGetAll is not implemented"))
+}
+
+func (UnimplementedCollectionServiceHandler) HIncrBy(context.Context, *connect.Request[v1.HIncrByRequest]) (*connect.Response[v1.Int64Result], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.HIncrBy is not implemented"))
+}
+
+func (UnimplementedCollectionServiceHandler) HIncrByFloat(context.Context, *connect.Request[v1.HIncrByFloatRequest]) (*connect.Response[v1.DoubleResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.HIncrByFloat is not implemented"))
 }
 
 func (UnimplementedCollectionServiceHandler) ZAdd(context.Context, *connect.Request[v1.ZAddRequest]) (*connect.Response[v1.CountResult], error) {

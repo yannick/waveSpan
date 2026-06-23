@@ -7,12 +7,12 @@ import (
 )
 
 // Idempotency dedup (design/30 §13.12). A write carrying an idempotency key is applied exactly once:
-// the result count is cached so a retry (e.g. after a forwarded write times out) returns the original
-// count without re-applying. The cache is a fixed-size FIFO ring keyed off a replicated sequence
-// counter — deterministic across replicas, so every replica caches and evicts identically — which
-// bounds memory while covering the retry window:
+// the full result (value + optional data, e.g. an HIncrBy's new value) is cached so a retry returns
+// the original result without re-applying — essential for non-idempotent ops like increment. The cache
+// is a fixed-size FIFO ring keyed off a replicated sequence counter — deterministic across replicas,
+// so every replica caches and evicts identically — bounding memory while covering the retry window:
 //
-//	<prefix>|subDedup|<key>          -> count (uint64 BE)
+//	<prefix>|subDedup|<key>          -> value(uint64 BE) || data
 //	<prefix>|subDedupRing|be(slot)   -> key            (for FIFO eviction)
 //	<prefix>|subMeta|"dedupseq"      -> next slot sequence (uint64 BE)
 const (
@@ -39,17 +39,17 @@ func (b *baseSM) readDedupSeq() (uint64, error) {
 	return binary.BigEndian.Uint64(v), nil
 }
 
-// dedupGet returns the cached result count for an idempotency key, if present.
-func (s *shardSM) dedupGet(key []byte) (uint64, bool, error) {
+// dedupGet returns the cached result (value + data) for an idempotency key, if present.
+func (s *shardSM) dedupGet(key []byte) (uint64, []byte, bool, error) {
 	v, found, err := s.store.Get(storage.CFReplData, s.dedupKey(key))
-	if err != nil || !found || len(v) != 8 {
-		return 0, false, err
+	if err != nil || !found || len(v) < 8 {
+		return 0, nil, false, err
 	}
-	return binary.BigEndian.Uint64(v), true, nil
+	return binary.BigEndian.Uint64(v[:8]), append([]byte(nil), v[8:]...), true, nil
 }
 
-// dedupRecord appends ops to cache key->count with FIFO eviction and advances the sequence.
-func (u *updateCtx) dedupRecord(key []byte, count uint64) error {
+// dedupRecord appends ops to cache key->(value,data) with FIFO eviction and advances the sequence.
+func (u *updateCtx) dedupRecord(key []byte, value uint64, data []byte) error {
 	s := u.s
 	slot := u.dedupSeq % dedupRingSize
 	if oldKey, found, err := s.store.Get(storage.CFReplData, s.dedupRingKey(slot)); err != nil {
@@ -57,9 +57,10 @@ func (u *updateCtx) dedupRecord(key []byte, count uint64) error {
 	} else if found && len(oldKey) > 0 {
 		u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: s.dedupKey(oldKey), Delete: true})
 	}
+	rec := append(u64(value), data...)
 	u.ops = append(u.ops,
 		storage.StoreOp{CF: storage.CFReplData, Key: s.dedupRingKey(slot), Value: append([]byte(nil), key...)},
-		storage.StoreOp{CF: storage.CFReplData, Key: s.dedupKey(key), Value: u64(count)})
+		storage.StoreOp{CF: storage.CFReplData, Key: s.dedupKey(key), Value: rec})
 	u.dedupSeq++
 	return nil
 }
