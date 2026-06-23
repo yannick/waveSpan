@@ -28,6 +28,7 @@
 |---|---|
 | `internal/bench/latency.go` | export `KVClient`/`CypherClient` (was `kvClient`/`cypherClient`); keep `Latencies` |
 | `internal/bench/ops.go` (new) | single-op funcs: `OpKVRead/OpKVWrite/OpMultiGet/OpCypher/OpCreateNode/OpCreateEdge` |
+| `bench/queries.go` (new, `package benchqueries`) | `//go:embed queries/*.cypher` → `All() []Query` so the scratch container has no fs dependency for the cypher suite |
 | `internal/bench/{kv,query,multiget,load}.go` | rewired onto the ops (behavior identical) |
 | `internal/benchengine/metrics.go` (new) | `Hist` (HDR-lite), `Window`, `Sample`, percentile math |
 | `internal/benchengine/engine.go` (new) | `Run` state machine, workers, pause gate, subscribe |
@@ -57,13 +58,11 @@ package bench
 
 import "testing"
 
-// The exported clients and single-op functions must exist with these signatures, so both the CLI
-// runners and internal/benchengine can share them.
+// The exported clients and single-op functions must exist, so both the CLI runners and
+// internal/benchengine can share them. Symbol-existence only (compile-time); behavior is in Step 3b.
 func TestExportedSurface(t *testing.T) {
-	// compile-time assertions: these must be exported and have the expected shapes.
 	_ = KVClient
 	_ = CypherClient
-	var _ func(ctxArg, KvServiceClientType, string, []byte) error = nil // placeholder; see note
 	_ = OpKVRead
 	_ = OpKVWrite
 	_ = OpMultiGet
@@ -71,7 +70,7 @@ func TestExportedSurface(t *testing.T) {
 }
 ```
 
-> Note: the exact op signatures are defined in Step 3. Replace the placeholder assertion with real ones once defined; the point of this test is that the symbols exist and the package compiles. Prefer simple behavioral tests where cheap (e.g. `OpCypher` strips/forms a request) over signature placeholders — see Step 3b.
+> Do NOT add fake-typed signature assertions — symbol references above are enough to force the package to compile with the exports present. The real behavioral check is Step 3b.
 
 - [ ] **Step 2: Run** `go test ./internal/bench/ -run TestExportedSurface` → FAIL (undefined `KVClient` etc.).
 
@@ -134,17 +133,27 @@ func OpCypher(ctx context.Context, c wavespanv1connect.CypherClient, graph, quer
 	return stream.Err()
 }
 
-// OpCreateNode / OpCreateEdge wrap OpCypher for the loader's CREATE statements (load.go).
+// OpCreateNode / OpCreateEdge wrap OpCypher for the loader's CREATE statements (load.go:41,56).
 func OpCreateNode(ctx context.Context, c wavespanv1connect.CypherClient, graph string, i int, city string) error {
 	return OpCypher(ctx, c, graph, fmt.Sprintf("CREATE (:User {id:'user-%d', name:'User %d', age:%d, city:'%s'})", i, i, 18+i%60, city))
 }
+
+func OpCreateEdge(ctx context.Context, c wavespanv1connect.CypherClient, graph string, a, b int) error {
+	return OpCypher(ctx, c, graph, fmt.Sprintf("MATCH (a:User {id:'user-%d'}), (b:User {id:'user-%d'}) CREATE (a)-[:FOLLOWS]->(b)", a, b))
+}
 ```
 
-Then rewire `kv.go`, `multiget.go`, `query.go`, `load.go` to call these ops inside their existing worker loops (replacing the inline `client.Get/Put/...` bodies). Replace `kvClient(`/`cypherClient(` call sites with `KVClient(`/`CypherClient(`. Keep the loops, latency timing, error counting, and reporting exactly as they are — only the op body moves into the shared function.
+> `Load`'s KV-put branch (`load.go:66-68`) reuses `OpKVWrite` (caller supplies `value-<i>`); the loader
+> keeps owning the `cities` slice + `i%len` indexing and the `a==b` skip. `Load`'s worker pool/progress
+> reporting is unchanged — only the per-op RPCs route through the shared ops.
+
+Then rewire `kv.go`, `multiget.go`, `query.go`, `load.go` to call these ops inside their existing worker loops (replacing the inline `client.Get/Put/...` bodies). Replace `kvClient(`/`cypherClient(` call sites with `KVClient(`/`CypherClient(`.
+
+**CRITICAL — keep behavior identical:** the CLI loops count an error ONLY when the context is still live (`kv.go:50-56`, `multiget.go:50-56`, `query.go:73-87` use `case err == nil: …Add… case ctx.Err() == nil: …AddErr()`). Preserve that exact `switch`/guard around the new op call — only the RPC moves into `OpKVRead`/etc. Do NOT copy the engine's simpler `if err != nil { recordErr() }` loop (Task 3) back into the CLI; the engine has different (acceptable) semantics. Keep the loops, latency timing, error accounting, and reporting otherwise untouched. Also note: `cmd/wavespanctl/main.go` has its own unrelated `kvClient` — do not touch it; only the four `internal/bench` files rewire.
 
 - [ ] **Step 3b: Add a behavioral test** in `ops_test.go` that doesn't need a server: e.g. construct `KVClient("127.0.0.1:1")` and assert `OpKVRead(ctx, c, "ns", "k")` returns a non-nil error against a dead address (proves the op wires a request + surfaces transport errors). Use a short `context.WithTimeout`.
 
-- [ ] **Step 4: Run** `go test ./internal/bench/... && go build ./cmd/wavespan-bench` → PASS. Confirm `RunKV`/`RunQueries`/`RunMultiGet`/`Load` still compile and behave (their tests, if any, pass).
+- [ ] **Step 4: Run** `go test ./internal/bench/... && go build ./cmd/wavespan-bench ./cmd/wavespan-profile` → PASS. (`wavespan-profile` also reuses `bench.RunKV`/`LoadQueries`/`RunQueries` — `cmd/wavespan-profile/main.go:108,111,117` — so it must keep building.) Confirm `RunKV`/`RunQueries`/`RunMultiGet`/`Load` still compile and behave identically.
 
 - [ ] **Step 5: Commit**
 
@@ -281,13 +290,16 @@ func (h *Hist) Percentile(q float64) time.Duration {
 Also define the per-second window + sample types:
 
 ```go
-// WindowStat is one workload's stats over a window (or cumulative).
+// WindowStat is one workload's stats over a window (or cumulative). Latencies are emitted as
+// milliseconds (float) for the charts. NOTE: each field needs its OWN struct tag — a single tag
+// cannot name multiple fields.
 type WindowStat struct {
-	Tput        float64       `json:"tput"`        // ops/sec
-	P50, P95, P99 time.Duration `json:"-"`
-	P50Ms, P95Ms, P99Ms float64 `json:"p50Ms,p95Ms,p99Ms"`
-	Errs        uint64        `json:"errs"`
-	Total       uint64        `json:"total"`
+	Tput  float64 `json:"tput"` // ops/sec
+	P50Ms float64 `json:"p50Ms"`
+	P95Ms float64 `json:"p95Ms"`
+	P99Ms float64 `json:"p99Ms"`
+	Errs  uint64  `json:"errs"`
+	Total uint64  `json:"total"`
 }
 
 // Sample is one tick across all running workloads.
@@ -355,7 +367,7 @@ func TestEngineLifecycleWithFakeOp(t *testing.T) {
 
 - [ ] **Step 2: Run** → FAIL.
 
-- [ ] **Step 3: Implement** `engine.go`: the `Run` struct, `State`, sampler goroutine (per-second tick: snapshot each workload's window hist → emit `Sample`, then rotate window), pause gate (a `chan struct{}` that is closed when running and replaced when paused, or a `sync.RWMutex` held during pause), `Stop` via `context.CancelFunc`. Worker loop:
+- [ ] **Step 3: Implement** `engine.go`: the `Run` struct, `State`, sampler goroutine (per-second tick: snapshot each workload's window hist → emit `Sample`, then rotate window), pause gate (a `chan struct{}` that is closed when running and replaced when paused, or a `sync.RWMutex` held during pause), `Stop` via `context.CancelFunc`. **Guard shared state with a mutex**: `State` transitions, the subscriber registry (`Subscribe`/unsub add/remove from a `map[chan Sample]struct{}`), and window snapshot+rotate must all be mutex-protected so the `-race` gate passes; emit to subscribers non-blocking (drop if a slow subscriber's channel is full). Worker loop:
 
 ```go
 for {
@@ -368,7 +380,47 @@ for {
 }
 ```
 
-`workloads.go`: `func opsFor(spec WorkloadSpec, dataAddr, graph string) (op func(context.Context) error, label string, err error)` mapping `"kv"`/`"multiget"`/`"cypher"` to closures over `bench.KVClient`/`bench.CypherClient` + the `bench.Op*` funcs (KV uses a per-worker RNG + read-ratio; cypher round-robins the loaded `bench.LoadQueries` set; multiget builds a batch). Public `New(Config)` validates and builds workloads; `Start/Pause/Resume/Stop/State/Subscribe/Summary` per the spec.
+`workloads.go`: `func opsFor(spec WorkloadSpec, dataAddr, graph string) (op func(context.Context) error, label string, err error)` mapping `"kv"`/`"multiget"`/`"cypher"` to closures over `bench.KVClient`/`bench.CypherClient` + the `bench.Op*` funcs (KV uses a per-worker RNG + read-ratio; cypher round-robins a set of query **bodies**; multiget builds a batch). Public `New(Config)` validates and builds workloads; `Start/Pause/Resume/Stop/State/Subscribe/Summary` per the spec.
+
+**Embedded Cypher suite (so the `scratch` container has no filesystem dependency):** the cypher
+workload must NOT read `bench/queries/` from disk at runtime. Create a tiny embed package
+`bench/queries.go` (`package benchqueries`):
+
+```go
+package benchqueries
+
+import (
+	"embed"
+	"sort"
+	"strings"
+)
+
+//go:embed queries/*.cypher
+var files embed.FS
+
+// Query is a named, comment-stripped, single-statement cypher query.
+type Query struct{ Name, Body string }
+
+// All returns the embedded benchmark query suite (the same bench/queries/*.cypher the CLI reads).
+func All() []Query {
+	ents, _ := files.ReadDir("queries")
+	var out []Query
+	for _, e := range ents {
+		if !strings.HasSuffix(e.Name(), ".cypher") {
+			continue
+		}
+		b, _ := files.ReadFile("queries/" + e.Name())
+		out = append(out, Query{Name: strings.TrimSuffix(e.Name(), ".cypher"), Body: stripComments(string(b))})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+```
+
+Copy the `stripComments` helper from `internal/bench/query.go:96-108` into this package (small, avoids
+an import cycle). `Config.CypherQueries []benchqueries.Query` carries the bodies into the engine; the
+benchui server fills it from `benchqueries.All()`. The CLI keeps using its filesystem `LoadQueries`
+for `--queries`; both reference the same `bench/queries/*.cypher` source of truth.
 
 - [ ] **Step 4: Run** `go test ./internal/benchengine/ -race` → PASS (race-clean — this is concurrent).
 - [ ] **Step 5: Commit** `git add internal/benchengine/ && git commit -m "feat(benchengine): controllable run engine (start/pause/resume/stop) + SSE samples"`
@@ -417,7 +469,7 @@ func TestWorkloadsAndRunLifecycle(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Implement** `server.go` (`Options{Addr}`, `Server{mux, mu, active *benchengine.Run, finished ring}`, `New`, `Handler()` returns the mux with routes + SPA file server fallback) and `handlers.go` (`/api/workloads`, `POST /api/runs` → `benchengine.New` + store as active, `409` if one active; `/api/runs/{id}` state JSON; `start/pause/resume/stop`). Use `http.ServeMux` (Go 1.22+ pattern routing). SPA: serve `spaFS()` for non-`/api` paths, falling back to `index.html`.
+- [ ] **Step 3: Implement** `server.go` (`Options{Addr}`, `Server{mux, mu, active *benchengine.Run, finished ring}`, `New`, `Handler()` returns the mux with routes + SPA file server fallback) and `handlers.go` (`/api/workloads`, `POST /api/runs` → `benchengine.New` + store as active, `409` if one active; `/api/runs/{id}` state JSON; `start/pause/resume/stop`). Use `http.ServeMux` (Go 1.22+ method+wildcard pattern routing; go.mod is `go 1.26.4`). SPA: serve `spaFS()` for non-`/api` paths, falling back to `index.html` — **mirror the exact pattern in `internal/ui/server.go`** (TrimPrefix → `fs.Open` → fallback to serving `index.html` for client-side routes).
 
 - [ ] **Step 4: Run** `go test ./internal/benchui/` → PASS. `go build ./...` (the `.gitkeep` lets `all:dist` compile).
 - [ ] **Step 5: Commit** `git add internal/benchui .gitignore && git commit -m "feat(benchui): HTTP server, run registry, embedded SPA placeholder"`
@@ -463,7 +515,15 @@ func TestWorkloadsAndRunLifecycle(t *testing.T) {
 
 **Files:** Create `ui/bench.html`, `ui/vite.bench.config.ts`, `ui/src/bench-entry.tsx`, `ui/src/bench/api.ts`; Modify `ui/package.json` (add `uplot` dep + `build:bench` script).
 
-- [ ] **Step 1:** `ui/package.json`: add `"uplot": "^1.6.31"` to dependencies and script `"build:bench": "vite build --config vite.bench.config.ts"`. `ui/vite.bench.config.ts` mirrors `vite.docs.config.ts` but `outDir: "../internal/benchui/dist"`, `input: resolve(__dirname, "bench.html")`, `base: "./"`. `ui/bench.html` mirrors `ui/docs.html` (script → `/src/bench-entry.tsx`). `bench-entry.tsx` mounts `<ThemeProvider><BenchApp/></ThemeProvider>` with the three theme CSS imports (copy the imports from `docs-entry.tsx`).
+- [ ] **Step 1:** `ui/package.json`: add `"uplot": "^1.6.31"` to dependencies and script
+  `"build:bench": "vite build --config vite.bench.config.ts && mv ../internal/benchui/dist/bench.html ../internal/benchui/dist/index.html"`
+  — the rename is REQUIRED (the Go server's SPA fallback serves `index.html`; mirrors how `build:docs`
+  renames `docs.html`→`index.html`). `ui/vite.bench.config.ts` mirrors `vite.docs.config.ts` but
+  `outDir: "../internal/benchui/dist"`, `emptyOutDir: true` (but it must NOT delete `.gitkeep` from a
+  committed tree at build time on the host — emptyOutDir only clears the build output dir, fine),
+  `input: resolve(__dirname, "bench.html")`, `base: "./"`. `ui/bench.html` mirrors `ui/docs.html`
+  (script → `/src/bench-entry.tsx`). `bench-entry.tsx` mounts `<ThemeProvider><BenchApp/></ThemeProvider>`
+  with the three theme CSS imports (copy from `docs-entry.tsx`).
 - [ ] **Step 2:** `ui/src/bench/api.ts` — typed `fetch` wrappers for every endpoint + an `openSampleStream(runId, onSample)` using `EventSource`. Pure functions; export types `Sample`, `WorkloadSpec`, `ProbeResult`, `Report`.
 - [ ] **Step 3: Verify build** `cd ui && npm ci && npm run build:bench` → outputs `internal/benchui/dist/` with `bench.html`+assets. (Add a placeholder `<BenchApp>` returning a heading so the build succeeds; real UI lands in Tasks 9–11.)
 - [ ] **Step 4: Commit** `git add ui/bench.html ui/vite.bench.config.ts ui/src/bench-entry.tsx ui/src/bench/api.ts ui/package.json ui/package-lock.json && git commit -m "feat(bench-ui): vite entry, api client, uplot dep"`
@@ -509,12 +569,14 @@ func TestWorkloadsAndRunLifecycle(t *testing.T) {
 
 ```dockerfile
 # syntax=docker/dockerfile:1
+# Node WORKDIR is /waveSpan/ui so build:bench's outDir "../internal/benchui/dist" resolves to
+# /waveSpan/internal/benchui/dist (matching the COPY --from=ui below).
 FROM --platform=$BUILDPLATFORM node:20 AS ui
-WORKDIR /ui
+WORKDIR /waveSpan/ui
 COPY waveSpan/ui/package.json waveSpan/ui/package-lock.json ./
 RUN npm ci
 COPY waveSpan/ui/ ./
-RUN npm run build:bench           # → /waveSpan/internal/benchui/dist (relative outDir)
+RUN npm run build:bench           # → /waveSpan/internal/benchui/dist (incl. renamed index.html)
 
 FROM --platform=$BUILDPLATFORM golang:1.26 AS build
 ARG TARGETOS
@@ -522,6 +584,7 @@ ARG TARGETARCH
 WORKDIR /src
 COPY wavesdb/ ./wavesdb/
 COPY waveSpan/ ./waveSpan/
+# Overlay the built SPA BEFORE go build so //go:embed all:dist sees real assets (not just .gitkeep).
 COPY --from=ui /waveSpan/internal/benchui/dist/ ./waveSpan/internal/benchui/dist/
 WORKDIR /src/waveSpan
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
@@ -536,7 +599,9 @@ ENTRYPOINT ["/wavespan-benchui"]
 CMD ["--addr", "0.0.0.0:8088"]
 ```
 
-> The Node stage's `outDir: ../internal/benchui/dist` writes relative to `/ui` → `/waveSpan/internal/benchui/dist`; adjust the `COPY --from=ui` path to wherever the vite outDir resolves (verify the WORKDIR math; simplest is to set the Node stage WORKDIR to `/waveSpan/ui` so the `../internal/benchui/dist` resolves to `/waveSpan/internal/benchui/dist`). The container binds `0.0.0.0` (inside the container) — document that operators put it behind their own network controls.
+> The container binds `0.0.0.0` *inside the container*; document that operators put it behind their
+> own network controls. The Go stage copies `waveSpan/` (with the committed `dist/.gitkeep`) then
+> overlays the built `dist/` from the Node stage, so `//go:embed all:dist` picks up the real SPA.
 
 - [ ] **Step 2: Verify locally** (build context = parent of waveSpan):
 
