@@ -13,11 +13,13 @@ import (
 	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
-func kvClient(addr string) wavespanv1connect.KvServiceClient {
+// KVClient builds an H2C KV client for addr (host:port of a data port).
+func KVClient(addr string) wavespanv1connect.KvServiceClient {
 	return wavespanv1connect.NewKvServiceClient(rpcopts.H2CClient(), "http://"+addr)
 }
 
-func cypherClient(addr string) wavespanv1connect.CypherClient {
+// CypherClient builds an H2C Cypher client for addr.
+func CypherClient(addr string) wavespanv1connect.CypherClient {
 	return wavespanv1connect.NewCypherClient(rpcopts.H2CClient(), "http://"+addr)
 }
 

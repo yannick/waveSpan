@@ -6,10 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"connectrpc.com/connect"
-	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // LoadOptions configures the bulk loader.
@@ -27,8 +23,8 @@ type LoadResult struct {
 
 // Load bulk-loads a social graph (User nodes + FOLLOWS edges) and KV keys for benchmarking.
 func Load(ctx context.Context, addr string, opt LoadOptions, progress func(string)) LoadResult {
-	cy := cypherClient(addr)
-	kvc := kvClient(addr)
+	cy := CypherClient(addr)
+	kvc := KVClient(addr)
 	cities := []string{"NYC", "SF", "LA", "SEA", "AUS"}
 	if progress == nil {
 		progress = func(string) {}
@@ -38,8 +34,7 @@ func Load(ctx context.Context, addr string, opt LoadOptions, progress func(strin
 
 	var nodes int64
 	runPool(opt.Concurrency, opt.Users, func(i int) {
-		q := fmt.Sprintf("CREATE (:User {id:'user-%d', name:'User %d', age:%d, city:'%s'})", i, i, 18+i%60, cities[i%len(cities)])
-		if execCypher(ctx, cy, opt.Graph, q) {
+		if OpCreateNode(ctx, cy, opt.Graph, i, cities[i%len(cities)]) == nil {
 			atomic.AddInt64(&nodes, 1)
 		}
 	})
@@ -53,8 +48,7 @@ func Load(ctx context.Context, addr string, opt LoadOptions, progress func(strin
 		if a == b {
 			return
 		}
-		q := fmt.Sprintf("MATCH (a:User {id:'user-%d'}), (b:User {id:'user-%d'}) CREATE (a)-[:FOLLOWS]->(b)", a, b)
-		if execCypher(ctx, cy, opt.Graph, q) {
+		if OpCreateEdge(ctx, cy, opt.Graph, a, b) == nil {
 			atomic.AddInt64(&edges, 1)
 		}
 	})
@@ -63,10 +57,7 @@ func Load(ctx context.Context, addr string, opt LoadOptions, progress func(strin
 
 	var keys int64
 	runPool(opt.Concurrency, opt.KV, func(i int) {
-		_, err := kvc.Put(ctx, connect.NewRequest(&wavespanv1.PutRequest{
-			Namespace: "default", Key: []byte(fmt.Sprintf("bench/%d", i)), Value: []byte(fmt.Sprintf("value-%d", i)), RequireOriginPlusOne: true,
-		}))
-		if err == nil {
+		if OpKVWrite(ctx, kvc, "default", fmt.Sprintf("bench/%d", i), []byte(fmt.Sprintf("value-%d", i))) == nil {
 			atomic.AddInt64(&keys, 1)
 		}
 	})
@@ -98,15 +89,4 @@ func runPool(workers, n int, fn func(int)) {
 	}
 	close(jobs)
 	wg.Wait()
-}
-
-// execCypher runs a write query, draining the stream, returning success.
-func execCypher(ctx context.Context, cy wavespanv1connect.CypherClient, graph, q string) bool {
-	stream, err := cy.Query(ctx, connect.NewRequest(&wavespanv1.CypherRequest{GraphId: graph, Query: q}))
-	if err != nil {
-		return false
-	}
-	for stream.Receive() { //nolint:revive // drain
-	}
-	return stream.Err() == nil
 }

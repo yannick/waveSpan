@@ -6,9 +6,6 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-
-	"connectrpc.com/connect"
-	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // KVOptions configures the KV load test.
@@ -32,7 +29,7 @@ func RunKV(addr string, opt KVOptions) *KVResult {
 	if ns == "" {
 		ns = "default"
 	}
-	client := kvClient(addr)
+	client := KVClient(addr)
 	res := &KVResult{Get: &Latencies{}, Put: &Latencies{}}
 	ctx, cancel := context.WithTimeout(context.Background(), opt.Duration)
 	defer cancel()
@@ -47,7 +44,7 @@ func RunKV(addr string, opt KVOptions) *KVResult {
 				key := fmt.Sprintf("bench/%d", rng.Intn(opt.Keys))
 				start := time.Now()
 				if rng.Float64() < opt.ReadRatio {
-					_, err := client.Get(ctx, connect.NewRequest(&wavespanv1.GetRequest{Namespace: ns, Key: []byte(key)}))
+					err := OpKVRead(ctx, client, ns, key)
 					switch {
 					case err == nil:
 						res.Get.Add(time.Since(start))
@@ -55,9 +52,7 @@ func RunKV(addr string, opt KVOptions) *KVResult {
 						res.Get.AddErr()
 					}
 				} else {
-					_, err := client.Put(ctx, connect.NewRequest(&wavespanv1.PutRequest{
-						Namespace: ns, Key: []byte(key), Value: []byte("v"), RequireOriginPlusOne: true,
-					}))
+					err := OpKVWrite(ctx, client, ns, key, []byte("v"))
 					switch {
 					case err == nil:
 						res.Put.Add(time.Since(start))
