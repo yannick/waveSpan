@@ -1040,6 +1040,235 @@ func (x *VectorSearchRes) GetCompleteness() Completeness {
 	return Completeness_COMPLETENESS_UNSPECIFIED
 }
 
+// FloatVector wraps a vector for nested repeated-float fields (sampling, centroids).
+type FloatVector struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Values        []float32              `protobuf:"fixed32,1,rep,packed,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FloatVector) Reset() {
+	*x = FloatVector{}
+	mi := &file_wavespan_v1_vector_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FloatVector) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FloatVector) ProtoMessage() {}
+
+func (x *FloatVector) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_vector_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FloatVector.ProtoReflect.Descriptor instead.
+func (*FloatVector) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_vector_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *FloatVector) GetValues() []float32 {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+// IvfCentroids is the trained, shared quantizer artifact for a collection (design/29 Phase 3.5):
+// every node installs the same centroids so they agree on buckets. Versioned by qver — a retrain
+// produces a higher qver and new buckets; old vectors stay put and re-advertise under the new qver.
+type IvfCentroids struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Collection      string                 `protobuf:"bytes,1,opt,name=collection,proto3" json:"collection,omitempty"`
+	Qver            uint32                 `protobuf:"varint,2,opt,name=qver,proto3" json:"qver,omitempty"`
+	Dim             uint32                 `protobuf:"varint,3,opt,name=dim,proto3" json:"dim,omitempty"`
+	L2              bool                   `protobuf:"varint,4,opt,name=l2,proto3" json:"l2,omitempty"` // true = Euclidean; false = angular/dot
+	Centroids       []*FloatVector         `protobuf:"bytes,5,rep,name=centroids,proto3" json:"centroids,omitempty"`
+	TrainedAtUnixMs int64                  `protobuf:"varint,6,opt,name=trained_at_unix_ms,json=trainedAtUnixMs,proto3" json:"trained_at_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *IvfCentroids) Reset() {
+	*x = IvfCentroids{}
+	mi := &file_wavespan_v1_vector_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IvfCentroids) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IvfCentroids) ProtoMessage() {}
+
+func (x *IvfCentroids) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_vector_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IvfCentroids.ProtoReflect.Descriptor instead.
+func (*IvfCentroids) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_vector_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *IvfCentroids) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+func (x *IvfCentroids) GetQver() uint32 {
+	if x != nil {
+		return x.Qver
+	}
+	return 0
+}
+
+func (x *IvfCentroids) GetDim() uint32 {
+	if x != nil {
+		return x.Dim
+	}
+	return 0
+}
+
+func (x *IvfCentroids) GetL2() bool {
+	if x != nil {
+		return x.L2
+	}
+	return false
+}
+
+func (x *IvfCentroids) GetCentroids() []*FloatVector {
+	if x != nil {
+		return x.Centroids
+	}
+	return nil
+}
+
+func (x *IvfCentroids) GetTrainedAtUnixMs() int64 {
+	if x != nil {
+		return x.TrainedAtUnixMs
+	}
+	return 0
+}
+
+// SampleVectorsReq asks a node for a reservoir sample of its local vectors (for IVF training).
+type SampleVectorsReq struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Collection    string                 `protobuf:"bytes,1,opt,name=collection,proto3" json:"collection,omitempty"`
+	Limit         uint32                 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SampleVectorsReq) Reset() {
+	*x = SampleVectorsReq{}
+	mi := &file_wavespan_v1_vector_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SampleVectorsReq) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SampleVectorsReq) ProtoMessage() {}
+
+func (x *SampleVectorsReq) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_vector_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SampleVectorsReq.ProtoReflect.Descriptor instead.
+func (*SampleVectorsReq) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_vector_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *SampleVectorsReq) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+func (x *SampleVectorsReq) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type SampleVectorsRes struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Vectors       []*FloatVector         `protobuf:"bytes,1,rep,name=vectors,proto3" json:"vectors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SampleVectorsRes) Reset() {
+	*x = SampleVectorsRes{}
+	mi := &file_wavespan_v1_vector_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SampleVectorsRes) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SampleVectorsRes) ProtoMessage() {}
+
+func (x *SampleVectorsRes) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_vector_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SampleVectorsRes.ProtoReflect.Descriptor instead.
+func (*SampleVectorsRes) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_vector_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *SampleVectorsRes) GetVectors() []*FloatVector {
+	if x != nil {
+		return x.Vectors
+	}
+	return nil
+}
+
 var File_wavespan_v1_vector_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_vector_proto_rawDesc = "" +
@@ -1139,14 +1368,33 @@ const file_wavespan_v1_vector_proto_rawDesc = "" +
 	"\x0fVectorSearchRes\x123\n" +
 	"\tneighbors\x18\x01 \x03(\v2\x15.wavespan.v1.NeighborR\tneighbors\x12-\n" +
 	"\x04meta\x18\x02 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\x12=\n" +
-	"\fcompleteness\x18\x03 \x01(\x0e2\x19.wavespan.v1.CompletenessR\fcompleteness2\xc5\x03\n" +
+	"\fcompleteness\x18\x03 \x01(\x0e2\x19.wavespan.v1.CompletenessR\fcompleteness\"%\n" +
+	"\vFloatVector\x12\x16\n" +
+	"\x06values\x18\x01 \x03(\x02R\x06values\"\xc9\x01\n" +
+	"\fIvfCentroids\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x01 \x01(\tR\n" +
+	"collection\x12\x12\n" +
+	"\x04qver\x18\x02 \x01(\rR\x04qver\x12\x10\n" +
+	"\x03dim\x18\x03 \x01(\rR\x03dim\x12\x0e\n" +
+	"\x02l2\x18\x04 \x01(\bR\x02l2\x126\n" +
+	"\tcentroids\x18\x05 \x03(\v2\x18.wavespan.v1.FloatVectorR\tcentroids\x12+\n" +
+	"\x12trained_at_unix_ms\x18\x06 \x01(\x03R\x0ftrainedAtUnixMs\"H\n" +
+	"\x10SampleVectorsReq\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x01 \x01(\tR\n" +
+	"collection\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\rR\x05limit\"F\n" +
+	"\x10SampleVectorsRes\x122\n" +
+	"\avectors\x18\x01 \x03(\v2\x18.wavespan.v1.FloatVectorR\avectors2\x94\x04\n" +
 	"\rVectorService\x12D\n" +
 	"\x03Put\x12\x1d.wavespan.v1.PutVectorRequest\x1a\x1e.wavespan.v1.PutVectorResponse\x12P\n" +
 	"\vSearchLocal\x12\x1f.wavespan.v1.SearchLocalRequest\x1a .wavespan.v1.SearchLocalResponse\x12A\n" +
 	"\tVectorPut\x12\x19.wavespan.v1.VectorPutReq\x1a\x19.wavespan.v1.VectorPutRes\x12A\n" +
 	"\tVectorGet\x12\x19.wavespan.v1.VectorGetReq\x1a\x19.wavespan.v1.VectorGetRes\x12J\n" +
 	"\fVectorDelete\x12\x1c.wavespan.v1.VectorDeleteReq\x1a\x1c.wavespan.v1.VectorDeleteRes\x12J\n" +
-	"\fVectorSearch\x12\x1c.wavespan.v1.VectorSearchReq\x1a\x1c.wavespan.v1.VectorSearchResB\xa3\x01\n" +
+	"\fVectorSearch\x12\x1c.wavespan.v1.VectorSearchReq\x1a\x1c.wavespan.v1.VectorSearchRes\x12M\n" +
+	"\rSampleVectors\x12\x1d.wavespan.v1.SampleVectorsReq\x1a\x1d.wavespan.v1.SampleVectorsResB\xa3\x01\n" +
 	"\x0fcom.wavespan.v1B\vVectorProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -1161,7 +1409,7 @@ func file_wavespan_v1_vector_proto_rawDescGZIP() []byte {
 	return file_wavespan_v1_vector_proto_rawDescData
 }
 
-var file_wavespan_v1_vector_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_wavespan_v1_vector_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_wavespan_v1_vector_proto_goTypes = []any{
 	(*VectorRecord)(nil),        // 0: wavespan.v1.VectorRecord
 	(*VectorMeta)(nil),          // 1: wavespan.v1.VectorMeta
@@ -1179,39 +1427,47 @@ var file_wavespan_v1_vector_proto_goTypes = []any{
 	(*VectorSearchReq)(nil),     // 13: wavespan.v1.VectorSearchReq
 	(*Neighbor)(nil),            // 14: wavespan.v1.Neighbor
 	(*VectorSearchRes)(nil),     // 15: wavespan.v1.VectorSearchRes
-	nil,                         // 16: wavespan.v1.VectorRecord.MetadataEntry
-	(*Version)(nil),             // 17: wavespan.v1.Version
-	(*ResponseMeta)(nil),        // 18: wavespan.v1.ResponseMeta
-	(Completeness)(0),           // 19: wavespan.v1.Completeness
-	(*Value)(nil),               // 20: wavespan.v1.Value
+	(*FloatVector)(nil),         // 16: wavespan.v1.FloatVector
+	(*IvfCentroids)(nil),        // 17: wavespan.v1.IvfCentroids
+	(*SampleVectorsReq)(nil),    // 18: wavespan.v1.SampleVectorsReq
+	(*SampleVectorsRes)(nil),    // 19: wavespan.v1.SampleVectorsRes
+	nil,                         // 20: wavespan.v1.VectorRecord.MetadataEntry
+	(*Version)(nil),             // 21: wavespan.v1.Version
+	(*ResponseMeta)(nil),        // 22: wavespan.v1.ResponseMeta
+	(Completeness)(0),           // 23: wavespan.v1.Completeness
+	(*Value)(nil),               // 24: wavespan.v1.Value
 }
 var file_wavespan_v1_vector_proto_depIdxs = []int32{
-	16, // 0: wavespan.v1.VectorRecord.metadata:type_name -> wavespan.v1.VectorRecord.MetadataEntry
-	17, // 1: wavespan.v1.VectorRecord.version:type_name -> wavespan.v1.Version
+	20, // 0: wavespan.v1.VectorRecord.metadata:type_name -> wavespan.v1.VectorRecord.MetadataEntry
+	21, // 1: wavespan.v1.VectorRecord.version:type_name -> wavespan.v1.Version
 	0,  // 2: wavespan.v1.PutVectorRequest.record:type_name -> wavespan.v1.VectorRecord
 	5,  // 3: wavespan.v1.SearchLocalResponse.hits:type_name -> wavespan.v1.VectorHit
-	17, // 4: wavespan.v1.VectorPutRes.version:type_name -> wavespan.v1.Version
+	21, // 4: wavespan.v1.VectorPutRes.version:type_name -> wavespan.v1.Version
 	14, // 5: wavespan.v1.VectorSearchRes.neighbors:type_name -> wavespan.v1.Neighbor
-	18, // 6: wavespan.v1.VectorSearchRes.meta:type_name -> wavespan.v1.ResponseMeta
-	19, // 7: wavespan.v1.VectorSearchRes.completeness:type_name -> wavespan.v1.Completeness
-	20, // 8: wavespan.v1.VectorRecord.MetadataEntry.value:type_name -> wavespan.v1.Value
-	2,  // 9: wavespan.v1.VectorService.Put:input_type -> wavespan.v1.PutVectorRequest
-	4,  // 10: wavespan.v1.VectorService.SearchLocal:input_type -> wavespan.v1.SearchLocalRequest
-	7,  // 11: wavespan.v1.VectorService.VectorPut:input_type -> wavespan.v1.VectorPutReq
-	9,  // 12: wavespan.v1.VectorService.VectorGet:input_type -> wavespan.v1.VectorGetReq
-	11, // 13: wavespan.v1.VectorService.VectorDelete:input_type -> wavespan.v1.VectorDeleteReq
-	13, // 14: wavespan.v1.VectorService.VectorSearch:input_type -> wavespan.v1.VectorSearchReq
-	3,  // 15: wavespan.v1.VectorService.Put:output_type -> wavespan.v1.PutVectorResponse
-	6,  // 16: wavespan.v1.VectorService.SearchLocal:output_type -> wavespan.v1.SearchLocalResponse
-	8,  // 17: wavespan.v1.VectorService.VectorPut:output_type -> wavespan.v1.VectorPutRes
-	10, // 18: wavespan.v1.VectorService.VectorGet:output_type -> wavespan.v1.VectorGetRes
-	12, // 19: wavespan.v1.VectorService.VectorDelete:output_type -> wavespan.v1.VectorDeleteRes
-	15, // 20: wavespan.v1.VectorService.VectorSearch:output_type -> wavespan.v1.VectorSearchRes
-	15, // [15:21] is the sub-list for method output_type
-	9,  // [9:15] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	22, // 6: wavespan.v1.VectorSearchRes.meta:type_name -> wavespan.v1.ResponseMeta
+	23, // 7: wavespan.v1.VectorSearchRes.completeness:type_name -> wavespan.v1.Completeness
+	16, // 8: wavespan.v1.IvfCentroids.centroids:type_name -> wavespan.v1.FloatVector
+	16, // 9: wavespan.v1.SampleVectorsRes.vectors:type_name -> wavespan.v1.FloatVector
+	24, // 10: wavespan.v1.VectorRecord.MetadataEntry.value:type_name -> wavespan.v1.Value
+	2,  // 11: wavespan.v1.VectorService.Put:input_type -> wavespan.v1.PutVectorRequest
+	4,  // 12: wavespan.v1.VectorService.SearchLocal:input_type -> wavespan.v1.SearchLocalRequest
+	7,  // 13: wavespan.v1.VectorService.VectorPut:input_type -> wavespan.v1.VectorPutReq
+	9,  // 14: wavespan.v1.VectorService.VectorGet:input_type -> wavespan.v1.VectorGetReq
+	11, // 15: wavespan.v1.VectorService.VectorDelete:input_type -> wavespan.v1.VectorDeleteReq
+	13, // 16: wavespan.v1.VectorService.VectorSearch:input_type -> wavespan.v1.VectorSearchReq
+	18, // 17: wavespan.v1.VectorService.SampleVectors:input_type -> wavespan.v1.SampleVectorsReq
+	3,  // 18: wavespan.v1.VectorService.Put:output_type -> wavespan.v1.PutVectorResponse
+	6,  // 19: wavespan.v1.VectorService.SearchLocal:output_type -> wavespan.v1.SearchLocalResponse
+	8,  // 20: wavespan.v1.VectorService.VectorPut:output_type -> wavespan.v1.VectorPutRes
+	10, // 21: wavespan.v1.VectorService.VectorGet:output_type -> wavespan.v1.VectorGetRes
+	12, // 22: wavespan.v1.VectorService.VectorDelete:output_type -> wavespan.v1.VectorDeleteRes
+	15, // 23: wavespan.v1.VectorService.VectorSearch:output_type -> wavespan.v1.VectorSearchRes
+	19, // 24: wavespan.v1.VectorService.SampleVectors:output_type -> wavespan.v1.SampleVectorsRes
+	18, // [18:25] is the sub-list for method output_type
+	11, // [11:18] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_vector_proto_init() }
@@ -1228,7 +1484,7 @@ func file_wavespan_v1_vector_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_vector_proto_rawDesc), len(file_wavespan_v1_vector_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

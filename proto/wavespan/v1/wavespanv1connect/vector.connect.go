@@ -48,6 +48,9 @@ const (
 	// VectorServiceVectorSearchProcedure is the fully-qualified name of the VectorService's
 	// VectorSearch RPC.
 	VectorServiceVectorSearchProcedure = "/wavespan.v1.VectorService/VectorSearch"
+	// VectorServiceSampleVectorsProcedure is the fully-qualified name of the VectorService's
+	// SampleVectors RPC.
+	VectorServiceSampleVectorsProcedure = "/wavespan.v1.VectorService/SampleVectors"
 )
 
 // VectorServiceClient is a client for the wavespan.v1.VectorService service.
@@ -58,6 +61,7 @@ type VectorServiceClient interface {
 	VectorGet(context.Context, *connect.Request[v1.VectorGetReq]) (*connect.Response[v1.VectorGetRes], error)
 	VectorDelete(context.Context, *connect.Request[v1.VectorDeleteReq]) (*connect.Response[v1.VectorDeleteRes], error)
 	VectorSearch(context.Context, *connect.Request[v1.VectorSearchReq]) (*connect.Response[v1.VectorSearchRes], error)
+	SampleVectors(context.Context, *connect.Request[v1.SampleVectorsReq]) (*connect.Response[v1.SampleVectorsRes], error)
 }
 
 // NewVectorServiceClient constructs a client for the wavespan.v1.VectorService service. By default,
@@ -107,17 +111,24 @@ func NewVectorServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(vectorServiceMethods.ByName("VectorSearch")),
 			connect.WithClientOptions(opts...),
 		),
+		sampleVectors: connect.NewClient[v1.SampleVectorsReq, v1.SampleVectorsRes](
+			httpClient,
+			baseURL+VectorServiceSampleVectorsProcedure,
+			connect.WithSchema(vectorServiceMethods.ByName("SampleVectors")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // vectorServiceClient implements VectorServiceClient.
 type vectorServiceClient struct {
-	put          *connect.Client[v1.PutVectorRequest, v1.PutVectorResponse]
-	searchLocal  *connect.Client[v1.SearchLocalRequest, v1.SearchLocalResponse]
-	vectorPut    *connect.Client[v1.VectorPutReq, v1.VectorPutRes]
-	vectorGet    *connect.Client[v1.VectorGetReq, v1.VectorGetRes]
-	vectorDelete *connect.Client[v1.VectorDeleteReq, v1.VectorDeleteRes]
-	vectorSearch *connect.Client[v1.VectorSearchReq, v1.VectorSearchRes]
+	put           *connect.Client[v1.PutVectorRequest, v1.PutVectorResponse]
+	searchLocal   *connect.Client[v1.SearchLocalRequest, v1.SearchLocalResponse]
+	vectorPut     *connect.Client[v1.VectorPutReq, v1.VectorPutRes]
+	vectorGet     *connect.Client[v1.VectorGetReq, v1.VectorGetRes]
+	vectorDelete  *connect.Client[v1.VectorDeleteReq, v1.VectorDeleteRes]
+	vectorSearch  *connect.Client[v1.VectorSearchReq, v1.VectorSearchRes]
+	sampleVectors *connect.Client[v1.SampleVectorsReq, v1.SampleVectorsRes]
 }
 
 // Put calls wavespan.v1.VectorService.Put.
@@ -150,6 +161,11 @@ func (c *vectorServiceClient) VectorSearch(ctx context.Context, req *connect.Req
 	return c.vectorSearch.CallUnary(ctx, req)
 }
 
+// SampleVectors calls wavespan.v1.VectorService.SampleVectors.
+func (c *vectorServiceClient) SampleVectors(ctx context.Context, req *connect.Request[v1.SampleVectorsReq]) (*connect.Response[v1.SampleVectorsRes], error) {
+	return c.sampleVectors.CallUnary(ctx, req)
+}
+
 // VectorServiceHandler is an implementation of the wavespan.v1.VectorService service.
 type VectorServiceHandler interface {
 	Put(context.Context, *connect.Request[v1.PutVectorRequest]) (*connect.Response[v1.PutVectorResponse], error)
@@ -158,6 +174,7 @@ type VectorServiceHandler interface {
 	VectorGet(context.Context, *connect.Request[v1.VectorGetReq]) (*connect.Response[v1.VectorGetRes], error)
 	VectorDelete(context.Context, *connect.Request[v1.VectorDeleteReq]) (*connect.Response[v1.VectorDeleteRes], error)
 	VectorSearch(context.Context, *connect.Request[v1.VectorSearchReq]) (*connect.Response[v1.VectorSearchRes], error)
+	SampleVectors(context.Context, *connect.Request[v1.SampleVectorsReq]) (*connect.Response[v1.SampleVectorsRes], error)
 }
 
 // NewVectorServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -203,6 +220,12 @@ func NewVectorServiceHandler(svc VectorServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(vectorServiceMethods.ByName("VectorSearch")),
 		connect.WithHandlerOptions(opts...),
 	)
+	vectorServiceSampleVectorsHandler := connect.NewUnaryHandler(
+		VectorServiceSampleVectorsProcedure,
+		svc.SampleVectors,
+		connect.WithSchema(vectorServiceMethods.ByName("SampleVectors")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.VectorService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case VectorServicePutProcedure:
@@ -217,6 +240,8 @@ func NewVectorServiceHandler(svc VectorServiceHandler, opts ...connect.HandlerOp
 			vectorServiceVectorDeleteHandler.ServeHTTP(w, r)
 		case VectorServiceVectorSearchProcedure:
 			vectorServiceVectorSearchHandler.ServeHTTP(w, r)
+		case VectorServiceSampleVectorsProcedure:
+			vectorServiceSampleVectorsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -248,4 +273,8 @@ func (UnimplementedVectorServiceHandler) VectorDelete(context.Context, *connect.
 
 func (UnimplementedVectorServiceHandler) VectorSearch(context.Context, *connect.Request[v1.VectorSearchReq]) (*connect.Response[v1.VectorSearchRes], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.VectorService.VectorSearch is not implemented"))
+}
+
+func (UnimplementedVectorServiceHandler) SampleVectors(context.Context, *connect.Request[v1.SampleVectorsReq]) (*connect.Response[v1.SampleVectorsRes], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.VectorService.SampleVectors is not implemented"))
 }

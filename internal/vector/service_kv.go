@@ -2,12 +2,31 @@ package vector
 
 import (
 	"context"
+	"math/rand"
 	"sort"
+	"time"
 
 	"connectrpc.com/connect"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"google.golang.org/protobuf/proto"
 )
+
+// SampleVectors returns a reservoir sample of this node's local vectors for a collection — the
+// per-node contribution the IVF trainer aggregates (design/29 Phase 3.5).
+func (s *Service) SampleVectors(_ context.Context, req *connect.Request[wavespanv1.SampleVectorsReq]) (*connect.Response[wavespanv1.SampleVectorsRes], error) {
+	m := req.Msg
+	limit := int(m.GetLimit())
+	if limit <= 0 {
+		limit = 1000
+	}
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	sample := ReservoirSample(s.store, m.GetCollection(), limit, rng)
+	res := &wavespanv1.SampleVectorsRes{Vectors: make([]*wavespanv1.FloatVector, len(sample))}
+	for i, v := range sample {
+		res.Vectors[i] = &wavespanv1.FloatVector{Values: v}
+	}
+	return connect.NewResponse(res), nil
+}
 
 // VectorPut stores an embedding (the key) with an opaque payload (the value), replicated to holders.
 func (s *Service) VectorPut(ctx context.Context, req *connect.Request[wavespanv1.VectorPutReq]) (*connect.Response[wavespanv1.VectorPutRes], error) {

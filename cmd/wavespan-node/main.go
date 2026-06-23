@@ -10,6 +10,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
+	"math"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -40,10 +43,12 @@ import (
 	"github.com/cwire/wavespan/internal/ui"
 	"github.com/cwire/wavespan/internal/vector"
 	"github.com/cwire/wavespan/internal/vector/ann"
+	"github.com/cwire/wavespan/internal/vector/quantizer"
 	"github.com/cwire/wavespan/internal/version"
 	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
 	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/protobuf/proto"
 )
 
 func main() {
@@ -357,6 +362,11 @@ func run() error {
 			}
 		},
 	)
+	// IVF training (design/29 Phase 3.5): the lowest-member-id node periodically gathers a cross-node
+	// sample, trains k-means centroids, and writes a versioned artifact; every node reads + installs
+	// it so the whole cluster agrees on buckets. Until then collections use the zero-training LSH.
+	go runCentroidSync(ctx, reader, quantSet, bucketDir, vstore, metas, logger, 15*time.Second)
+	go runIVFTrainer(ctx, self, svc, coord, httpClient, quantSet, vstore, metas, logger, 20*time.Second)
 	newGraphVersion := func() *wavespanv1.Version { return rstore.NextVersion().ToProto() }
 
 	// Global active-active replication (M7/M10): tap origin KV writes AND raw-vector writes into a
@@ -844,29 +854,10 @@ const vectorNumBuckets = 256
 // recomputeHeldBuckets periodically rebuilds this node's advertised bucket set from the store, so a
 // bucket that emptied (deletes/migration) is de-advertised. Runs once at boot, then on interval.
 func recomputeHeldBuckets(ctx context.Context, vstore *vector.Store, qs *vector.QuantSet, dir *vector.BucketDir, metas []*vector.IndexMeta, interval time.Duration) {
-	colls := map[string]bool{}
-	for _, m := range metas {
-		colls[m.Collection] = true
-	}
+	colls := distinctCollections(metas)
 	recompute := func() {
-		for coll := range colls {
-			qz, ok := qs.For(coll)
-			if !ok {
-				continue
-			}
-			recs, err := vstore.ScanCollection(coll)
-			if err != nil {
-				continue
-			}
-			seen := map[uint32]bool{}
-			for _, r := range recs {
-				seen[qz.Bucket(r.GetValues())] = true
-			}
-			buckets := make([]uint32, 0, len(seen))
-			for b := range seen {
-				buckets = append(buckets, b)
-			}
-			dir.SetOwn(coll, qz.Version(), buckets, time.Now().UnixMilli())
+		for _, coll := range colls {
+			recomputeCollectionBuckets(vstore, qs, dir, coll)
 		}
 	}
 	recompute()
@@ -882,6 +873,171 @@ func recomputeHeldBuckets(ctx context.Context, vstore *vector.Store, qs *vector.
 	}
 }
 
+// recomputeCollectionBuckets rebuilds this node's advertised bucket set for one collection from the
+// store under the current quantizer (also called right after a new IVF quantizer is installed).
+func recomputeCollectionBuckets(vstore *vector.Store, qs *vector.QuantSet, dir *vector.BucketDir, collection string) {
+	qz, ok := qs.For(collection)
+	if !ok {
+		return
+	}
+	recs, err := vstore.ScanCollection(collection)
+	if err != nil {
+		return
+	}
+	seen := map[uint32]bool{}
+	for _, r := range recs {
+		seen[qz.Bucket(r.GetValues())] = true
+	}
+	buckets := make([]uint32, 0, len(seen))
+	for b := range seen {
+		buckets = append(buckets, b)
+	}
+	dir.SetOwn(collection, qz.Version(), buckets, time.Now().UnixMilli())
+}
+
+func distinctCollections(metas []*vector.IndexMeta) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range metas {
+		if !seen[m.Collection] {
+			seen[m.Collection] = true
+			out = append(out, m.Collection)
+		}
+	}
+	return out
+}
+
+// runCentroidSync periodically reads each collection's centroid artifact and installs a newer IVF
+// quantizer, so every node converges on the same buckets (design/29 Phase 3.5).
+func runCentroidSync(ctx context.Context, reader *kv.Reader, qs *vector.QuantSet, dir *vector.BucketDir, vstore *vector.Store, metas []*vector.IndexMeta, logger *slog.Logger, interval time.Duration) {
+	colls := distinctCollections(metas)
+	sync := func() {
+		for _, coll := range colls {
+			res, err := reader.Get(ctx, vector.CentroidNamespace(coll), vector.CentroidKey(), true)
+			if err != nil || !res.GetFound() {
+				continue
+			}
+			var art wavespanv1.IvfCentroids
+			if proto.Unmarshal(res.GetValue(), &art) != nil || len(art.GetCentroids()) == 0 {
+				continue
+			}
+			if cur, ok := qs.For(coll); ok && art.GetQver() <= cur.Version() {
+				continue // not newer than what we run
+			}
+			qs.Set(coll, vector.IVFFromProto(&art))
+			recomputeCollectionBuckets(vstore, qs, dir, coll) // re-advertise our vectors under the new qver
+			logger.Info("installed IVF centroids", "collection", coll, "qver", art.GetQver(), "centroids", len(art.GetCentroids()))
+		}
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			sync()
+		}
+	}
+}
+
+// runIVFTrainer, on the lowest-member-id alive node, periodically gathers a cross-node vector sample,
+// trains k-means centroids, and writes a versioned artifact for runCentroidSync to distribute.
+func runIVFTrainer(ctx context.Context, self membership.Member, svc *membership.Service, coord *kv.Coordinator, hc *http.Client, qs *vector.QuantSet, vstore *vector.Store, metas []*vector.IndexMeta, logger *slog.Logger, interval time.Duration) {
+	const (
+		samplePerNode     = 4000
+		minSampleForTrain = 64
+		retrainInterval   = 30 * time.Minute
+	)
+	colls := distinctCollections(metas)
+	dim := map[string]int{}
+	l2 := map[string]bool{}
+	for _, m := range metas {
+		dim[m.Collection] = m.Dimensions
+		l2[m.Collection] = vector.MetricIsL2(m.Metric)
+	}
+	lastTrained := map[string]time.Time{}
+	train := func() {
+		if !isLowestAlive(svc, self.MemberID) {
+			return // a single deterministic trainer; LWW on the artifact resolves brief overlaps
+		}
+		for _, coll := range colls {
+			if t, ok := lastTrained[coll]; ok && time.Since(t) < retrainInterval {
+				continue
+			}
+			samples := gatherSamples(ctx, self, svc, hc, vstore, coll, samplePerNode)
+			if len(samples) < minSampleForTrain {
+				continue
+			}
+			curVer := uint32(1)
+			if q, ok := qs.For(coll); ok {
+				curVer = q.Version()
+			}
+			k := vectorNumBuckets
+			if max := len(samples) / 16; k > max {
+				k = max // adapt cluster count to the data we actually have
+			}
+			if k < 1 {
+				k = 1
+			}
+			ivf := quantizer.TrainIVF(samples, k, 10, l2[coll], int64(curVer), curVer+1)
+			art := vector.IVFToProto(coll, ivf, dim[coll], l2[coll], time.Now().UnixMilli())
+			b, merr := proto.Marshal(art)
+			if merr != nil {
+				continue
+			}
+			if _, err := coord.Put(ctx, vector.CentroidNamespace(coll), vector.CentroidKey(), b, nil, ""); err != nil {
+				logger.Warn("ivf artifact write", "collection", coll, "err", err)
+				continue
+			}
+			lastTrained[coll] = time.Now()
+			logger.Info("trained IVF centroids", "collection", coll, "qver", curVer+1, "k", k, "samples", len(samples))
+		}
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			train()
+		}
+	}
+}
+
+// isLowestAlive reports whether self has the smallest member id among alive members (deterministic
+// single-trainer election without coordination).
+func isLowestAlive(svc *membership.Service, self string) bool {
+	for _, mv := range svc.Members() {
+		if mv.State == membership.StateAlive && mv.Member.MemberID < self {
+			return false
+		}
+	}
+	return true
+}
+
+// gatherSamples collects a reservoir sample from this node plus every alive peer (SampleVectors RPC).
+func gatherSamples(ctx context.Context, self membership.Member, svc *membership.Service, hc *http.Client, vstore *vector.Store, collection string, limit int) [][]float32 {
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	all := vector.ReservoirSample(vstore, collection, limit, rng)
+	for _, mv := range svc.Members() {
+		m := mv.Member
+		if mv.State != membership.StateAlive || m.MemberID == self.MemberID || m.DataAddr == "" {
+			continue
+		}
+		c := wavespanv1connect.NewVectorServiceClient(hc, "http://"+m.DataAddr)
+		resp, err := c.SampleVectors(ctx, connect.NewRequest(&wavespanv1.SampleVectorsReq{Collection: collection, Limit: uint32(limit)}))
+		if err != nil {
+			continue
+		}
+		for _, fv := range resp.Msg.GetVectors() {
+			all = append(all, fv.GetValues())
+		}
+	}
+	return all
+}
+
 // routedVectorScatter queries peer holders for a kNN fragment. With nprobe>0 and routing info
 // available it scatters only to the advertised holders of the query's probed buckets; otherwise it
 // falls back to every alive peer. Self is excluded — the coordinator adds its own local fragment.
@@ -889,19 +1045,47 @@ func routedVectorScatter(ctx context.Context, self membership.Member, svc *membe
 	var allow map[string]bool
 	if nprobe > 0 {
 		if qz, ok := qs.For(collection); ok {
-			buckets := qz.Probe(query, nprobe)
 			allow = map[string]bool{}
-			// Gossiped held-bucket holders (catches off-affinity / cache replicas)...
-			if members, ok := dir.Holders(collection, qz.Version(), buckets); ok {
-				for _, mid := range members {
-					allow[mid] = true
-				}
-			}
-			// ...plus the affinity ring computed locally (gossip-independent; covers just-joined nodes).
 			ids := aliveMemberIDs(svc)
-			for _, b := range buckets {
-				for _, mid := range vector.Ring(vector.BucketKey(collection, qz.Version(), b), ids, ringSize) {
-					allow[mid] = true
+			qver := qz.Version()
+			graph := svc.Graph()
+			for _, b := range qz.Probe(query, nprobe) {
+				// Prefer the gossip-confirmed holders (they actually hold the bucket); fall back to the
+				// locally-computed affinity ring only when the directory has nothing yet (gossip lag /
+				// just-joined node). Picking a ring node that isn't really a holder would silently miss.
+				holders := map[string]bool{}
+				if members, ok := dir.Holders(collection, qver, []uint32{b}); ok {
+					for _, m := range members {
+						holders[m] = true
+					}
+				}
+				selfHolds := holders[self.MemberID]
+				delete(holders, self.MemberID)
+				if len(holders) == 0 {
+					for _, m := range vector.Ring(vector.BucketKey(collection, qver, b), ids, ringSize) {
+						if m != self.MemberID {
+							holders[m] = true
+						} else {
+							selfHolds = true
+						}
+					}
+				}
+				if selfHolds {
+					continue // the local fragment already covers this bucket
+				}
+				// Closest-replica: query only the lowest-latency peer holding this bucket.
+				best, bestRtt := "", math.Inf(1)
+				for m := range holders {
+					rtt := math.Inf(1)
+					if e, ok := graph.Edge(m); ok && e.EWMARttMs > 0 {
+						rtt = e.EWMARttMs
+					}
+					if best == "" || rtt < bestRtt {
+						best, bestRtt = m, rtt
+					}
+				}
+				if best != "" {
+					allow[best] = true
 				}
 			}
 		}

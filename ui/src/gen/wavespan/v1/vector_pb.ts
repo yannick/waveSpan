@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file wavespan/v1/vector.proto.
  */
 export const file_wavespan_v1_vector: GenFile = /*@__PURE__*/
-  fileDesc("Chh3YXZlc3Bhbi92MS92ZWN0b3IucHJvdG8SC3dhdmVzcGFuLnYxIsoCCgxWZWN0b3JSZWNvcmQSEgoKY29sbGVjdGlvbhgBIAEoCRIRCgl2ZWN0b3JfaWQYAiABKAkSDgoGdmFsdWVzGAMgAygCEg0KBWR0eXBlGAQgASgJEhIKCmRpbWVuc2lvbnMYBSABKA0SOQoIbWV0YWRhdGEYBiADKAsyJy53YXZlc3Bhbi52MS5WZWN0b3JSZWNvcmQuTWV0YWRhdGFFbnRyeRIVCg1ncmFwaF9ub2RlX2lkGAcgASgJEiUKB3ZlcnNpb24YCCABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEhEKCXRvbWJzdG9uZRgJIAEoCBIPCgdwYXlsb2FkGAogASgMGkMKDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEiEKBXZhbHVlGAIgASgLMhIud2F2ZXNwYW4udjEuVmFsdWU6AjgBIm4KClZlY3Rvck1ldGESEgoKY29sbGVjdGlvbhgBIAEoCRIRCgl2ZWN0b3JfaWQYAiABKAkSEgoKZGltZW5zaW9ucxgDIAEoDRIOCgZtZXRyaWMYBCABKAkSFQoNZ3JhcGhfbm9kZV9pZBgFIAEoCSI9ChBQdXRWZWN0b3JSZXF1ZXN0EikKBnJlY29yZBgBIAEoCzIZLndhdmVzcGFuLnYxLlZlY3RvclJlY29yZCITChFQdXRWZWN0b3JSZXNwb25zZSJ0ChJTZWFyY2hMb2NhbFJlcXVlc3QSEgoKaW5kZXhfbmFtZRgBIAEoCRINCgVxdWVyeRgCIAMoAhIJCgFrGAMgASgFEhEKCWVmX3NlYXJjaBgEIAEoBRINCgVleGFjdBgFIAEoCBIOCgZyZXJhbmsYBiABKAgiagoJVmVjdG9ySGl0EhIKCmNvbGxlY3Rpb24YASABKAkSEQoJdmVjdG9yX2lkGAIgASgJEhUKDWdyYXBoX25vZGVfaWQYAyABKAkSEAoIZGlzdGFuY2UYBCABKAESDQoFc2NvcmUYBSABKAEiOwoTU2VhcmNoTG9jYWxSZXNwb25zZRIkCgRoaXRzGAEgAygLMhYud2F2ZXNwYW4udjEuVmVjdG9ySGl0ImMKDFZlY3RvclB1dFJlcRISCgpjb2xsZWN0aW9uGAEgASgJEg4KBnZlY3RvchgCIAMoAhIPCgdwYXlsb2FkGAMgASgMEhMKBnR0bF9tcxgEIAEoA0gAiAEBQgkKB190dGxfbXMiNQoMVmVjdG9yUHV0UmVzEiUKB3ZlcnNpb24YASABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uIjIKDFZlY3RvckdldFJlcRISCgpjb2xsZWN0aW9uGAEgASgJEg4KBnZlY3RvchgCIAMoAiIuCgxWZWN0b3JHZXRSZXMSDQoFZm91bmQYASABKAgSDwoHcGF5bG9hZBgCIAEoDCI1Cg9WZWN0b3JEZWxldGVSZXESEgoKY29sbGVjdGlvbhgBIAEoCRIOCgZ2ZWN0b3IYAiADKAIiEQoPVmVjdG9yRGVsZXRlUmVzIosBCg9WZWN0b3JTZWFyY2hSZXESEgoKY29sbGVjdGlvbhgBIAEoCRINCgVxdWVyeRgCIAMoAhIJCgFrGAMgASgNEg4KBm5wcm9iZRgEIAEoDRIRCgllZl9zZWFyY2gYBSABKA0SDgoGcmVyYW5rGAYgASgIEhcKD2luY2x1ZGVfcGF5bG9hZBgHIAEoCCJfCghOZWlnaGJvchIOCgZ2ZWN0b3IYASADKAISDwoHcGF5bG9hZBgCIAEoDBIQCghkaXN0YW5jZRgDIAEoARINCgVzY29yZRgEIAEoARIRCgl2ZWN0b3JfaWQYBSABKAkilQEKD1ZlY3RvclNlYXJjaFJlcxIoCgluZWlnaGJvcnMYASADKAsyFS53YXZlc3Bhbi52MS5OZWlnaGJvchInCgRtZXRhGAIgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEi8KDGNvbXBsZXRlbmVzcxgDIAEoDjIZLndhdmVzcGFuLnYxLkNvbXBsZXRlbmVzczLFAwoNVmVjdG9yU2VydmljZRJECgNQdXQSHS53YXZlc3Bhbi52MS5QdXRWZWN0b3JSZXF1ZXN0Gh4ud2F2ZXNwYW4udjEuUHV0VmVjdG9yUmVzcG9uc2USUAoLU2VhcmNoTG9jYWwSHy53YXZlc3Bhbi52MS5TZWFyY2hMb2NhbFJlcXVlc3QaIC53YXZlc3Bhbi52MS5TZWFyY2hMb2NhbFJlc3BvbnNlEkEKCVZlY3RvclB1dBIZLndhdmVzcGFuLnYxLlZlY3RvclB1dFJlcRoZLndhdmVzcGFuLnYxLlZlY3RvclB1dFJlcxJBCglWZWN0b3JHZXQSGS53YXZlc3Bhbi52MS5WZWN0b3JHZXRSZXEaGS53YXZlc3Bhbi52MS5WZWN0b3JHZXRSZXMSSgoMVmVjdG9yRGVsZXRlEhwud2F2ZXNwYW4udjEuVmVjdG9yRGVsZXRlUmVxGhwud2F2ZXNwYW4udjEuVmVjdG9yRGVsZXRlUmVzEkoKDFZlY3RvclNlYXJjaBIcLndhdmVzcGFuLnYxLlZlY3RvclNlYXJjaFJlcRocLndhdmVzcGFuLnYxLlZlY3RvclNlYXJjaFJlc0KjAQoPY29tLndhdmVzcGFuLnYxQgtWZWN0b3JQcm90b1ABWjZnaXRodWIuY29tL2N3aXJlL3dhdmVzcGFuL3Byb3RvL3dhdmVzcGFuL3YxO3dhdmVzcGFudjGiAgNXWFiqAgtXYXZlc3Bhbi5WMcoCC1dhdmVzcGFuXFYx4gIXV2F2ZXNwYW5cVjFcR1BCTWV0YWRhdGHqAgxXYXZlc3Bhbjo6VjFiBnByb3RvMw", [file_wavespan_v1_common, file_wavespan_v1_cypher]);
+  fileDesc("Chh3YXZlc3Bhbi92MS92ZWN0b3IucHJvdG8SC3dhdmVzcGFuLnYxIsoCCgxWZWN0b3JSZWNvcmQSEgoKY29sbGVjdGlvbhgBIAEoCRIRCgl2ZWN0b3JfaWQYAiABKAkSDgoGdmFsdWVzGAMgAygCEg0KBWR0eXBlGAQgASgJEhIKCmRpbWVuc2lvbnMYBSABKA0SOQoIbWV0YWRhdGEYBiADKAsyJy53YXZlc3Bhbi52MS5WZWN0b3JSZWNvcmQuTWV0YWRhdGFFbnRyeRIVCg1ncmFwaF9ub2RlX2lkGAcgASgJEiUKB3ZlcnNpb24YCCABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEhEKCXRvbWJzdG9uZRgJIAEoCBIPCgdwYXlsb2FkGAogASgMGkMKDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEiEKBXZhbHVlGAIgASgLMhIud2F2ZXNwYW4udjEuVmFsdWU6AjgBIm4KClZlY3Rvck1ldGESEgoKY29sbGVjdGlvbhgBIAEoCRIRCgl2ZWN0b3JfaWQYAiABKAkSEgoKZGltZW5zaW9ucxgDIAEoDRIOCgZtZXRyaWMYBCABKAkSFQoNZ3JhcGhfbm9kZV9pZBgFIAEoCSI9ChBQdXRWZWN0b3JSZXF1ZXN0EikKBnJlY29yZBgBIAEoCzIZLndhdmVzcGFuLnYxLlZlY3RvclJlY29yZCITChFQdXRWZWN0b3JSZXNwb25zZSJ0ChJTZWFyY2hMb2NhbFJlcXVlc3QSEgoKaW5kZXhfbmFtZRgBIAEoCRINCgVxdWVyeRgCIAMoAhIJCgFrGAMgASgFEhEKCWVmX3NlYXJjaBgEIAEoBRINCgVleGFjdBgFIAEoCBIOCgZyZXJhbmsYBiABKAgiagoJVmVjdG9ySGl0EhIKCmNvbGxlY3Rpb24YASABKAkSEQoJdmVjdG9yX2lkGAIgASgJEhUKDWdyYXBoX25vZGVfaWQYAyABKAkSEAoIZGlzdGFuY2UYBCABKAESDQoFc2NvcmUYBSABKAEiOwoTU2VhcmNoTG9jYWxSZXNwb25zZRIkCgRoaXRzGAEgAygLMhYud2F2ZXNwYW4udjEuVmVjdG9ySGl0ImMKDFZlY3RvclB1dFJlcRISCgpjb2xsZWN0aW9uGAEgASgJEg4KBnZlY3RvchgCIAMoAhIPCgdwYXlsb2FkGAMgASgMEhMKBnR0bF9tcxgEIAEoA0gAiAEBQgkKB190dGxfbXMiNQoMVmVjdG9yUHV0UmVzEiUKB3ZlcnNpb24YASABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uIjIKDFZlY3RvckdldFJlcRISCgpjb2xsZWN0aW9uGAEgASgJEg4KBnZlY3RvchgCIAMoAiIuCgxWZWN0b3JHZXRSZXMSDQoFZm91bmQYASABKAgSDwoHcGF5bG9hZBgCIAEoDCI1Cg9WZWN0b3JEZWxldGVSZXESEgoKY29sbGVjdGlvbhgBIAEoCRIOCgZ2ZWN0b3IYAiADKAIiEQoPVmVjdG9yRGVsZXRlUmVzIosBCg9WZWN0b3JTZWFyY2hSZXESEgoKY29sbGVjdGlvbhgBIAEoCRINCgVxdWVyeRgCIAMoAhIJCgFrGAMgASgNEg4KBm5wcm9iZRgEIAEoDRIRCgllZl9zZWFyY2gYBSABKA0SDgoGcmVyYW5rGAYgASgIEhcKD2luY2x1ZGVfcGF5bG9hZBgHIAEoCCJfCghOZWlnaGJvchIOCgZ2ZWN0b3IYASADKAISDwoHcGF5bG9hZBgCIAEoDBIQCghkaXN0YW5jZRgDIAEoARINCgVzY29yZRgEIAEoARIRCgl2ZWN0b3JfaWQYBSABKAkilQEKD1ZlY3RvclNlYXJjaFJlcxIoCgluZWlnaGJvcnMYASADKAsyFS53YXZlc3Bhbi52MS5OZWlnaGJvchInCgRtZXRhGAIgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEi8KDGNvbXBsZXRlbmVzcxgDIAEoDjIZLndhdmVzcGFuLnYxLkNvbXBsZXRlbmVzcyIdCgtGbG9hdFZlY3RvchIOCgZ2YWx1ZXMYASADKAIikgEKDEl2ZkNlbnRyb2lkcxISCgpjb2xsZWN0aW9uGAEgASgJEgwKBHF2ZXIYAiABKA0SCwoDZGltGAMgASgNEgoKAmwyGAQgASgIEisKCWNlbnRyb2lkcxgFIAMoCzIYLndhdmVzcGFuLnYxLkZsb2F0VmVjdG9yEhoKEnRyYWluZWRfYXRfdW5peF9tcxgGIAEoAyI1ChBTYW1wbGVWZWN0b3JzUmVxEhIKCmNvbGxlY3Rpb24YASABKAkSDQoFbGltaXQYAiABKA0iPQoQU2FtcGxlVmVjdG9yc1JlcxIpCgd2ZWN0b3JzGAEgAygLMhgud2F2ZXNwYW4udjEuRmxvYXRWZWN0b3IylAQKDVZlY3RvclNlcnZpY2USRAoDUHV0Eh0ud2F2ZXNwYW4udjEuUHV0VmVjdG9yUmVxdWVzdBoeLndhdmVzcGFuLnYxLlB1dFZlY3RvclJlc3BvbnNlElAKC1NlYXJjaExvY2FsEh8ud2F2ZXNwYW4udjEuU2VhcmNoTG9jYWxSZXF1ZXN0GiAud2F2ZXNwYW4udjEuU2VhcmNoTG9jYWxSZXNwb25zZRJBCglWZWN0b3JQdXQSGS53YXZlc3Bhbi52MS5WZWN0b3JQdXRSZXEaGS53YXZlc3Bhbi52MS5WZWN0b3JQdXRSZXMSQQoJVmVjdG9yR2V0Ehkud2F2ZXNwYW4udjEuVmVjdG9yR2V0UmVxGhkud2F2ZXNwYW4udjEuVmVjdG9yR2V0UmVzEkoKDFZlY3RvckRlbGV0ZRIcLndhdmVzcGFuLnYxLlZlY3RvckRlbGV0ZVJlcRocLndhdmVzcGFuLnYxLlZlY3RvckRlbGV0ZVJlcxJKCgxWZWN0b3JTZWFyY2gSHC53YXZlc3Bhbi52MS5WZWN0b3JTZWFyY2hSZXEaHC53YXZlc3Bhbi52MS5WZWN0b3JTZWFyY2hSZXMSTQoNU2FtcGxlVmVjdG9ycxIdLndhdmVzcGFuLnYxLlNhbXBsZVZlY3RvcnNSZXEaHS53YXZlc3Bhbi52MS5TYW1wbGVWZWN0b3JzUmVzQqMBCg9jb20ud2F2ZXNwYW4udjFCC1ZlY3RvclByb3RvUAFaNmdpdGh1Yi5jb20vY3dpcmUvd2F2ZXNwYW4vcHJvdG8vd2F2ZXNwYW4vdjE7d2F2ZXNwYW52MaICA1dYWKoCC1dhdmVzcGFuLlYxygILV2F2ZXNwYW5cVjHiAhdXYXZlc3BhblxWMVxHUEJNZXRhZGF0YeoCDFdhdmVzcGFuOjpWMWIGcHJvdG8z", [file_wavespan_v1_common, file_wavespan_v1_cypher]);
 
 /**
  * VectorRecord is a raw embedding vector, optionally attached to a graph node (design/08
@@ -525,8 +525,116 @@ export const VectorSearchResSchema: GenMessage<VectorSearchRes> = /*@__PURE__*/
   messageDesc(file_wavespan_v1_vector, 15);
 
 /**
- * VectorService ingests raw vectors, serves per-node local search fragments, and (vector-as-key API)
- * the cluster-wide Put/Get/Delete/Search (design/08, design/29).
+ * FloatVector wraps a vector for nested repeated-float fields (sampling, centroids).
+ *
+ * @generated from message wavespan.v1.FloatVector
+ */
+export type FloatVector = Message<"wavespan.v1.FloatVector"> & {
+  /**
+   * @generated from field: repeated float values = 1;
+   */
+  values: number[];
+};
+
+/**
+ * Describes the message wavespan.v1.FloatVector.
+ * Use `create(FloatVectorSchema)` to create a new message.
+ */
+export const FloatVectorSchema: GenMessage<FloatVector> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 16);
+
+/**
+ * IvfCentroids is the trained, shared quantizer artifact for a collection (design/29 Phase 3.5):
+ * every node installs the same centroids so they agree on buckets. Versioned by qver — a retrain
+ * produces a higher qver and new buckets; old vectors stay put and re-advertise under the new qver.
+ *
+ * @generated from message wavespan.v1.IvfCentroids
+ */
+export type IvfCentroids = Message<"wavespan.v1.IvfCentroids"> & {
+  /**
+   * @generated from field: string collection = 1;
+   */
+  collection: string;
+
+  /**
+   * @generated from field: uint32 qver = 2;
+   */
+  qver: number;
+
+  /**
+   * @generated from field: uint32 dim = 3;
+   */
+  dim: number;
+
+  /**
+   * true = Euclidean; false = angular/dot
+   *
+   * @generated from field: bool l2 = 4;
+   */
+  l2: boolean;
+
+  /**
+   * @generated from field: repeated wavespan.v1.FloatVector centroids = 5;
+   */
+  centroids: FloatVector[];
+
+  /**
+   * @generated from field: int64 trained_at_unix_ms = 6;
+   */
+  trainedAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message wavespan.v1.IvfCentroids.
+ * Use `create(IvfCentroidsSchema)` to create a new message.
+ */
+export const IvfCentroidsSchema: GenMessage<IvfCentroids> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 17);
+
+/**
+ * SampleVectorsReq asks a node for a reservoir sample of its local vectors (for IVF training).
+ *
+ * @generated from message wavespan.v1.SampleVectorsReq
+ */
+export type SampleVectorsReq = Message<"wavespan.v1.SampleVectorsReq"> & {
+  /**
+   * @generated from field: string collection = 1;
+   */
+  collection: string;
+
+  /**
+   * @generated from field: uint32 limit = 2;
+   */
+  limit: number;
+};
+
+/**
+ * Describes the message wavespan.v1.SampleVectorsReq.
+ * Use `create(SampleVectorsReqSchema)` to create a new message.
+ */
+export const SampleVectorsReqSchema: GenMessage<SampleVectorsReq> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 18);
+
+/**
+ * @generated from message wavespan.v1.SampleVectorsRes
+ */
+export type SampleVectorsRes = Message<"wavespan.v1.SampleVectorsRes"> & {
+  /**
+   * @generated from field: repeated wavespan.v1.FloatVector vectors = 1;
+   */
+  vectors: FloatVector[];
+};
+
+/**
+ * Describes the message wavespan.v1.SampleVectorsRes.
+ * Use `create(SampleVectorsResSchema)` to create a new message.
+ */
+export const SampleVectorsResSchema: GenMessage<SampleVectorsRes> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_vector, 19);
+
+/**
+ * VectorService ingests raw vectors, serves per-node local search fragments, the cluster-wide
+ * vector-as-key API, and IVF-training sampling (design/08, design/29).
  *
  * @generated from service wavespan.v1.VectorService
  */
@@ -578,6 +686,14 @@ export const VectorService: GenService<{
     methodKind: "unary";
     input: typeof VectorSearchReqSchema;
     output: typeof VectorSearchResSchema;
+  },
+  /**
+   * @generated from rpc wavespan.v1.VectorService.SampleVectors
+   */
+  sampleVectors: {
+    methodKind: "unary";
+    input: typeof SampleVectorsReqSchema;
+    output: typeof SampleVectorsResSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_wavespan_v1_vector, 0);

@@ -117,8 +117,34 @@ message VectorSearchRes {
   Completeness completeness = 3;
 }
 
-// VectorService ingests raw vectors, serves per-node local search fragments, and (vector-as-key API)
-// the cluster-wide Put/Get/Delete/Search (design/08, design/29).
+// FloatVector wraps a vector for nested repeated-float fields (sampling, centroids).
+message FloatVector {
+  repeated float values = 1;
+}
+
+// IvfCentroids is the trained, shared quantizer artifact for a collection (design/29 Phase 3.5):
+// every node installs the same centroids so they agree on buckets. Versioned by qver — a retrain
+// produces a higher qver and new buckets; old vectors stay put and re-advertise under the new qver.
+message IvfCentroids {
+  string collection = 1;
+  uint32 qver = 2;
+  uint32 dim = 3;
+  bool l2 = 4; // true = Euclidean; false = angular/dot
+  repeated FloatVector centroids = 5;
+  int64 trained_at_unix_ms = 6;
+}
+
+// SampleVectorsReq asks a node for a reservoir sample of its local vectors (for IVF training).
+message SampleVectorsReq {
+  string collection = 1;
+  uint32 limit = 2;
+}
+message SampleVectorsRes {
+  repeated FloatVector vectors = 1;
+}
+
+// VectorService ingests raw vectors, serves per-node local search fragments, the cluster-wide
+// vector-as-key API, and IVF-training sampling (design/08, design/29).
 service VectorService {
   rpc Put(PutVectorRequest) returns (PutVectorResponse);
   rpc SearchLocal(SearchLocalRequest) returns (SearchLocalResponse);
@@ -126,4 +152,5 @@ service VectorService {
   rpc VectorGet(VectorGetReq) returns (VectorGetRes);
   rpc VectorDelete(VectorDeleteReq) returns (VectorDeleteRes);
   rpc VectorSearch(VectorSearchReq) returns (VectorSearchRes);
+  rpc SampleVectors(SampleVectorsReq) returns (SampleVectorsRes);
 }
