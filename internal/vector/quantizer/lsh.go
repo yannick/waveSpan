@@ -132,6 +132,11 @@ func (l *LSH) Probe(vec []float32, nprobe int) []uint32 {
 	return out
 }
 
+// NumBuckets returns the number of LSH buckets (2^numBits).
 func (l *LSH) NumBuckets() int { return 1 << l.numBits }
+
+// Version returns the quantizer model version.
 func (l *LSH) Version() uint32 { return l.version }
-func (l *LSH) Kind() string    { return "lsh" }
+
+// Kind returns the quantizer kind identifier.
+func (l *LSH) Kind() string { return "lsh" }

@@ -11,7 +11,6 @@ package tunables
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +21,7 @@ import (
 // Kind is the value type of a tunable.
 type Kind uint8
 
+// Kind enumerates the value type of a tunable parameter.
 const (
 	KindDuration Kind = iota // Go duration string ("30s", "120ms")
 	KindInt                  // plain integer
@@ -72,6 +72,7 @@ func (c Category) String() string {
 // Source is the precedence layer a value came from (lowest → highest).
 type Source uint8
 
+// Source records where a parameter's current value came from.
 const (
 	FromDefault Source = iota // built-in default
 	FromFile                  // YAML config file (k8s ConfigMap)
@@ -332,14 +333,4 @@ func formatBytes(n int64) string {
 		}
 	}
 	return strconv.FormatInt(n, 10)
-}
-
-// sortedKeys is a small helper for deterministic iteration in tests.
-func sortedKeys(m map[string]*Param) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

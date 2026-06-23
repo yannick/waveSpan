@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/yannick/wavespan/internal/cache"
 	"github.com/yannick/wavespan/internal/config"
 	"github.com/yannick/wavespan/internal/conflict"
@@ -47,7 +48,6 @@ import (
 	"github.com/yannick/wavespan/internal/version"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
-	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -1091,8 +1091,8 @@ func runIVFTrainer(ctx context.Context, self membership.Member, svc *membership.
 				curVer = q.Version()
 			}
 			k := vectorNumBuckets
-			if max := len(samples) / 16; k > max {
-				k = max // adapt cluster count to the data we actually have
+			if lim := len(samples) / 16; k > lim {
+				k = lim // adapt cluster count to the data we actually have
 			}
 			if k < 1 {
 				k = 1

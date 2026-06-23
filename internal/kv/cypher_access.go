@@ -1,5 +1,3 @@
-// Package kv: CypherKV adapts the KV Reader+Coordinator to the cypher planner.KVAccess interface,
-// so Cypher kv.* built-ins read and write the exact same namespaced, replicated KV as the gRPC API.
 package kv
 
 import (

@@ -47,10 +47,13 @@ jobs:
           cache-dependency-path: waveSpan/ui/package-lock.json
 
       - name: Install buf + codegen plugins
+        # Pin to the exact versions the committed stubs were generated with, so the proto gate
+        # (regenerate + fail on drift) is reproducible. protoc-gen-go must match the protobuf
+        # runtime in go.mod (v1.36.11); protoc-gen-connect-go matches connectrpc.com/connect.
         run: |
-          go install github.com/bufbuild/buf/cmd/buf@latest
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
+          go install github.com/bufbuild/buf/cmd/buf@v1.66.1
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.20.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       # buf.gen.yaml also runs ui/node_modules/.bin/protoc-gen-es (browser stubs), so the UI deps
@@ -62,6 +65,13 @@ jobs:
       - name: Proto gate (regenerate, fail on drift)
         working-directory: waveSpan
         run: make proto-check
+
+      # Build the real SPA into internal/ui/dist: the committed .gitkeep lets go:embed compile,
+      # but internal/ui's server tests need a real index.html to serve. Runs after the proto gate
+      # so the generated TS client (ui/src/gen) exists.
+      - name: Build UI (embedded SPA)
+        working-directory: waveSpan/ui
+        run: npm run build
 
       - name: Lint
         # Official action: reliable pinned install (no flaky checksum), caching, respects
