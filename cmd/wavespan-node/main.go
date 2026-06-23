@@ -313,6 +313,7 @@ func run() error {
 	// gets a deterministic LSH quantizer; the directory tracks which buckets this node (and peers) hold.
 	quantSet := vector.NewQuantSet(metas, vectorNumBuckets)
 	bucketDir := vector.NewBucketDir(self.MemberID)
+	vmetrics := newVectorMetrics(metrics.Registry)
 
 	// Feed the vector store + ANN index from every durable apply (origin, replica, anti-entropy,
 	// bootstrap, cross-cluster) so a vector written anywhere becomes searchable on each holder. Only
@@ -342,7 +343,7 @@ func run() error {
 	})
 	// Periodically recompute this node's held-bucket set from the store so buckets that emptied
 	// (deletes/migration) are de-advertised — the explicit-set property the holder bloom lacks.
-	go recomputeHeldBuckets(ctx, vstore, quantSet, bucketDir, metas, 30*time.Second)
+	go recomputeHeldBuckets(ctx, vstore, quantSet, bucketDir, metas, vmetrics, 30*time.Second)
 	// Gossip the held-bucket directory so a kNN query can route to the holders of its probed buckets.
 	svc.SetBucketHooks(
 		func() []membership.HeldBucketWire {
@@ -365,9 +366,11 @@ func run() error {
 	// IVF training (design/29 Phase 3.5): the lowest-member-id node periodically gathers a cross-node
 	// sample, trains k-means centroids, and writes a versioned artifact; every node reads + installs
 	// it so the whole cluster agrees on buckets. Until then collections use the zero-training LSH.
-	go runCentroidSync(ctx, reader, quantSet, bucketDir, vstore, metas, logger, 15*time.Second)
+	go runCentroidSync(ctx, reader, quantSet, bucketDir, vstore, metas, vmetrics, logger, 15*time.Second)
 	go runIVFTrainer(ctx, self, svc, coord, httpClient, quantSet, vstore, metas, logger, 20*time.Second)
 	newGraphVersion := func() *wavespanv1.Version { return rstore.NextVersion().ToProto() }
+	// Concentrate each bucket onto its ring (reclaim off-ring origin copies, migrate after a retrain).
+	go runRebucketer(ctx, self, svc, coord, quantSet, indexSet, vstore, metas, cfg.Replication.Target()+1, newGraphVersion, logger, 20*time.Second)
 
 	// Global active-active replication (M7/M10): tap origin KV writes AND raw-vector writes into a
 	// per-peer out-log, serve the GlobalReplication API, ship via the sender, reconcile via
@@ -455,7 +458,7 @@ func run() error {
 		WithCoordinator(
 			indexSet.IndexForCollection,
 			func(ctx context.Context, collection, idx string, q []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
-				return routedVectorScatter(ctx, self, svc, httpClient, quantSet, bucketDir, cfg.Replication.Target()+1, collection, idx, q, k, ef, nprobe, rerank)
+				return routedVectorScatter(ctx, self, svc, httpClient, quantSet, bucketDir, vmetrics, cfg.Replication.Target()+1, collection, idx, q, k, ef, nprobe, rerank)
 			},
 			func(ctx context.Context, ns string, key []byte) ([]byte, bool, error) {
 				res, err := reader.Get(ctx, ns, key, true)
@@ -854,11 +857,11 @@ const vectorNumBuckets = 256
 
 // recomputeHeldBuckets periodically rebuilds this node's advertised bucket set from the store, so a
 // bucket that emptied (deletes/migration) is de-advertised. Runs once at boot, then on interval.
-func recomputeHeldBuckets(ctx context.Context, vstore *vector.Store, qs *vector.QuantSet, dir *vector.BucketDir, metas []*vector.IndexMeta, interval time.Duration) {
+func recomputeHeldBuckets(ctx context.Context, vstore *vector.Store, qs *vector.QuantSet, dir *vector.BucketDir, metas []*vector.IndexMeta, vm *vectorMetrics, interval time.Duration) {
 	colls := distinctCollections(metas)
 	recompute := func() {
 		for _, coll := range colls {
-			recomputeCollectionBuckets(vstore, qs, dir, coll)
+			recomputeCollectionBuckets(vstore, qs, dir, coll, vm)
 		}
 	}
 	recompute()
@@ -875,8 +878,9 @@ func recomputeHeldBuckets(ctx context.Context, vstore *vector.Store, qs *vector.
 }
 
 // recomputeCollectionBuckets rebuilds this node's advertised bucket set for one collection from the
-// store under the current quantizer (also called right after a new IVF quantizer is installed).
-func recomputeCollectionBuckets(vstore *vector.Store, qs *vector.QuantSet, dir *vector.BucketDir, collection string) {
+// store under the current quantizer (also called right after a new IVF quantizer is installed), and
+// refreshes the per-collection load metrics (dataset size, held buckets, bucket-size skew).
+func recomputeCollectionBuckets(vstore *vector.Store, qs *vector.QuantSet, dir *vector.BucketDir, collection string, vm *vectorMetrics) {
 	qz, ok := qs.For(collection)
 	if !ok {
 		return
@@ -885,15 +889,30 @@ func recomputeCollectionBuckets(vstore *vector.Store, qs *vector.QuantSet, dir *
 	if err != nil {
 		return
 	}
-	seen := map[uint32]bool{}
+	counts := map[uint32]int{}
+	maxCount := 0
 	for _, r := range recs {
-		seen[qz.Bucket(r.GetValues())] = true
+		b := qz.Bucket(r.GetValues())
+		counts[b]++
+		if counts[b] > maxCount {
+			maxCount = counts[b]
+		}
 	}
-	buckets := make([]uint32, 0, len(seen))
-	for b := range seen {
+	buckets := make([]uint32, 0, len(counts))
+	for b := range counts {
 		buckets = append(buckets, b)
 	}
 	dir.SetOwn(collection, qz.Version(), buckets, time.Now().UnixMilli())
+	if vm != nil {
+		vm.localVectors.WithLabelValues(collection).Set(float64(len(recs)))
+		vm.heldBuckets.WithLabelValues(collection).Set(float64(len(counts)))
+		vm.qver.WithLabelValues(collection).Set(float64(qz.Version()))
+		skew := 1.0
+		if mean := float64(len(recs)) / float64(max(1, len(counts))); mean > 0 {
+			skew = float64(maxCount) / mean // 1.0 = balanced; higher = a hot bucket
+		}
+		vm.bucketSkew.WithLabelValues(collection).Set(skew)
+	}
 }
 
 func distinctCollections(metas []*vector.IndexMeta) []string {
@@ -910,7 +929,7 @@ func distinctCollections(metas []*vector.IndexMeta) []string {
 
 // runCentroidSync periodically reads each collection's centroid artifact and installs a newer IVF
 // quantizer, so every node converges on the same buckets (design/29 Phase 3.5).
-func runCentroidSync(ctx context.Context, reader *kv.Reader, qs *vector.QuantSet, dir *vector.BucketDir, vstore *vector.Store, metas []*vector.IndexMeta, logger *slog.Logger, interval time.Duration) {
+func runCentroidSync(ctx context.Context, reader *kv.Reader, qs *vector.QuantSet, dir *vector.BucketDir, vstore *vector.Store, metas []*vector.IndexMeta, vm *vectorMetrics, logger *slog.Logger, interval time.Duration) {
 	colls := distinctCollections(metas)
 	sync := func() {
 		for _, coll := range colls {
@@ -926,7 +945,7 @@ func runCentroidSync(ctx context.Context, reader *kv.Reader, qs *vector.QuantSet
 				continue // not newer than what we run
 			}
 			qs.Set(coll, vector.IVFFromProto(&art))
-			recomputeCollectionBuckets(vstore, qs, dir, coll) // re-advertise our vectors under the new qver
+			recomputeCollectionBuckets(vstore, qs, dir, coll, vm) // re-advertise our vectors under the new qver
 			logger.Info("installed IVF centroids", "collection", coll, "qver", art.GetQver(), "centroids", len(art.GetCentroids()))
 		}
 	}
@@ -938,6 +957,77 @@ func runCentroidSync(ctx context.Context, reader *kv.Reader, qs *vector.QuantSet
 			return
 		case <-t.C:
 			sync()
+		}
+	}
+}
+
+// runRebucketer continuously migrates this node's off-ring vectors onto their affinity ring, then
+// drops the local search copy — so a bucket's vectors concentrate on its ring members (the full
+// replicas), routing converges to a single hop, and the off-ring origin copies left by affinity
+// placement (and any drift after an IVF retrain changes bucket assignments) are reclaimed. Only the
+// search index + bucket advertisement are dropped; the durable record is kept so anti-entropy does
+// not fight the migration. Throttled to batchSize vectors per pass; a node never drops a copy until
+// the ring has durably acknowledged it (no data loss).
+func runRebucketer(ctx context.Context, self membership.Member, svc *membership.Service, coord *kv.Coordinator, qs *vector.QuantSet, indexSet *vector.IndexSet, vstore *vector.Store, metas []*vector.IndexMeta, ringSize int, newVersion func() *wavespanv1.Version, logger *slog.Logger, interval time.Duration) {
+	const batchSize = 64
+	colls := distinctCollections(metas)
+	pass := func() {
+		ids := aliveMemberIDs(svc)
+		if len(ids) <= ringSize {
+			return // every node is a ring member; nothing to concentrate
+		}
+		for _, coll := range colls {
+			qz, ok := qs.For(coll)
+			if !ok {
+				continue
+			}
+			recs, err := vstore.ScanCollection(coll)
+			if err != nil {
+				continue
+			}
+			migrated := 0
+			for _, r := range recs {
+				if migrated >= batchSize {
+					break
+				}
+				ring := vector.Ring(vector.BucketKey(coll, qz.Version(), qz.Bucket(r.GetValues())), ids, ringSize)
+				onRing := false
+				for _, m := range ring {
+					if m == self.MemberID {
+						onRing = true
+						break
+					}
+				}
+				if onRing {
+					continue // this vector belongs on this node
+				}
+				// Off-ring: re-place onto the ring, then drop our local search copy.
+				rec := &wavespanv1.VectorRecord{Collection: coll, VectorId: r.GetVectorId(), Values: r.GetValues(), Payload: r.GetPayload(), Dimensions: r.GetDimensions(), Version: newVersion()}
+				sr, werr := vector.Wrap(rec)
+				if werr != nil {
+					continue
+				}
+				out, perr := coord.PutTo(ctx, sr.GetNamespace(), sr.GetLogicalKey(), sr.GetValue().GetInline(), ringCandidates(svc, ring, self.MemberID), "")
+				if perr != nil || out.AckedNearbyReplicas < 1 {
+					continue // not durably on the ring yet — keep our copy
+				}
+				_ = vstore.Delete(coll, r.GetVectorId(), newVersion()) // local search-copy drop (kept in rstore)
+				indexSet.OnWrite(&wavespanv1.VectorRecord{Collection: coll, VectorId: r.GetVectorId(), Tombstone: true})
+				migrated++
+			}
+			if migrated > 0 {
+				logger.Info("re-bucketed vectors onto their ring", "collection", coll, "moved", migrated)
+			}
+		}
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			pass()
 		}
 	}
 }
@@ -1042,7 +1132,7 @@ func gatherSamples(ctx context.Context, self membership.Member, svc *membership.
 // routedVectorScatter queries peer holders for a kNN fragment. With nprobe>0 and routing info
 // available it scatters only to the advertised holders of the query's probed buckets; otherwise it
 // falls back to every alive peer. Self is excluded — the coordinator adds its own local fragment.
-func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, hc *http.Client, qs *vector.QuantSet, dir *vector.BucketDir, ringSize int, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
+func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, hc *http.Client, qs *vector.QuantSet, dir *vector.BucketDir, vm *vectorMetrics, ringSize int, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
 	var allow map[string]bool
 	if nprobe > 0 {
 		if qz, ok := qs.For(collection); ok {
@@ -1051,32 +1141,32 @@ func routedVectorScatter(ctx context.Context, self membership.Member, svc *membe
 			qver := qz.Version()
 			graph := svc.Graph()
 			for _, b := range qz.Probe(query, nprobe) {
-				// Prefer the gossip-confirmed holders (they actually hold the bucket); fall back to the
-				// locally-computed affinity ring only when the directory has nothing yet (gossip lag /
-				// just-joined node). Picking a ring node that isn't really a holder would silently miss.
-				holders := map[string]bool{}
+				// The bucket's affinity ring is its full-replica set: every ring member holds ALL of the
+				// bucket's vectors, so among them closest-replica (query just the nearest) is safe. Any
+				// holder NOT on the ring is only a PARTIAL copy (an off-ring origin, or a vector not yet
+				// migrated after a qver change) and must be queried in full or results are missed — the
+				// re-bucketing worker dissolves those over time, converging routing to the single ring hop.
+				ring := vector.Ring(vector.BucketKey(collection, qver, b), ids, ringSize)
+				ringSet := map[string]bool{}
+				for _, m := range ring {
+					ringSet[m] = true
+				}
 				if members, ok := dir.Holders(collection, qver, []uint32{b}); ok {
 					for _, m := range members {
-						holders[m] = true
-					}
-				}
-				selfHolds := holders[self.MemberID]
-				delete(holders, self.MemberID)
-				if len(holders) == 0 {
-					for _, m := range vector.Ring(vector.BucketKey(collection, qver, b), ids, ringSize) {
-						if m != self.MemberID {
-							holders[m] = true
-						} else {
-							selfHolds = true
+						if m != self.MemberID && !ringSet[m] {
+							allow[m] = true // partial / in-migration holder: must query
 						}
 					}
 				}
-				if selfHolds {
-					continue // the local fragment already covers this bucket
+				if ringSet[self.MemberID] {
+					continue // self is a full replica; the local fragment covers this bucket
 				}
-				// Closest-replica: query only the lowest-latency peer holding this bucket.
+				// Query the lowest-latency ring member (full replica).
 				best, bestRtt := "", math.Inf(1)
-				for m := range holders {
+				for _, m := range ring {
+					if m == self.MemberID {
+						continue
+					}
 					rtt := math.Inf(1)
 					if e, ok := graph.Edge(m); ok && e.EWMARttMs > 0 {
 						rtt = e.EWMARttMs
@@ -1092,7 +1182,7 @@ func routedVectorScatter(ctx context.Context, self membership.Member, svc *membe
 		}
 	}
 	var fragments [][]vector.Hit
-	unreachable := 0
+	unreachable, scattered := 0, 0
 	for _, mv := range svc.Members() {
 		m := mv.Member
 		if mv.State != membership.StateAlive || m.MemberID == self.MemberID || m.DataAddr == "" {
@@ -1101,6 +1191,7 @@ func routedVectorScatter(ctx context.Context, self membership.Member, svc *membe
 		if allow != nil && !allow[m.MemberID] {
 			continue // routed: skip nodes that don't hold a probed bucket
 		}
+		scattered++
 		c := wavespanv1connect.NewVectorServiceClient(hc, "http://"+m.DataAddr)
 		resp, err := c.SearchLocal(ctx, connect.NewRequest(&wavespanv1.SearchLocalRequest{
 			IndexName: idx, Query: query, K: int32(k), EfSearch: int32(ef), Rerank: rerank,
@@ -1110,6 +1201,9 @@ func routedVectorScatter(ctx context.Context, self membership.Member, svc *membe
 			continue
 		}
 		fragments = append(fragments, vectorHitsFromProto(resp.Msg.GetHits()))
+	}
+	if vm != nil {
+		vm.scatterNodes.Observe(float64(scattered))
 	}
 	return fragments, unreachable
 }
@@ -1155,4 +1249,27 @@ func ringCandidates(svc *membership.Service, ring []string, self string) []place
 		}
 	}
 	return cands
+}
+
+// vectorMetrics exposes per-node, per-collection vector + routing observability (design/29 Phase 4):
+// dataset size, how many buckets the node holds, bucket-size skew (max/mean — 1.0 is perfectly
+// balanced), the live quantizer version, and the kNN query fan-out.
+type vectorMetrics struct {
+	localVectors *prometheus.GaugeVec
+	heldBuckets  *prometheus.GaugeVec
+	bucketSkew   *prometheus.GaugeVec
+	qver         *prometheus.GaugeVec
+	scatterNodes prometheus.Histogram
+}
+
+func newVectorMetrics(reg *prometheus.Registry) *vectorMetrics {
+	m := &vectorMetrics{
+		localVectors: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "wavespan_vector_local_vectors", Help: "live vectors held locally, by collection"}, []string{"collection"}),
+		heldBuckets:  prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "wavespan_vector_held_buckets", Help: "distinct buckets held locally, by collection"}, []string{"collection"}),
+		bucketSkew:   prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "wavespan_vector_bucket_skew", Help: "local bucket-size skew (max/mean; 1.0 = balanced), by collection"}, []string{"collection"}),
+		qver:         prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "wavespan_vector_quantizer_version", Help: "live quantizer version, by collection"}, []string{"collection"}),
+		scatterNodes: prometheus.NewHistogram(prometheus.HistogramOpts{Name: "wavespan_vector_search_scattered_nodes", Help: "peer nodes a kNN query scattered to", Buckets: []float64{0, 1, 2, 3, 5, 8, 13, 21}}),
+	}
+	reg.MustRegister(m.localVectors, m.heldBuckets, m.bucketSkew, m.qver, m.scatterNodes)
+	return m
 }
