@@ -48,6 +48,27 @@ func Bootstrap(ctx context.Context, mgr *Manager, replicaID uint64, metaMembers,
 	return &Control{mgr: mgr, dir: dir, cols: New(mgr, dir)}, nil
 }
 
+// Placement describes a node's role in the consensus tier (design/30 §4, §7). Voter-eligible nodes are
+// the stable core — e.g. annotated in Kubernetes — that hold voting replicas of the meta and data
+// shards; non-eligible (spot/edge) nodes hold no replicas until they demand-fill a collection as a
+// learner. Voters is the stable-core voter set (replicaID -> NodeHostID or address) the meta and data
+// shards bootstrap with.
+type Placement struct {
+	SelfReplicaID uint64
+	VoterEligible bool
+	Voters        map[uint64]string
+}
+
+// BootstrapWithPlacement brings up the tier per p: a voter-eligible node bootstraps the meta + initial
+// data shard with the stable-core voter set; a non-eligible node holds no replicas and returns
+// (nil, nil) — it serves collections by demand-filling them as a learner on read (design/30 §9).
+func BootstrapWithPlacement(ctx context.Context, mgr *Manager, p Placement) (*Control, error) {
+	if !p.VoterEligible {
+		return nil, nil
+	}
+	return Bootstrap(ctx, mgr, p.SelfReplicaID, p.Voters, p.Voters)
+}
+
 // Collections returns the typed datatype API routed through the range directory.
 func (c *Control) Collections() *Collections { return c.cols }
 
