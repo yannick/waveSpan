@@ -5,6 +5,7 @@ import { MetricsSummary } from "./views/MetricsSummary";
 import { CypherConsole } from "./views/CypherConsole";
 import { NodeExplorer } from "./views/NodeExplorer";
 import { KvWriter } from "./views/KvWriter";
+import { CollectionsExplorer } from "./views/CollectionsExplorer";
 import { Config } from "./views/Config";
 import { Documentation } from "./views/Documentation";
 import { Tabs, type TabItem, ThemeToggle } from "./components";
@@ -16,6 +17,7 @@ type Tab =
   | "gossip"
   | "data"
   | "write"
+  | "collections"
   | "topology"
   | "metrics"
   | "config"
@@ -27,6 +29,7 @@ const tabs: TabItem<Tab>[] = [
   { id: "gossip", label: "Gossip Inspector" },
   { id: "data", label: "Data Browser" },
   { id: "write", label: "KV Writer" },
+  { id: "collections", label: "Collections" },
   { id: "topology", label: "Cluster Topology" },
   { id: "metrics", label: "Metrics" },
   { id: "config", label: "Configuration" },
@@ -60,6 +63,7 @@ export function App() {
         {tab === "gossip" && <GossipInspector />}
         {tab === "data" && <DataBrowser />}
         {tab === "write" && <KvWriter />}
+        {tab === "collections" && <CollectionsExplorer />}
         {tab === "topology" && <ClusterTopology />}
         {tab === "metrics" && <MetricsSummary />}
         {tab === "config" && <Config />}

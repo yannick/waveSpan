@@ -509,6 +509,7 @@ func run() error {
 	// bootstrap, until multi-node placement + the cheap-mTLS transport land; failures here never block
 	// node startup.
 	var collectionsMgr *collections.Manager
+	var collectionsSvc *collections.Service
 	if os.Getenv("WAVESPAN_COLLECTIONS_ENABLED") == "1" {
 		raftAddr := os.Getenv("WAVESPAN_COLLECTIONS_RAFT_ADDR")
 		if raftAddr == "" {
@@ -526,7 +527,8 @@ func run() error {
 				mgr.Stop()
 			} else {
 				collectionsMgr = mgr
-				dataMux.Handle(collections.NewService(ctrl.Collections(), self).Handler())
+				collectionsSvc = collections.NewService(ctrl.Collections(), self)
+				dataMux.Handle(collectionsSvc.Handler())
 				cypherSvc.WithCollections(collections.NewCypherCollections(ctrl.Collections())) // set.*/hash.*/zset.* built-ins
 				logger.Info("collections: replicated-collections tier enabled", "raftAddr", raftAddr)
 			}
@@ -602,7 +604,11 @@ func run() error {
 	obsPath, obsHandler := obsSvc.Handler()
 	adminMux.Handle(obsPath, adminIdentity.EnforceHTTP(obsHandler)) // ObservabilityService (admin auth)
 	cypherPath, cypherHandler := cypherSvc.Handler()
-	adminMux.Handle(cypherPath, adminIdentity.EnforceHTTP(cypherHandler))     // Cypher console (same origin as the UI)
+	adminMux.Handle(cypherPath, adminIdentity.EnforceHTTP(cypherHandler)) // Cypher console (same origin as the UI)
+	if collectionsSvc != nil {
+		colPath, colHandler := collectionsSvc.Handler()
+		adminMux.Handle(colPath, adminIdentity.EnforceHTTP(colHandler)) // CollectionService for the UI (same origin)
+	}
 	adminMux.Handle("/", adminIdentity.EnforceHTTP(ui.NewServer().Handler())) // SPA at root (health/metrics take precedence)
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: adminTLS, ConnState: connStateGauge(openConns.WithLabelValues("admin"))}
 
