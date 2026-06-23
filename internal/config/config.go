@@ -39,6 +39,15 @@ type Config struct {
 	GlobalReplication GlobalReplicationConfig `yaml:"globalReplication"`
 	Namespaces        []NamespaceConfig       `yaml:"namespaces"`
 	VectorIndexes     []VectorIndexConfig     `yaml:"vectorIndexes"`
+	Features          FeaturesConfig          `yaml:"features"`
+}
+
+// FeaturesConfig toggles optional, non-core capabilities. Defaults keep features ON; an operator
+// disables them explicitly (config or WAVESPAN_* env).
+type FeaturesConfig struct {
+	// DisableSampleDataset turns off the admin "load sample dataset" action exposed in the node UI
+	// (ObservabilityService.LoadSampleDataset). Default false => the loader is available.
+	DisableSampleDataset bool `yaml:"disableSampleDataset"`
 }
 
 // TopologyConfig holds the static topology labels (hints; the latency graph is authoritative,
@@ -220,6 +229,9 @@ func (c *Config) applyEnv(get func(string) (string, bool)) {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.Replication.MinAckNearbyReplicas = &n
 		}
+	}
+	if v, ok := get("WAVESPAN_DISABLE_SAMPLE_DATASET"); ok {
+		c.Features.DisableSampleDataset = v == "true" || v == "1"
 	}
 	c.applyGlobalEnv(get)
 	c.applyVectorEnv(get)
