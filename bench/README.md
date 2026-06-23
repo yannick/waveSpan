@@ -43,6 +43,29 @@ Mixed put/get load with separate latency reports.
 06_vector_search             ops=18004  errs=0      1200/s  p50=12ms    p95=22ms    p99=31ms
 ```
 
+## Collections (sets / hashes / sorted sets + bulk-remove)
+
+The benchmark web UI (`wavespan-benchui`) also drives the `CollectionService`:
+
+- **Closed-loop workloads** `set`, `hash`, `zset` — op-mixes over a pool of collections, with live
+  throughput + p50/p95/p99 charts like the KV workload. `hash` exercises the atomic counter
+  (`HIncrBy`) via its `counterRatio` param.
+- **Bulk-remove panel** — the headline "remove one element from a *huge* number of sets":
+  1. **Seed** N sets, each containing a target member (e.g. `doomed`).
+  2. **Remove from all sets** — one `BulkRemove(namespace, collections=[], [member])`, which lists
+     every collection in the namespace and **proposes a removal per collection, sequentially**
+     (`internal/collections/bulk.go`). The headline metric is **sets/sec** (whole-fan-out
+     wall-clock; there is no per-collection latency, since it is a single aggregate call).
+  3. **Scaling sweep** — repeats the seed→remove over N = 1k…1M and charts sets/sec vs N (log-x),
+     visualizing the **O(N) fan-out cost**. (Measured on a 3-node dev cluster: ~35–40 sets/sec, i.e.
+     wall-clock grows linearly with the set count — removing from 1M sets is hours, not seconds.)
+
+> Collection writes commit through Raft, so the benchmark sets a context deadline on every write (the
+> dev/CLI `wavespan-bench` KV path needs none). Full-namespace `BulkRemove` is **destructive across the
+> entire namespace** — the UI seeds into a dedicated namespace per run.
+
+The same workloads run headless from the CLI engine; the UI is just a driver over `internal/benchengine`.
+
 ## Correctness vs. benchmarks
 
 These are **performance** benchmarks. For **correctness** under faults (the Jepsen-style harness),
