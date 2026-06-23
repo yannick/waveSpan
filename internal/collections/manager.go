@@ -79,16 +79,17 @@ func (m *Manager) startReplica(shardID, replicaID uint64, members map[uint64]str
 
 // StartShard starts (or restarts) a data shard (datatype state machine).
 func (m *Manager) StartShard(shardID, replicaID uint64, initialMembers map[uint64]string, join bool) error {
-	factory := func(sid, rid uint64) sm.IOnDiskStateMachine { return newShardSM(m.store, sid) }
+	factory := func(sid, _ uint64) sm.IOnDiskStateMachine { return newShardSM(m.store, sid) }
 	return m.startReplica(shardID, replicaID, initialMembers, join, factory, true)
 }
 
 // StartMetaShard starts (or restarts) the meta shard (range directory state machine, design/30 §7).
 func (m *Manager) StartMetaShard(shardID, replicaID uint64, initialMembers map[uint64]string, join bool) error {
-	factory := func(sid, rid uint64) sm.IOnDiskStateMachine { return newMetaSM(m.store, sid) }
+	factory := func(sid, _ uint64) sm.IOnDiskStateMachine { return newMetaSM(m.store, sid) }
 	return m.startReplica(shardID, replicaID, initialMembers, join, factory, false)
 }
 
+// Propose commits an encoded command through the shard leader and returns the apply result.
 func (m *Manager) Propose(ctx context.Context, shardID uint64, cmd []byte) (ProposeResult, error) {
 	res, err := m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
 	if err != nil {

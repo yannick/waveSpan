@@ -36,10 +36,12 @@ func (c *Collections) read(ctx context.Context, ns, coll []byte, q interface{}, 
 
 // --- Set ---
 
+// SAdd adds members to the set, returning the number newly added.
 func (c *Collections) SAdd(ctx context.Context, ns, coll []byte, members ...[]byte) (uint64, error) {
 	return c.propose(ctx, ns, coll, command{Op: opSAdd, NS: ns, Coll: coll, Items: itemsFromKeys(members)})
 }
 
+// SRem removes members from the set, returning the number removed.
 func (c *Collections) SRem(ctx context.Context, ns, coll []byte, members ...[]byte) (uint64, error) {
 	return c.propose(ctx, ns, coll, command{Op: opSRem, NS: ns, Coll: coll, Items: itemsFromKeys(members)})
 }
@@ -56,6 +58,7 @@ func (c *Collections) SAddTTL(ctx context.Context, ns, coll []byte, ttlMs int64,
 	return c.propose(ctx, ns, coll, command{Op: opSAdd, NS: ns, Coll: coll, Items: items})
 }
 
+// SIsMember reports whether member is in the set.
 func (c *Collections) SIsMember(ctx context.Context, ns, coll, member []byte, linearizable bool) (bool, error) {
 	v, err := c.read(ctx, ns, coll, isMemberQuery{NS: ns, Coll: coll, Member: member}, linearizable)
 	if err != nil {
@@ -65,10 +68,12 @@ func (c *Collections) SIsMember(ctx context.Context, ns, coll, member []byte, li
 	return b, nil
 }
 
+// SCard returns the set cardinality.
 func (c *Collections) SCard(ctx context.Context, ns, coll []byte, linearizable bool) (uint64, error) {
 	return c.card(ctx, ns, coll, linearizable)
 }
 
+// SMembers returns up to limit set members in byte order (0 = all).
 func (c *Collections) SMembers(ctx context.Context, ns, coll []byte, limit int, linearizable bool) ([][]byte, error) {
 	v, err := c.read(ctx, ns, coll, membersQuery{NS: ns, Coll: coll, Limit: limit}, linearizable)
 	if err != nil {
@@ -80,6 +85,7 @@ func (c *Collections) SMembers(ctx context.Context, ns, coll []byte, limit int, 
 
 // --- Hash ---
 
+// HSet sets hash fields, returning the number of new (not updated) fields.
 func (c *Collections) HSet(ctx context.Context, ns, coll []byte, fields ...FieldValue) (uint64, error) {
 	items := make([]item, len(fields))
 	for i, f := range fields {
@@ -88,10 +94,12 @@ func (c *Collections) HSet(ctx context.Context, ns, coll []byte, fields ...Field
 	return c.propose(ctx, ns, coll, command{Op: opHSet, NS: ns, Coll: coll, Items: items})
 }
 
+// HDel deletes hash fields, returning the number removed.
 func (c *Collections) HDel(ctx context.Context, ns, coll []byte, fields ...[]byte) (uint64, error) {
 	return c.propose(ctx, ns, coll, command{Op: opHDel, NS: ns, Coll: coll, Items: itemsFromKeys(fields)})
 }
 
+// HGet returns a hash field's value and whether it was present.
 func (c *Collections) HGet(ctx context.Context, ns, coll, field []byte, linearizable bool) ([]byte, bool, error) {
 	v, err := c.read(ctx, ns, coll, hGetQuery{NS: ns, Coll: coll, Field: field}, linearizable)
 	if err != nil || v == nil {
@@ -100,10 +108,12 @@ func (c *Collections) HGet(ctx context.Context, ns, coll, field []byte, lineariz
 	return v.([]byte), true, nil
 }
 
+// HLen returns the number of hash fields.
 func (c *Collections) HLen(ctx context.Context, ns, coll []byte, linearizable bool) (uint64, error) {
 	return c.card(ctx, ns, coll, linearizable)
 }
 
+// HGetAll returns up to limit hash field/value pairs (0 = all).
 func (c *Collections) HGetAll(ctx context.Context, ns, coll []byte, limit int, linearizable bool) ([]FieldValue, error) {
 	v, err := c.read(ctx, ns, coll, hGetAllQuery{NS: ns, Coll: coll, Limit: limit}, linearizable)
 	if err != nil {
@@ -115,6 +125,7 @@ func (c *Collections) HGetAll(ctx context.Context, ns, coll []byte, limit int, l
 
 // --- Sorted set ---
 
+// ZAdd adds or updates sorted-set members, returning the number newly added.
 func (c *Collections) ZAdd(ctx context.Context, ns, coll []byte, members ...ScoredMember) (uint64, error) {
 	items := make([]item, len(members))
 	for i, m := range members {
@@ -123,10 +134,12 @@ func (c *Collections) ZAdd(ctx context.Context, ns, coll []byte, members ...Scor
 	return c.propose(ctx, ns, coll, command{Op: opZAdd, NS: ns, Coll: coll, Items: items})
 }
 
+// ZRem removes sorted-set members, returning the number removed.
 func (c *Collections) ZRem(ctx context.Context, ns, coll []byte, members ...[]byte) (uint64, error) {
 	return c.propose(ctx, ns, coll, command{Op: opZRem, NS: ns, Coll: coll, Items: itemsFromKeys(members)})
 }
 
+// ZScore returns a member's score and whether it was present.
 func (c *Collections) ZScore(ctx context.Context, ns, coll, member []byte, linearizable bool) (float64, bool, error) {
 	v, err := c.read(ctx, ns, coll, zScoreQuery{NS: ns, Coll: coll, Member: member}, linearizable)
 	if err != nil || v == nil {
@@ -135,6 +148,7 @@ func (c *Collections) ZScore(ctx context.Context, ns, coll, member []byte, linea
 	return *v.(*float64), true, nil
 }
 
+// ZCard returns the sorted-set cardinality.
 func (c *Collections) ZCard(ctx context.Context, ns, coll []byte, linearizable bool) (uint64, error) {
 	return c.card(ctx, ns, coll, linearizable)
 }

@@ -34,7 +34,7 @@ func (b *baseSM) appliedKey() []byte {
 }
 
 // Open returns the most recently persisted applied Raft index for this shard (0 if new).
-func (b *baseSM) Open(stopc <-chan struct{}) (uint64, error) {
+func (b *baseSM) Open(_ <-chan struct{}) (uint64, error) {
 	v, found, err := b.store.Get(storage.CFReplData, b.appliedKey())
 	if err != nil || !found {
 		return 0, err
