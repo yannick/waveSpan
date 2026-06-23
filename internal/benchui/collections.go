@@ -118,6 +118,9 @@ func (s *Server) handleCollectionsBulkRemove(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	if req.Member == "" {
+		req.Member = "doomed" // default member to remove, matching the workload catalog
+	}
 	res, err := benchengine.RunFullNamespaceRemove(r.Context(), req.DataAddr, req.Namespace, []byte(req.Member))
 	if err != nil {
 		http.Error(w, "bulk remove: "+err.Error(), http.StatusBadGateway)
