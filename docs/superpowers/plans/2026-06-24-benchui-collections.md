@@ -113,7 +113,8 @@ func OpZScore(ctx context.Context, c wavespanv1connect.CollectionServiceClient, 
 }
 
 // --- bulk remove --- returns the number of collections the fan-out touched (for sets/sec) + total removed.
-func OpBulkRemove(ctx context.Context, c wavespanv1connect.CollectionServiceClient, ns string, colls, members [][]byte) (colls int, removed uint64, err error) {
+// NOTE: named return is `count` (not `colls`) so it doesn't shadow the `colls` parameter.
+func OpBulkRemove(ctx context.Context, c wavespanv1connect.CollectionServiceClient, ns string, colls, members [][]byte) (count int, removed uint64, err error) {
 	resp, e := c.BulkRemove(ctx, connect.NewRequest(&wavespanv1.BulkRemoveRequest{Namespace: ns, Collections: colls, Members: members}))
 	if e != nil {
 		return 0, 0, e
@@ -154,7 +155,7 @@ func OpBulkRemove(ctx context.Context, c wavespanv1connect.CollectionServiceClie
   - the sweep runs once per N in the list and returns a point per N.
 - [ ] **Step 2: run** → FAIL.
 - [ ] **Step 3: implement**:
-  - `collections_seed.go`: `SeedSets(ctx, dataAddr, ns string, n, filler int, member []byte, conc int, progress func(done, total int))` — a worker pool (mirror `bench.Load`'s `runPool`) that for each `i` does `OpSAdd(set/i, [member, filler bytes...])`; streams progress. A `ReAddMember(ctx, ..., colls [][]byte, member)` helper re-seeds a batch (for repeat/closed-loop).
+  - `collections_seed.go`: `SeedSets(ctx, dataAddr, ns string, n, filler int, member []byte, conc int, progress func(done, total int))` — a worker pool (mirror `bench.Load`'s `runPool`, race-clean: channel-fed workers + atomic done counter) that for each `i` does `OpSAdd(set/i, [member, filler bytes...])`; streams progress. Default `conc` high (64–128) since seeding is the bottleneck — **1M sets ≈ 1M SAdd Raft proposes ≈ minutes**, far longer than the BulkRemove it sets up. A `ReAddMember(ctx, ..., colls [][]byte, member)` helper re-seeds a batch (for repeat/closed-loop).
   - `bulkremove.go`:
     - `type BulkRemoveResult struct { Sets int; Removed uint64; WallMs int64; SetsPerSec float64; Errors int }` (json-tagged camelCase).
     - `RunFullNamespaceRemove(ctx, dataAddr, ns string, member []byte) (BulkRemoveResult, error)` — `start := now; colls, removed, err := bench.OpBulkRemove(ctx, c, ns, nil, [member]); wall := since(start)` → SetsPerSec = colls/wall.s.
@@ -172,7 +173,7 @@ func OpBulkRemove(ctx context.Context, c wavespanv1connect.CollectionServiceClie
 - [ ] **Step 3: implement**:
   - extend `workloadCatalog` with the four kinds + their params.
   - `POST /api/collections/seed` `{dataAddr, namespace, sets, filler, member, concurrency}` → run `benchengine.SeedSets` in a goroutine, stream `done/total` as SSE (mirror dataset-load SSE).
-  - `POST /api/collections/bulk-remove` `{dataAddr, namespace, member, sweep:[]int?}` → if `sweep` set, run `Sweep` and stream/return the points; else run `RunFullNamespaceRemove` and return `BulkRemoveResult`. Use a generous request context (the fan-out over 1M sets is long-running) — stream progress so the client isn't left hanging; cap with `http.MaxBytesReader` on the body.
+  - `POST /api/collections/bulk-remove` `{dataAddr, namespace, member, sweep:[]int?}` → if `sweep` set, run `Sweep` and **stream one SSE point per N** (the only place per-step progress exists); else run `RunFullNamespaceRemove` and return the `BulkRemoveResult` as a single JSON response. **The one-shot full-namespace run is a single blocking `BulkRemove` call — the server fans out internally and returns only at the end, so there is NO mid-call progress to stream; use a generous request/server timeout (the 1M-set fan-out is long) and the UI shows a spinner, not a progress bar.** Cap the body with `http.MaxBytesReader`.
 - [ ] **Step 4: run** `go test ./internal/benchui/ -race && go build ./...` → PASS.
 - [ ] **Step 5: commit** `git commit -am "feat(benchui): collections workloads catalog + seed/bulk-remove endpoints"`
 
@@ -181,8 +182,8 @@ func OpBulkRemove(ctx context.Context, c wavespanv1connect.CollectionServiceClie
 **Files:** `ui/src/bench/api.ts`, `ui/src/bench/Workloads.tsx`, `ui/src/bench/BulkRemove.tsx` (new), `ui/src/bench/BenchApp.tsx`.
 
 - [ ] **Step 1:** `api.ts` — add types + wrappers for the new endpoints (`seedCollections` SSE, `bulkRemove`/`bulkRemoveSweep`), and `PARAM_HINTS` for set/hash/zset.
-- [ ] **Step 2:** `Workloads.tsx` — `PARAM_HINTS` entries: `set:["concurrency","collections","members","writeRatio"]`, `hash:["concurrency","collections","fields","writeRatio","counterRatio"]`, `zset:["concurrency","collections","members","writeRatio"]`. (The server catalog drives the rest.)
-- [ ] **Step 3:** `BulkRemove.tsx` (Linea) — namespace + sets(N, up to 1e6) + filler + member inputs; **Seed** button (SSE progress bar); **Remove from all sets** button → shows headline **`sets/sec`** + wall-clock + errors (`StatCard`s); a **Scaling sweep** toggle (N = 1k,10k,100k,1M) → a uPlot chart of sets/sec vs N (log-x). Big-N warning on seed.
+- [ ] **Step 2:** `Workloads.tsx` — `PARAM_HINTS` entries: `set:["concurrency","collections","members","writeRatio"]`, `hash:["concurrency","collections","fields","writeRatio","counterRatio"]`, `zset:["concurrency","collections","members","writeRatio"]`. (The server catalog drives the rest.) NOTE: per-row `concurrency` is **decorative** for UI symmetry with `kv` — concurrency is a global run knob (`Config.Concurrency`); `opsFor` does not read a per-workload concurrency. Don't wire the per-row value into `Config`.
+- [ ] **Step 3:** `BulkRemove.tsx` (Linea) — namespace + sets(N, up to 1e6) + filler + member inputs; **Seed** button (SSE **progress bar** — seeding does stream done/total); **Remove from all sets** button → a **spinner** while the one blocking call runs (no mid-call progress), then headline **`sets/sec`** + wall-clock + errors (`StatCard`s); a **Scaling sweep** toggle (N = 1k,10k,100k,1M) → its own uPlot chart of sets/sec vs N. **Do NOT reuse `TimeSeries` verbatim** for the sweep — it hardcodes a linear, seconds-formatted time x-axis; write a small dedicated uPlot config in `BulkRemove.tsx` with a **log x-scale** (`scales: { x: { distr: 3 } }`) and an N-formatted tick (1k/10k/…). Big-N warning on seed (1M sets ≈ 1M SAdd writes → minutes). Note in the copy that the one-shot metric is whole-fan-out wall-clock → sets/sec (no per-collection latency).
 - [ ] **Step 4:** wire `BulkRemove` into `BenchApp` (a full-width panel below the charts). `npm run build:bench && npm run typecheck` clean.
 - [ ] **Step 5: commit** `git add ui/src/bench && git commit -m "feat(bench-ui): collections workload rows + Bulk-Remove panel (seed/run/sweep)"`
 
