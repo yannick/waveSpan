@@ -1077,9 +1077,9 @@ const file_wavespan_v1_admin_proto_rawDesc = "" +
 	"\x10IndirectExchange\x12$.wavespan.v1.IndirectExchangeRequest\x1a#.wavespan.v1.GossipExchangeResponse2\xc4\x01\n" +
 	"\fAdminService\x12V\n" +
 	"\rGetMembership\x12!.wavespan.v1.GetMembershipRequest\x1a\".wavespan.v1.GetMembershipResponse\x12\\\n" +
-	"\x0fGetLatencyGraph\x12#.wavespan.v1.GetLatencyGraphRequest\x1a$.wavespan.v1.GetLatencyGraphResponseB\xa2\x01\n" +
+	"\x0fGetLatencyGraph\x12#.wavespan.v1.GetLatencyGraphRequest\x1a$.wavespan.v1.GetLatencyGraphResponseB\xa4\x01\n" +
 	"\x0fcom.wavespan.v1B\n" +
-	"AdminProtoP\x01Z6github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
+	"AdminProtoP\x01Z8github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
 	file_wavespan_v1_admin_proto_rawDescOnce sync.Once
