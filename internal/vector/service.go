@@ -27,9 +27,11 @@ type Service struct {
 	dims      func(collection string) (int, bool)
 
 	// Coordinator ops for the vector-as-key API (design/29): resolve a collection's index, scatter a
-	// kNN search to holders, read a record's bytes (for exact Get + neighbour payloads), and delete.
+	// kNN search to the relevant holders (routed by probed buckets when nprobe>0; all holders
+	// otherwise), read a record's bytes (for exact Get + neighbour payloads), and delete. The scatter
+	// queries PEER holders only; the coordinator adds its own local fragment.
 	collIndex func(collection string) (string, bool)
-	scatter   func(ctx context.Context, indexName string, query []float32, k, efSearch int, rerank bool) (fragments [][]Hit, unreachable int)
+	scatter   func(ctx context.Context, collection, indexName string, query []float32, k, efSearch, nprobe int, rerank bool) (fragments [][]Hit, unreachable int)
 	kvRead    func(ctx context.Context, ns string, key []byte) (value []byte, found bool, err error)
 	kvDelete  func(ctx context.Context, ns string, key []byte) error
 }
@@ -37,7 +39,7 @@ type Service struct {
 // WithCoordinator wires the cluster-wide vector-as-key operations (VectorGet/Delete/Search).
 func (s *Service) WithCoordinator(
 	collIndex func(collection string) (string, bool),
-	scatter func(ctx context.Context, indexName string, query []float32, k, efSearch int, rerank bool) ([][]Hit, int),
+	scatter func(ctx context.Context, collection, indexName string, query []float32, k, efSearch, nprobe int, rerank bool) ([][]Hit, int),
 	kvRead func(ctx context.Context, ns string, key []byte) ([]byte, bool, error),
 	kvDelete func(ctx context.Context, ns string, key []byte) error,
 ) *Service {

@@ -80,8 +80,21 @@ func (s *Service) VectorSearch(ctx context.Context, req *connect.Request[wavespa
 	if ef <= 0 {
 		ef = 64
 	}
-	frags, unreachable := s.scatter(ctx, idxName, m.GetQuery(), k, ef, m.GetRerank())
-	merged := MergeTopK(frags, k)
+	// Local fragment: the coordinator also holds vectors, and the peer scatter skips self.
+	var fragments [][]Hit
+	if meta, ok := s.index(idxName); ok {
+		var live *LiveIndex
+		if s.live != nil {
+			live, _ = s.live(idxName)
+		}
+		if local := LocalSearch(s.store, meta, live, m.GetQuery(), k, ef, false, m.GetRerank()); len(local) > 0 {
+			fragments = append(fragments, local)
+		}
+	}
+	// Remote fragments from peer holders (routed to probed-bucket holders when nprobe>0).
+	remote, unreachable := s.scatter(ctx, m.GetCollection(), idxName, m.GetQuery(), k, ef, int(m.GetNprobe()), m.GetRerank())
+	fragments = append(fragments, remote...)
+	merged := MergeTopK(fragments, k)
 
 	res := &wavespanv1.VectorSearchRes{
 		Completeness: wavespanv1.Completeness_COMPLETE,

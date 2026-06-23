@@ -540,19 +540,99 @@ func (x *ConfigDelta) GetOrigin() string {
 	return ""
 }
 
+// HeldBuckets advertises the coarse vector buckets a member currently holds for a collection, so a
+// kNN query routes only to the nodes holding its probed buckets (design/29 Phase 2). It is an
+// explicit, removable set (recomputed from the store), unlike the add-only holder bloom.
+type HeldBuckets struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	MemberId          string                 `protobuf:"bytes,1,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	Collection        string                 `protobuf:"bytes,2,opt,name=collection,proto3" json:"collection,omitempty"`
+	Qver              uint32                 `protobuf:"varint,3,opt,name=qver,proto3" json:"qver,omitempty"` // quantizer version (buckets from different versions are distinct)
+	Buckets           []uint32               `protobuf:"varint,4,rep,packed,name=buckets,proto3" json:"buckets,omitempty"`
+	GeneratedAtUnixMs int64                  `protobuf:"varint,5,opt,name=generated_at_unix_ms,json=generatedAtUnixMs,proto3" json:"generated_at_unix_ms,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *HeldBuckets) Reset() {
+	*x = HeldBuckets{}
+	mi := &file_wavespan_v1_admin_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeldBuckets) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeldBuckets) ProtoMessage() {}
+
+func (x *HeldBuckets) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_admin_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeldBuckets.ProtoReflect.Descriptor instead.
+func (*HeldBuckets) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *HeldBuckets) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *HeldBuckets) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+func (x *HeldBuckets) GetQver() uint32 {
+	if x != nil {
+		return x.Qver
+	}
+	return 0
+}
+
+func (x *HeldBuckets) GetBuckets() []uint32 {
+	if x != nil {
+		return x.Buckets
+	}
+	return nil
+}
+
+func (x *HeldBuckets) GetGeneratedAtUnixMs() int64 {
+	if x != nil {
+		return x.GeneratedAtUnixMs
+	}
+	return 0
+}
+
 type GossipExchangeRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	From            *Member                `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
 	Members         []*MemberState         `protobuf:"bytes,2,rep,name=members,proto3" json:"members,omitempty"`
 	HolderSummaries []*HolderSummary       `protobuf:"bytes,3,rep,name=holder_summaries,json=holderSummaries,proto3" json:"holder_summaries,omitempty"`
 	ConfigDeltas    []*ConfigDelta         `protobuf:"bytes,4,rep,name=config_deltas,json=configDeltas,proto3" json:"config_deltas,omitempty"`
+	HeldBuckets     []*HeldBuckets         `protobuf:"bytes,5,rep,name=held_buckets,json=heldBuckets,proto3" json:"held_buckets,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GossipExchangeRequest) Reset() {
 	*x = GossipExchangeRequest{}
-	mi := &file_wavespan_v1_admin_proto_msgTypes[5]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -564,7 +644,7 @@ func (x *GossipExchangeRequest) String() string {
 func (*GossipExchangeRequest) ProtoMessage() {}
 
 func (x *GossipExchangeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_admin_proto_msgTypes[5]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -577,7 +657,7 @@ func (x *GossipExchangeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GossipExchangeRequest.ProtoReflect.Descriptor instead.
 func (*GossipExchangeRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{5}
+	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GossipExchangeRequest) GetFrom() *Member {
@@ -608,19 +688,27 @@ func (x *GossipExchangeRequest) GetConfigDeltas() []*ConfigDelta {
 	return nil
 }
 
+func (x *GossipExchangeRequest) GetHeldBuckets() []*HeldBuckets {
+	if x != nil {
+		return x.HeldBuckets
+	}
+	return nil
+}
+
 type GossipExchangeResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	From            *Member                `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
 	Members         []*MemberState         `protobuf:"bytes,2,rep,name=members,proto3" json:"members,omitempty"`
 	HolderSummaries []*HolderSummary       `protobuf:"bytes,3,rep,name=holder_summaries,json=holderSummaries,proto3" json:"holder_summaries,omitempty"`
 	ConfigDeltas    []*ConfigDelta         `protobuf:"bytes,4,rep,name=config_deltas,json=configDeltas,proto3" json:"config_deltas,omitempty"`
+	HeldBuckets     []*HeldBuckets         `protobuf:"bytes,5,rep,name=held_buckets,json=heldBuckets,proto3" json:"held_buckets,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GossipExchangeResponse) Reset() {
 	*x = GossipExchangeResponse{}
-	mi := &file_wavespan_v1_admin_proto_msgTypes[6]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -632,7 +720,7 @@ func (x *GossipExchangeResponse) String() string {
 func (*GossipExchangeResponse) ProtoMessage() {}
 
 func (x *GossipExchangeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_admin_proto_msgTypes[6]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -645,7 +733,7 @@ func (x *GossipExchangeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GossipExchangeResponse.ProtoReflect.Descriptor instead.
 func (*GossipExchangeResponse) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{6}
+	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GossipExchangeResponse) GetFrom() *Member {
@@ -676,6 +764,13 @@ func (x *GossipExchangeResponse) GetConfigDeltas() []*ConfigDelta {
 	return nil
 }
 
+func (x *GossipExchangeResponse) GetHeldBuckets() []*HeldBuckets {
+	if x != nil {
+		return x.HeldBuckets
+	}
+	return nil
+}
+
 // IndirectExchangeRequest asks the receiver to relay a gossip exchange to target_gossip_addr
 // on the caller's behalf (SWIM indirect probe).
 type IndirectExchangeRequest struct {
@@ -688,7 +783,7 @@ type IndirectExchangeRequest struct {
 
 func (x *IndirectExchangeRequest) Reset() {
 	*x = IndirectExchangeRequest{}
-	mi := &file_wavespan_v1_admin_proto_msgTypes[7]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -700,7 +795,7 @@ func (x *IndirectExchangeRequest) String() string {
 func (*IndirectExchangeRequest) ProtoMessage() {}
 
 func (x *IndirectExchangeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_admin_proto_msgTypes[7]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -713,7 +808,7 @@ func (x *IndirectExchangeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndirectExchangeRequest.ProtoReflect.Descriptor instead.
 func (*IndirectExchangeRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{7}
+	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *IndirectExchangeRequest) GetTargetGossipAddr() string {
@@ -738,7 +833,7 @@ type GetMembershipRequest struct {
 
 func (x *GetMembershipRequest) Reset() {
 	*x = GetMembershipRequest{}
-	mi := &file_wavespan_v1_admin_proto_msgTypes[8]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -750,7 +845,7 @@ func (x *GetMembershipRequest) String() string {
 func (*GetMembershipRequest) ProtoMessage() {}
 
 func (x *GetMembershipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_admin_proto_msgTypes[8]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -763,7 +858,7 @@ func (x *GetMembershipRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMembershipRequest.ProtoReflect.Descriptor instead.
 func (*GetMembershipRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{8}
+	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{9}
 }
 
 type GetMembershipResponse struct {
@@ -775,7 +870,7 @@ type GetMembershipResponse struct {
 
 func (x *GetMembershipResponse) Reset() {
 	*x = GetMembershipResponse{}
-	mi := &file_wavespan_v1_admin_proto_msgTypes[9]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -787,7 +882,7 @@ func (x *GetMembershipResponse) String() string {
 func (*GetMembershipResponse) ProtoMessage() {}
 
 func (x *GetMembershipResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_admin_proto_msgTypes[9]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -800,7 +895,7 @@ func (x *GetMembershipResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMembershipResponse.ProtoReflect.Descriptor instead.
 func (*GetMembershipResponse) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{9}
+	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetMembershipResponse) GetMembers() []*MemberState {
@@ -818,7 +913,7 @@ type GetLatencyGraphRequest struct {
 
 func (x *GetLatencyGraphRequest) Reset() {
 	*x = GetLatencyGraphRequest{}
-	mi := &file_wavespan_v1_admin_proto_msgTypes[10]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -830,7 +925,7 @@ func (x *GetLatencyGraphRequest) String() string {
 func (*GetLatencyGraphRequest) ProtoMessage() {}
 
 func (x *GetLatencyGraphRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_admin_proto_msgTypes[10]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -843,7 +938,7 @@ func (x *GetLatencyGraphRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLatencyGraphRequest.ProtoReflect.Descriptor instead.
 func (*GetLatencyGraphRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{10}
+	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{11}
 }
 
 type GetLatencyGraphResponse struct {
@@ -855,7 +950,7 @@ type GetLatencyGraphResponse struct {
 
 func (x *GetLatencyGraphResponse) Reset() {
 	*x = GetLatencyGraphResponse{}
-	mi := &file_wavespan_v1_admin_proto_msgTypes[11]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -867,7 +962,7 @@ func (x *GetLatencyGraphResponse) String() string {
 func (*GetLatencyGraphResponse) ProtoMessage() {}
 
 func (x *GetLatencyGraphResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_admin_proto_msgTypes[11]
+	mi := &file_wavespan_v1_admin_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -880,7 +975,7 @@ func (x *GetLatencyGraphResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLatencyGraphResponse.ProtoReflect.Descriptor instead.
 func (*GetLatencyGraphResponse) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{11}
+	return file_wavespan_v1_admin_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetLatencyGraphResponse) GetEdges() []*LatencyEdge {
@@ -940,17 +1035,27 @@ const file_wavespan_v1_admin_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\x04R\aversion\x12\x16\n" +
-	"\x06origin\x18\x04 \x01(\tR\x06origin\"\xfa\x01\n" +
+	"\x06origin\x18\x04 \x01(\tR\x06origin\"\xa9\x01\n" +
+	"\vHeldBuckets\x12\x1b\n" +
+	"\tmember_id\x18\x01 \x01(\tR\bmemberId\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x02 \x01(\tR\n" +
+	"collection\x12\x12\n" +
+	"\x04qver\x18\x03 \x01(\rR\x04qver\x12\x18\n" +
+	"\abuckets\x18\x04 \x03(\rR\abuckets\x12/\n" +
+	"\x14generated_at_unix_ms\x18\x05 \x01(\x03R\x11generatedAtUnixMs\"\xb7\x02\n" +
 	"\x15GossipExchangeRequest\x12'\n" +
 	"\x04from\x18\x01 \x01(\v2\x13.wavespan.v1.MemberR\x04from\x122\n" +
 	"\amembers\x18\x02 \x03(\v2\x18.wavespan.v1.MemberStateR\amembers\x12E\n" +
 	"\x10holder_summaries\x18\x03 \x03(\v2\x1a.wavespan.v1.HolderSummaryR\x0fholderSummaries\x12=\n" +
-	"\rconfig_deltas\x18\x04 \x03(\v2\x18.wavespan.v1.ConfigDeltaR\fconfigDeltas\"\xfb\x01\n" +
+	"\rconfig_deltas\x18\x04 \x03(\v2\x18.wavespan.v1.ConfigDeltaR\fconfigDeltas\x12;\n" +
+	"\fheld_buckets\x18\x05 \x03(\v2\x18.wavespan.v1.HeldBucketsR\vheldBuckets\"\xb8\x02\n" +
 	"\x16GossipExchangeResponse\x12'\n" +
 	"\x04from\x18\x01 \x01(\v2\x13.wavespan.v1.MemberR\x04from\x122\n" +
 	"\amembers\x18\x02 \x03(\v2\x18.wavespan.v1.MemberStateR\amembers\x12E\n" +
 	"\x10holder_summaries\x18\x03 \x03(\v2\x1a.wavespan.v1.HolderSummaryR\x0fholderSummaries\x12=\n" +
-	"\rconfig_deltas\x18\x04 \x03(\v2\x18.wavespan.v1.ConfigDeltaR\fconfigDeltas\"\x85\x01\n" +
+	"\rconfig_deltas\x18\x04 \x03(\v2\x18.wavespan.v1.ConfigDeltaR\fconfigDeltas\x12;\n" +
+	"\fheld_buckets\x18\x05 \x03(\v2\x18.wavespan.v1.HeldBucketsR\vheldBuckets\"\x85\x01\n" +
 	"\x17IndirectExchangeRequest\x12,\n" +
 	"\x12target_gossip_addr\x18\x01 \x01(\tR\x10targetGossipAddr\x12<\n" +
 	"\apayload\x18\x02 \x01(\v2\".wavespan.v1.GossipExchangeRequestR\apayload\"\x16\n" +
@@ -989,7 +1094,7 @@ func file_wavespan_v1_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_wavespan_v1_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wavespan_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_wavespan_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_wavespan_v1_admin_proto_goTypes = []any{
 	(MemberLiveness)(0),             // 0: wavespan.v1.MemberLiveness
 	(*Member)(nil),                  // 1: wavespan.v1.Member
@@ -997,44 +1102,47 @@ var file_wavespan_v1_admin_proto_goTypes = []any{
 	(*LatencyEdge)(nil),             // 3: wavespan.v1.LatencyEdge
 	(*HolderSummary)(nil),           // 4: wavespan.v1.HolderSummary
 	(*ConfigDelta)(nil),             // 5: wavespan.v1.ConfigDelta
-	(*GossipExchangeRequest)(nil),   // 6: wavespan.v1.GossipExchangeRequest
-	(*GossipExchangeResponse)(nil),  // 7: wavespan.v1.GossipExchangeResponse
-	(*IndirectExchangeRequest)(nil), // 8: wavespan.v1.IndirectExchangeRequest
-	(*GetMembershipRequest)(nil),    // 9: wavespan.v1.GetMembershipRequest
-	(*GetMembershipResponse)(nil),   // 10: wavespan.v1.GetMembershipResponse
-	(*GetLatencyGraphRequest)(nil),  // 11: wavespan.v1.GetLatencyGraphRequest
-	(*GetLatencyGraphResponse)(nil), // 12: wavespan.v1.GetLatencyGraphResponse
-	(*Version)(nil),                 // 13: wavespan.v1.Version
+	(*HeldBuckets)(nil),             // 6: wavespan.v1.HeldBuckets
+	(*GossipExchangeRequest)(nil),   // 7: wavespan.v1.GossipExchangeRequest
+	(*GossipExchangeResponse)(nil),  // 8: wavespan.v1.GossipExchangeResponse
+	(*IndirectExchangeRequest)(nil), // 9: wavespan.v1.IndirectExchangeRequest
+	(*GetMembershipRequest)(nil),    // 10: wavespan.v1.GetMembershipRequest
+	(*GetMembershipResponse)(nil),   // 11: wavespan.v1.GetMembershipResponse
+	(*GetLatencyGraphRequest)(nil),  // 12: wavespan.v1.GetLatencyGraphRequest
+	(*GetLatencyGraphResponse)(nil), // 13: wavespan.v1.GetLatencyGraphResponse
+	(*Version)(nil),                 // 14: wavespan.v1.Version
 }
 var file_wavespan_v1_admin_proto_depIdxs = []int32{
 	1,  // 0: wavespan.v1.MemberState.member:type_name -> wavespan.v1.Member
 	0,  // 1: wavespan.v1.MemberState.state:type_name -> wavespan.v1.MemberLiveness
-	13, // 2: wavespan.v1.HolderSummary.low_watermark:type_name -> wavespan.v1.Version
-	13, // 3: wavespan.v1.HolderSummary.high_watermark:type_name -> wavespan.v1.Version
+	14, // 2: wavespan.v1.HolderSummary.low_watermark:type_name -> wavespan.v1.Version
+	14, // 3: wavespan.v1.HolderSummary.high_watermark:type_name -> wavespan.v1.Version
 	1,  // 4: wavespan.v1.GossipExchangeRequest.from:type_name -> wavespan.v1.Member
 	2,  // 5: wavespan.v1.GossipExchangeRequest.members:type_name -> wavespan.v1.MemberState
 	4,  // 6: wavespan.v1.GossipExchangeRequest.holder_summaries:type_name -> wavespan.v1.HolderSummary
 	5,  // 7: wavespan.v1.GossipExchangeRequest.config_deltas:type_name -> wavespan.v1.ConfigDelta
-	1,  // 8: wavespan.v1.GossipExchangeResponse.from:type_name -> wavespan.v1.Member
-	2,  // 9: wavespan.v1.GossipExchangeResponse.members:type_name -> wavespan.v1.MemberState
-	4,  // 10: wavespan.v1.GossipExchangeResponse.holder_summaries:type_name -> wavespan.v1.HolderSummary
-	5,  // 11: wavespan.v1.GossipExchangeResponse.config_deltas:type_name -> wavespan.v1.ConfigDelta
-	6,  // 12: wavespan.v1.IndirectExchangeRequest.payload:type_name -> wavespan.v1.GossipExchangeRequest
-	2,  // 13: wavespan.v1.GetMembershipResponse.members:type_name -> wavespan.v1.MemberState
-	3,  // 14: wavespan.v1.GetLatencyGraphResponse.edges:type_name -> wavespan.v1.LatencyEdge
-	6,  // 15: wavespan.v1.GossipService.Exchange:input_type -> wavespan.v1.GossipExchangeRequest
-	8,  // 16: wavespan.v1.GossipService.IndirectExchange:input_type -> wavespan.v1.IndirectExchangeRequest
-	9,  // 17: wavespan.v1.AdminService.GetMembership:input_type -> wavespan.v1.GetMembershipRequest
-	11, // 18: wavespan.v1.AdminService.GetLatencyGraph:input_type -> wavespan.v1.GetLatencyGraphRequest
-	7,  // 19: wavespan.v1.GossipService.Exchange:output_type -> wavespan.v1.GossipExchangeResponse
-	7,  // 20: wavespan.v1.GossipService.IndirectExchange:output_type -> wavespan.v1.GossipExchangeResponse
-	10, // 21: wavespan.v1.AdminService.GetMembership:output_type -> wavespan.v1.GetMembershipResponse
-	12, // 22: wavespan.v1.AdminService.GetLatencyGraph:output_type -> wavespan.v1.GetLatencyGraphResponse
-	19, // [19:23] is the sub-list for method output_type
-	15, // [15:19] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	6,  // 8: wavespan.v1.GossipExchangeRequest.held_buckets:type_name -> wavespan.v1.HeldBuckets
+	1,  // 9: wavespan.v1.GossipExchangeResponse.from:type_name -> wavespan.v1.Member
+	2,  // 10: wavespan.v1.GossipExchangeResponse.members:type_name -> wavespan.v1.MemberState
+	4,  // 11: wavespan.v1.GossipExchangeResponse.holder_summaries:type_name -> wavespan.v1.HolderSummary
+	5,  // 12: wavespan.v1.GossipExchangeResponse.config_deltas:type_name -> wavespan.v1.ConfigDelta
+	6,  // 13: wavespan.v1.GossipExchangeResponse.held_buckets:type_name -> wavespan.v1.HeldBuckets
+	7,  // 14: wavespan.v1.IndirectExchangeRequest.payload:type_name -> wavespan.v1.GossipExchangeRequest
+	2,  // 15: wavespan.v1.GetMembershipResponse.members:type_name -> wavespan.v1.MemberState
+	3,  // 16: wavespan.v1.GetLatencyGraphResponse.edges:type_name -> wavespan.v1.LatencyEdge
+	7,  // 17: wavespan.v1.GossipService.Exchange:input_type -> wavespan.v1.GossipExchangeRequest
+	9,  // 18: wavespan.v1.GossipService.IndirectExchange:input_type -> wavespan.v1.IndirectExchangeRequest
+	10, // 19: wavespan.v1.AdminService.GetMembership:input_type -> wavespan.v1.GetMembershipRequest
+	12, // 20: wavespan.v1.AdminService.GetLatencyGraph:input_type -> wavespan.v1.GetLatencyGraphRequest
+	8,  // 21: wavespan.v1.GossipService.Exchange:output_type -> wavespan.v1.GossipExchangeResponse
+	8,  // 22: wavespan.v1.GossipService.IndirectExchange:output_type -> wavespan.v1.GossipExchangeResponse
+	11, // 23: wavespan.v1.AdminService.GetMembership:output_type -> wavespan.v1.GetMembershipResponse
+	13, // 24: wavespan.v1.AdminService.GetLatencyGraph:output_type -> wavespan.v1.GetLatencyGraphResponse
+	21, // [21:25] is the sub-list for method output_type
+	17, // [17:21] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_admin_proto_init() }
@@ -1049,7 +1157,7 @@ func file_wavespan_v1_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_admin_proto_rawDesc), len(file_wavespan_v1_admin_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

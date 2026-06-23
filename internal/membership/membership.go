@@ -73,6 +73,12 @@ func (s *Service) SetConfigHooks(provide func() []ConfigDeltaWire, consume func(
 	s.gossip.SetConfigHooks(provide, consume)
 }
 
+// SetBucketHooks installs the held-bucket provider/consumer so vector bucket advertisements ride
+// gossip and feed the kNN routing directory (design/29).
+func (s *Service) SetBucketHooks(provide func() []HeldBucketWire, consume func([]HeldBucketWire)) {
+	s.gossip.SetBucketHooks(provide, consume)
+}
+
 // Run joins the cluster via seeds, then gossips on the configured interval until ctx is done.
 func (s *Service) Run(ctx context.Context) {
 	s.gossip.Join(ctx)

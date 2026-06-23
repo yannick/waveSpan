@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file wavespan/v1/admin.proto.
  */
 export const file_wavespan_v1_admin: GenFile = /*@__PURE__*/
-  fileDesc("Chd3YXZlc3Bhbi92MS9hZG1pbi5wcm90bxILd2F2ZXNwYW4udjEivwEKBk1lbWJlchISCgpjbHVzdGVyX2lkGAEgASgJEhEKCW1lbWJlcl9pZBgCIAEoCRIUCgxzdG9yYWdlX3V1aWQYAyABKAkSEQoJbm9kZV9uYW1lGAQgASgJEgwKBHpvbmUYBSABKAkSDgoGcmVnaW9uGAYgASgJEgsKA2dlbxgHIAEoCRITCgtnb3NzaXBfYWRkchgIIAEoCRIRCglkYXRhX2FkZHIYCSABKAkSEgoKYWRtaW5fYWRkchgKIAEoCSKOAQoLTWVtYmVyU3RhdGUSIwoGbWVtYmVyGAEgASgLMhMud2F2ZXNwYW4udjEuTWVtYmVyEioKBXN0YXRlGAIgASgOMhsud2F2ZXNwYW4udjEuTWVtYmVyTGl2ZW5lc3MSEwoLaW5jYXJuYXRpb24YAyABKAQSGQoRbGFzdF9zZWVuX3VuaXhfbXMYBCABKAMiywEKC0xhdGVuY3lFZGdlEhYKDmZyb21fbWVtYmVyX2lkGAEgASgJEhQKDHRvX21lbWJlcl9pZBgCIAEoCRITCgtld21hX3J0dF9tcxgDIAEoARISCgpwOTVfcnR0X21zGAQgASgBEhMKC3BhY2tldF9sb3NzGAUgASgBEhwKFGxhc3Rfc3VjY2Vzc191bml4X21zGAYgASgDEhwKFGxhc3RfZmFpbHVyZV91bml4X21zGAcgASgDEhQKDHNhbXBsZV9jb3VudBgIIAEoDSL1AQoNSG9sZGVyU3VtbWFyeRIRCgluYW1lc3BhY2UYASABKAkSEAoIcmFuZ2VfaWQYAiABKAkSEQoJbWVtYmVyX2lkGAMgASgJEhQKDGJsb29tX2ZpbHRlchgEIAEoDBIdChVhcHByb3hpbWF0ZV9rZXlfY291bnQYBSABKAQSKwoNbG93X3dhdGVybWFyaxgGIAEoCzIULndhdmVzcGFuLnYxLlZlcnNpb24SLAoOaGlnaF93YXRlcm1hcmsYByABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEhwKFGdlbmVyYXRlZF9hdF91bml4X21zGAggASgDIkoKC0NvbmZpZ0RlbHRhEgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCRIPCgd2ZXJzaW9uGAMgASgEEg4KBm9yaWdpbhgEIAEoCSLMAQoVR29zc2lwRXhjaGFuZ2VSZXF1ZXN0EiEKBGZyb20YASABKAsyEy53YXZlc3Bhbi52MS5NZW1iZXISKQoHbWVtYmVycxgCIAMoCzIYLndhdmVzcGFuLnYxLk1lbWJlclN0YXRlEjQKEGhvbGRlcl9zdW1tYXJpZXMYAyADKAsyGi53YXZlc3Bhbi52MS5Ib2xkZXJTdW1tYXJ5Ei8KDWNvbmZpZ19kZWx0YXMYBCADKAsyGC53YXZlc3Bhbi52MS5Db25maWdEZWx0YSLNAQoWR29zc2lwRXhjaGFuZ2VSZXNwb25zZRIhCgRmcm9tGAEgASgLMhMud2F2ZXNwYW4udjEuTWVtYmVyEikKB21lbWJlcnMYAiADKAsyGC53YXZlc3Bhbi52MS5NZW1iZXJTdGF0ZRI0ChBob2xkZXJfc3VtbWFyaWVzGAMgAygLMhoud2F2ZXNwYW4udjEuSG9sZGVyU3VtbWFyeRIvCg1jb25maWdfZGVsdGFzGAQgAygLMhgud2F2ZXNwYW4udjEuQ29uZmlnRGVsdGEiagoXSW5kaXJlY3RFeGNoYW5nZVJlcXVlc3QSGgoSdGFyZ2V0X2dvc3NpcF9hZGRyGAEgASgJEjMKB3BheWxvYWQYAiABKAsyIi53YXZlc3Bhbi52MS5Hb3NzaXBFeGNoYW5nZVJlcXVlc3QiFgoUR2V0TWVtYmVyc2hpcFJlcXVlc3QiQgoVR2V0TWVtYmVyc2hpcFJlc3BvbnNlEikKB21lbWJlcnMYASADKAsyGC53YXZlc3Bhbi52MS5NZW1iZXJTdGF0ZSIYChZHZXRMYXRlbmN5R3JhcGhSZXF1ZXN0IkIKF0dldExhdGVuY3lHcmFwaFJlc3BvbnNlEicKBWVkZ2VzGAEgAygLMhgud2F2ZXNwYW4udjEuTGF0ZW5jeUVkZ2UqlgEKDk1lbWJlckxpdmVuZXNzEh8KG01FTUJFUl9MSVZFTkVTU19VTlNQRUNJRklFRBAAEhAKDE1FTUJFUl9BTElWRRABEhIKDk1FTUJFUl9TVVNQRUNUEAISFgoSTUVNQkVSX1VOUkVBQ0hBQkxFEAMSDwoLTUVNQkVSX0RFQUQQBBIUChBNRU1CRVJfRk9SR09UVEVOEAUywwEKDUdvc3NpcFNlcnZpY2USUwoIRXhjaGFuZ2USIi53YXZlc3Bhbi52MS5Hb3NzaXBFeGNoYW5nZVJlcXVlc3QaIy53YXZlc3Bhbi52MS5Hb3NzaXBFeGNoYW5nZVJlc3BvbnNlEl0KEEluZGlyZWN0RXhjaGFuZ2USJC53YXZlc3Bhbi52MS5JbmRpcmVjdEV4Y2hhbmdlUmVxdWVzdBojLndhdmVzcGFuLnYxLkdvc3NpcEV4Y2hhbmdlUmVzcG9uc2UyxAEKDEFkbWluU2VydmljZRJWCg1HZXRNZW1iZXJzaGlwEiEud2F2ZXNwYW4udjEuR2V0TWVtYmVyc2hpcFJlcXVlc3QaIi53YXZlc3Bhbi52MS5HZXRNZW1iZXJzaGlwUmVzcG9uc2USXAoPR2V0TGF0ZW5jeUdyYXBoEiMud2F2ZXNwYW4udjEuR2V0TGF0ZW5jeUdyYXBoUmVxdWVzdBokLndhdmVzcGFuLnYxLkdldExhdGVuY3lHcmFwaFJlc3BvbnNlQqIBCg9jb20ud2F2ZXNwYW4udjFCCkFkbWluUHJvdG9QAVo2Z2l0aHViLmNvbS9jd2lyZS93YXZlc3Bhbi9wcm90by93YXZlc3Bhbi92MTt3YXZlc3BhbnYxogIDV1hYqgILV2F2ZXNwYW4uVjHKAgtXYXZlc3BhblxWMeICF1dhdmVzcGFuXFYxXEdQQk1ldGFkYXRh6gIMV2F2ZXNwYW46OlYxYgZwcm90bzM", [file_wavespan_v1_common]);
+  fileDesc("Chd3YXZlc3Bhbi92MS9hZG1pbi5wcm90bxILd2F2ZXNwYW4udjEivwEKBk1lbWJlchISCgpjbHVzdGVyX2lkGAEgASgJEhEKCW1lbWJlcl9pZBgCIAEoCRIUCgxzdG9yYWdlX3V1aWQYAyABKAkSEQoJbm9kZV9uYW1lGAQgASgJEgwKBHpvbmUYBSABKAkSDgoGcmVnaW9uGAYgASgJEgsKA2dlbxgHIAEoCRITCgtnb3NzaXBfYWRkchgIIAEoCRIRCglkYXRhX2FkZHIYCSABKAkSEgoKYWRtaW5fYWRkchgKIAEoCSKOAQoLTWVtYmVyU3RhdGUSIwoGbWVtYmVyGAEgASgLMhMud2F2ZXNwYW4udjEuTWVtYmVyEioKBXN0YXRlGAIgASgOMhsud2F2ZXNwYW4udjEuTWVtYmVyTGl2ZW5lc3MSEwoLaW5jYXJuYXRpb24YAyABKAQSGQoRbGFzdF9zZWVuX3VuaXhfbXMYBCABKAMiywEKC0xhdGVuY3lFZGdlEhYKDmZyb21fbWVtYmVyX2lkGAEgASgJEhQKDHRvX21lbWJlcl9pZBgCIAEoCRITCgtld21hX3J0dF9tcxgDIAEoARISCgpwOTVfcnR0X21zGAQgASgBEhMKC3BhY2tldF9sb3NzGAUgASgBEhwKFGxhc3Rfc3VjY2Vzc191bml4X21zGAYgASgDEhwKFGxhc3RfZmFpbHVyZV91bml4X21zGAcgASgDEhQKDHNhbXBsZV9jb3VudBgIIAEoDSL1AQoNSG9sZGVyU3VtbWFyeRIRCgluYW1lc3BhY2UYASABKAkSEAoIcmFuZ2VfaWQYAiABKAkSEQoJbWVtYmVyX2lkGAMgASgJEhQKDGJsb29tX2ZpbHRlchgEIAEoDBIdChVhcHByb3hpbWF0ZV9rZXlfY291bnQYBSABKAQSKwoNbG93X3dhdGVybWFyaxgGIAEoCzIULndhdmVzcGFuLnYxLlZlcnNpb24SLAoOaGlnaF93YXRlcm1hcmsYByABKAsyFC53YXZlc3Bhbi52MS5WZXJzaW9uEhwKFGdlbmVyYXRlZF9hdF91bml4X21zGAggASgDIkoKC0NvbmZpZ0RlbHRhEgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCRIPCgd2ZXJzaW9uGAMgASgEEg4KBm9yaWdpbhgEIAEoCSJxCgtIZWxkQnVja2V0cxIRCgltZW1iZXJfaWQYASABKAkSEgoKY29sbGVjdGlvbhgCIAEoCRIMCgRxdmVyGAMgASgNEg8KB2J1Y2tldHMYBCADKA0SHAoUZ2VuZXJhdGVkX2F0X3VuaXhfbXMYBSABKAMi/AEKFUdvc3NpcEV4Y2hhbmdlUmVxdWVzdBIhCgRmcm9tGAEgASgLMhMud2F2ZXNwYW4udjEuTWVtYmVyEikKB21lbWJlcnMYAiADKAsyGC53YXZlc3Bhbi52MS5NZW1iZXJTdGF0ZRI0ChBob2xkZXJfc3VtbWFyaWVzGAMgAygLMhoud2F2ZXNwYW4udjEuSG9sZGVyU3VtbWFyeRIvCg1jb25maWdfZGVsdGFzGAQgAygLMhgud2F2ZXNwYW4udjEuQ29uZmlnRGVsdGESLgoMaGVsZF9idWNrZXRzGAUgAygLMhgud2F2ZXNwYW4udjEuSGVsZEJ1Y2tldHMi/QEKFkdvc3NpcEV4Y2hhbmdlUmVzcG9uc2USIQoEZnJvbRgBIAEoCzITLndhdmVzcGFuLnYxLk1lbWJlchIpCgdtZW1iZXJzGAIgAygLMhgud2F2ZXNwYW4udjEuTWVtYmVyU3RhdGUSNAoQaG9sZGVyX3N1bW1hcmllcxgDIAMoCzIaLndhdmVzcGFuLnYxLkhvbGRlclN1bW1hcnkSLwoNY29uZmlnX2RlbHRhcxgEIAMoCzIYLndhdmVzcGFuLnYxLkNvbmZpZ0RlbHRhEi4KDGhlbGRfYnVja2V0cxgFIAMoCzIYLndhdmVzcGFuLnYxLkhlbGRCdWNrZXRzImoKF0luZGlyZWN0RXhjaGFuZ2VSZXF1ZXN0EhoKEnRhcmdldF9nb3NzaXBfYWRkchgBIAEoCRIzCgdwYXlsb2FkGAIgASgLMiIud2F2ZXNwYW4udjEuR29zc2lwRXhjaGFuZ2VSZXF1ZXN0IhYKFEdldE1lbWJlcnNoaXBSZXF1ZXN0IkIKFUdldE1lbWJlcnNoaXBSZXNwb25zZRIpCgdtZW1iZXJzGAEgAygLMhgud2F2ZXNwYW4udjEuTWVtYmVyU3RhdGUiGAoWR2V0TGF0ZW5jeUdyYXBoUmVxdWVzdCJCChdHZXRMYXRlbmN5R3JhcGhSZXNwb25zZRInCgVlZGdlcxgBIAMoCzIYLndhdmVzcGFuLnYxLkxhdGVuY3lFZGdlKpYBCg5NZW1iZXJMaXZlbmVzcxIfChtNRU1CRVJfTElWRU5FU1NfVU5TUEVDSUZJRUQQABIQCgxNRU1CRVJfQUxJVkUQARISCg5NRU1CRVJfU1VTUEVDVBACEhYKEk1FTUJFUl9VTlJFQUNIQUJMRRADEg8KC01FTUJFUl9ERUFEEAQSFAoQTUVNQkVSX0ZPUkdPVFRFThAFMsMBCg1Hb3NzaXBTZXJ2aWNlElMKCEV4Y2hhbmdlEiIud2F2ZXNwYW4udjEuR29zc2lwRXhjaGFuZ2VSZXF1ZXN0GiMud2F2ZXNwYW4udjEuR29zc2lwRXhjaGFuZ2VSZXNwb25zZRJdChBJbmRpcmVjdEV4Y2hhbmdlEiQud2F2ZXNwYW4udjEuSW5kaXJlY3RFeGNoYW5nZVJlcXVlc3QaIy53YXZlc3Bhbi52MS5Hb3NzaXBFeGNoYW5nZVJlc3BvbnNlMsQBCgxBZG1pblNlcnZpY2USVgoNR2V0TWVtYmVyc2hpcBIhLndhdmVzcGFuLnYxLkdldE1lbWJlcnNoaXBSZXF1ZXN0GiIud2F2ZXNwYW4udjEuR2V0TWVtYmVyc2hpcFJlc3BvbnNlElwKD0dldExhdGVuY3lHcmFwaBIjLndhdmVzcGFuLnYxLkdldExhdGVuY3lHcmFwaFJlcXVlc3QaJC53YXZlc3Bhbi52MS5HZXRMYXRlbmN5R3JhcGhSZXNwb25zZUKiAQoPY29tLndhdmVzcGFuLnYxQgpBZG1pblByb3RvUAFaNmdpdGh1Yi5jb20vY3dpcmUvd2F2ZXNwYW4vcHJvdG8vd2F2ZXNwYW4vdjE7d2F2ZXNwYW52MaICA1dYWKoCC1dhdmVzcGFuLlYxygILV2F2ZXNwYW5cVjHiAhdXYXZlc3BhblxWMVxHUEJNZXRhZGF0YeoCDFdhdmVzcGFuOjpWMWIGcHJvdG8z", [file_wavespan_v1_common]);
 
 /**
  * Member is a participant's identity and addressing (design/04 "Member identity").
@@ -266,6 +266,49 @@ export const ConfigDeltaSchema: GenMessage<ConfigDelta> = /*@__PURE__*/
   messageDesc(file_wavespan_v1_admin, 4);
 
 /**
+ * HeldBuckets advertises the coarse vector buckets a member currently holds for a collection, so a
+ * kNN query routes only to the nodes holding its probed buckets (design/29 Phase 2). It is an
+ * explicit, removable set (recomputed from the store), unlike the add-only holder bloom.
+ *
+ * @generated from message wavespan.v1.HeldBuckets
+ */
+export type HeldBuckets = Message<"wavespan.v1.HeldBuckets"> & {
+  /**
+   * @generated from field: string member_id = 1;
+   */
+  memberId: string;
+
+  /**
+   * @generated from field: string collection = 2;
+   */
+  collection: string;
+
+  /**
+   * quantizer version (buckets from different versions are distinct)
+   *
+   * @generated from field: uint32 qver = 3;
+   */
+  qver: number;
+
+  /**
+   * @generated from field: repeated uint32 buckets = 4;
+   */
+  buckets: number[];
+
+  /**
+   * @generated from field: int64 generated_at_unix_ms = 5;
+   */
+  generatedAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message wavespan.v1.HeldBuckets.
+ * Use `create(HeldBucketsSchema)` to create a new message.
+ */
+export const HeldBucketsSchema: GenMessage<HeldBuckets> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_admin, 5);
+
+/**
  * @generated from message wavespan.v1.GossipExchangeRequest
  */
 export type GossipExchangeRequest = Message<"wavespan.v1.GossipExchangeRequest"> & {
@@ -288,6 +331,11 @@ export type GossipExchangeRequest = Message<"wavespan.v1.GossipExchangeRequest">
    * @generated from field: repeated wavespan.v1.ConfigDelta config_deltas = 4;
    */
   configDeltas: ConfigDelta[];
+
+  /**
+   * @generated from field: repeated wavespan.v1.HeldBuckets held_buckets = 5;
+   */
+  heldBuckets: HeldBuckets[];
 };
 
 /**
@@ -295,7 +343,7 @@ export type GossipExchangeRequest = Message<"wavespan.v1.GossipExchangeRequest">
  * Use `create(GossipExchangeRequestSchema)` to create a new message.
  */
 export const GossipExchangeRequestSchema: GenMessage<GossipExchangeRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_admin, 5);
+  messageDesc(file_wavespan_v1_admin, 6);
 
 /**
  * @generated from message wavespan.v1.GossipExchangeResponse
@@ -320,6 +368,11 @@ export type GossipExchangeResponse = Message<"wavespan.v1.GossipExchangeResponse
    * @generated from field: repeated wavespan.v1.ConfigDelta config_deltas = 4;
    */
   configDeltas: ConfigDelta[];
+
+  /**
+   * @generated from field: repeated wavespan.v1.HeldBuckets held_buckets = 5;
+   */
+  heldBuckets: HeldBuckets[];
 };
 
 /**
@@ -327,7 +380,7 @@ export type GossipExchangeResponse = Message<"wavespan.v1.GossipExchangeResponse
  * Use `create(GossipExchangeResponseSchema)` to create a new message.
  */
 export const GossipExchangeResponseSchema: GenMessage<GossipExchangeResponse> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_admin, 6);
+  messageDesc(file_wavespan_v1_admin, 7);
 
 /**
  * IndirectExchangeRequest asks the receiver to relay a gossip exchange to target_gossip_addr
@@ -352,7 +405,7 @@ export type IndirectExchangeRequest = Message<"wavespan.v1.IndirectExchangeReque
  * Use `create(IndirectExchangeRequestSchema)` to create a new message.
  */
 export const IndirectExchangeRequestSchema: GenMessage<IndirectExchangeRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_admin, 7);
+  messageDesc(file_wavespan_v1_admin, 8);
 
 /**
  * @generated from message wavespan.v1.GetMembershipRequest
@@ -365,7 +418,7 @@ export type GetMembershipRequest = Message<"wavespan.v1.GetMembershipRequest"> &
  * Use `create(GetMembershipRequestSchema)` to create a new message.
  */
 export const GetMembershipRequestSchema: GenMessage<GetMembershipRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_admin, 8);
+  messageDesc(file_wavespan_v1_admin, 9);
 
 /**
  * @generated from message wavespan.v1.GetMembershipResponse
@@ -382,7 +435,7 @@ export type GetMembershipResponse = Message<"wavespan.v1.GetMembershipResponse">
  * Use `create(GetMembershipResponseSchema)` to create a new message.
  */
 export const GetMembershipResponseSchema: GenMessage<GetMembershipResponse> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_admin, 9);
+  messageDesc(file_wavespan_v1_admin, 10);
 
 /**
  * @generated from message wavespan.v1.GetLatencyGraphRequest
@@ -395,7 +448,7 @@ export type GetLatencyGraphRequest = Message<"wavespan.v1.GetLatencyGraphRequest
  * Use `create(GetLatencyGraphRequestSchema)` to create a new message.
  */
 export const GetLatencyGraphRequestSchema: GenMessage<GetLatencyGraphRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_admin, 10);
+  messageDesc(file_wavespan_v1_admin, 11);
 
 /**
  * @generated from message wavespan.v1.GetLatencyGraphResponse
@@ -412,7 +465,7 @@ export type GetLatencyGraphResponse = Message<"wavespan.v1.GetLatencyGraphRespon
  * Use `create(GetLatencyGraphResponseSchema)` to create a new message.
  */
 export const GetLatencyGraphResponseSchema: GenMessage<GetLatencyGraphResponse> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_admin, 11);
+  messageDesc(file_wavespan_v1_admin, 12);
 
 /**
  * MemberLiveness mirrors internal/membership.State.

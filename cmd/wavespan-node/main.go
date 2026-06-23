@@ -304,6 +304,11 @@ func run() error {
 			go vector.NewMerger(li, 0).Run(ctx, mp.Duration())
 		}
 	}
+	// Coarse quantizers + held-bucket directory for kNN routing (design/29 Phase 2): each collection
+	// gets a deterministic LSH quantizer; the directory tracks which buckets this node (and peers) hold.
+	quantSet := vector.NewQuantSet(metas, vectorNumBuckets)
+	bucketDir := vector.NewBucketDir(self.MemberID)
+
 	// Feed the vector store + ANN index from every durable apply (origin, replica, anti-entropy,
 	// bootstrap, cross-cluster) so a vector written anywhere becomes searchable on each holder. Only
 	// the LWW winner is applied; an older/losing write is ignored.
@@ -326,7 +331,32 @@ func run() error {
 		v.Version = rec.GetVersion() // stamp the authoritative replication version onto the stored copy
 		_ = vstore.Put(v)
 		indexSet.OnWrite(v)
+		if qz, ok := quantSet.For(coll); ok {
+			bucketDir.AddOwn(coll, qz.Version(), qz.Bucket(v.GetValues())) // advertise the bucket we now hold
+		}
 	})
+	// Periodically recompute this node's held-bucket set from the store so buckets that emptied
+	// (deletes/migration) are de-advertised — the explicit-set property the holder bloom lacks.
+	go recomputeHeldBuckets(ctx, vstore, quantSet, bucketDir, metas, 30*time.Second)
+	// Gossip the held-bucket directory so a kNN query can route to the holders of its probed buckets.
+	svc.SetBucketHooks(
+		func() []membership.HeldBucketWire {
+			adverts := bucketDir.OwnAdvert(time.Now().UnixMilli())
+			out := make([]membership.HeldBucketWire, 0, len(adverts))
+			for _, a := range adverts {
+				out = append(out, membership.HeldBucketWire{MemberID: self.MemberID, Collection: a.Collection, QVer: a.QVer, Buckets: a.Buckets, GeneratedAtUnixMs: a.GeneratedAtUnixMs})
+			}
+			return out
+		},
+		func(bs []membership.HeldBucketWire) {
+			for _, b := range bs {
+				if b.MemberID == self.MemberID {
+					continue
+				}
+				bucketDir.ApplyPeer(b.MemberID, vector.HeldBucket{Collection: b.Collection, QVer: b.QVer, Buckets: b.Buckets, GeneratedAtUnixMs: b.GeneratedAtUnixMs})
+			}
+		},
+	)
 	newGraphVersion := func() *wavespanv1.Version { return rstore.NextVersion().ToProto() }
 
 	// Global active-active replication (M7/M10): tap origin KV writes AND raw-vector writes into a
@@ -408,8 +438,8 @@ func run() error {
 		WithSearch(indexSet.Meta, indexSet.Live).
 		WithCoordinator(
 			indexSet.IndexForCollection,
-			func(ctx context.Context, idx string, q []float32, k, ef int, rerank bool) ([][]vector.Hit, int) {
-				return vectorScatter(ctx, idx, q, k, ef, false, rerank)
+			func(ctx context.Context, collection, idx string, q []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
+				return routedVectorScatter(ctx, self, svc, httpClient, quantSet, bucketDir, collection, idx, q, k, ef, nprobe, rerank)
 			},
 			func(ctx context.Context, ns string, key []byte) ([]byte, bool, error) {
 				res, err := reader.Get(ctx, ns, key, true)
@@ -798,4 +828,99 @@ func applyRuntimeTunables(t *tunables.Registry) {
 	}
 	applyMem(mem)
 	mem.OnApply(applyMem)
+}
+
+// vectorNumBuckets is the coarse bucket-space size per collection for kNN routing (LSH rounds up to
+// the next power of two). Small enough that a node's held-bucket set is tiny; large enough that a
+// bucket is a thin slice of the space.
+const vectorNumBuckets = 256
+
+// recomputeHeldBuckets periodically rebuilds this node's advertised bucket set from the store, so a
+// bucket that emptied (deletes/migration) is de-advertised. Runs once at boot, then on interval.
+func recomputeHeldBuckets(ctx context.Context, vstore *vector.Store, qs *vector.QuantSet, dir *vector.BucketDir, metas []*vector.IndexMeta, interval time.Duration) {
+	colls := map[string]bool{}
+	for _, m := range metas {
+		colls[m.Collection] = true
+	}
+	recompute := func() {
+		for coll := range colls {
+			qz, ok := qs.For(coll)
+			if !ok {
+				continue
+			}
+			recs, err := vstore.ScanCollection(coll)
+			if err != nil {
+				continue
+			}
+			seen := map[uint32]bool{}
+			for _, r := range recs {
+				seen[qz.Bucket(r.GetValues())] = true
+			}
+			buckets := make([]uint32, 0, len(seen))
+			for b := range seen {
+				buckets = append(buckets, b)
+			}
+			dir.SetOwn(coll, qz.Version(), buckets, time.Now().UnixMilli())
+		}
+	}
+	recompute()
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			recompute()
+		}
+	}
+}
+
+// routedVectorScatter queries peer holders for a kNN fragment. With nprobe>0 and routing info
+// available it scatters only to the advertised holders of the query's probed buckets; otherwise it
+// falls back to every alive peer. Self is excluded — the coordinator adds its own local fragment.
+func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, hc *http.Client, qs *vector.QuantSet, dir *vector.BucketDir, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
+	var allow map[string]bool
+	if nprobe > 0 {
+		if qz, ok := qs.For(collection); ok {
+			if members, ok := dir.Holders(collection, qz.Version(), qz.Probe(query, nprobe)); ok {
+				allow = map[string]bool{}
+				for _, mid := range members {
+					allow[mid] = true
+				}
+			}
+		}
+	}
+	var fragments [][]vector.Hit
+	unreachable := 0
+	for _, mv := range svc.Members() {
+		m := mv.Member
+		if mv.State != membership.StateAlive || m.MemberID == self.MemberID || m.DataAddr == "" {
+			continue
+		}
+		if allow != nil && !allow[m.MemberID] {
+			continue // routed: skip nodes that don't hold a probed bucket
+		}
+		c := wavespanv1connect.NewVectorServiceClient(hc, "http://"+m.DataAddr)
+		resp, err := c.SearchLocal(ctx, connect.NewRequest(&wavespanv1.SearchLocalRequest{
+			IndexName: idx, Query: query, K: int32(k), EfSearch: int32(ef), Rerank: rerank,
+		}))
+		if err != nil {
+			unreachable++
+			continue
+		}
+		fragments = append(fragments, vectorHitsFromProto(resp.Msg.GetHits()))
+	}
+	return fragments, unreachable
+}
+
+func vectorHitsFromProto(in []*wavespanv1.VectorHit) []vector.Hit {
+	out := make([]vector.Hit, 0, len(in))
+	for _, h := range in {
+		out = append(out, vector.Hit{
+			Collection: h.GetCollection(), VectorID: h.GetVectorId(), GraphNodeID: h.GetGraphNodeId(),
+			Distance: h.GetDistance(), Score: h.GetScore(),
+		})
+	}
+	return out
 }

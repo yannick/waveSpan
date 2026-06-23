@@ -42,13 +42,24 @@ type ConfigDeltaObserver interface {
 	ConfigDelta(peer string, dir wavespanv1.GossipDirection, keyCount, sizeBytes uint32)
 }
 
+// HeldBucketWire advertises the coarse vector buckets a member holds for a collection (design/29),
+// so a kNN query routes only to holders of its probed buckets. One entry per (member, collection).
+type HeldBucketWire struct {
+	MemberID          string
+	Collection        string
+	QVer              uint32
+	Buckets           []uint32
+	GeneratedAtUnixMs int64
+}
+
 // GossipMessage is the payload exchanged on a gossip round: the sender's identity, its membership
-// delta, its holder summary, and any runtime config overrides (piggybacked metadata, design/04).
+// delta, its holder summary, runtime config overrides, and held-bucket advertisements (design/04).
 type GossipMessage struct {
 	From         Member
 	Members      []MemberView
 	Summaries    []HolderSummaryWire
 	ConfigDeltas []ConfigDeltaWire
+	HeldBuckets  []HeldBucketWire
 }
 
 // Transport carries gossip between nodes. The in-memory transport drives deterministic tests;
@@ -83,6 +94,8 @@ type Gossip struct {
 	consumeSummary func(HolderSummaryWire)
 	provideConfig  func() []ConfigDeltaWire
 	consumeConfig  func([]ConfigDeltaWire)
+	provideBuckets func() []HeldBucketWire
+	consumeBuckets func([]HeldBucketWire)
 	observer       GossipObserver
 }
 
@@ -99,6 +112,13 @@ func (g *Gossip) SetHolderHooks(provide func() HolderSummaryWire, consume func(H
 func (g *Gossip) SetConfigHooks(provide func() []ConfigDeltaWire, consume func([]ConfigDeltaWire)) {
 	g.provideConfig = provide
 	g.consumeConfig = consume
+}
+
+// SetBucketHooks installs the held-bucket provider (this node's buckets per collection, gossiped out)
+// and consumer (peers' advertisements, fed to the routing directory). Either may be nil.
+func (g *Gossip) SetBucketHooks(provide func() []HeldBucketWire, consume func([]HeldBucketWire)) {
+	g.provideBuckets = provide
+	g.consumeBuckets = consume
 }
 
 // SetObserver installs the gossip-event tap (design/26). nil disables tapping.
@@ -131,6 +151,13 @@ func (g *Gossip) consumeConfigDeltas(peer string, dir wavespanv1.GossipDirection
 	}
 }
 
+func (g *Gossip) consumeHeldBuckets(bs []HeldBucketWire) {
+	if len(bs) == 0 || g.consumeBuckets == nil {
+		return
+	}
+	g.consumeBuckets(bs)
+}
+
 // NewGossip wires a gossip driver. A nil clock uses time.Now; rngSeed makes peer selection
 // deterministic in tests.
 func NewGossip(r *Roster, g *latencygraph.Graph, t Transport, d Discovery, cfg GossipConfig, now func() time.Time, rngSeed int64) *Gossip {
@@ -157,6 +184,7 @@ func (g *Gossip) HandleGossip(in *GossipMessage) *GossipMessage {
 	}
 	g.consumeSummaries(wavespanv1.GossipDirection_GOSSIP_RECV, in.Summaries)
 	g.consumeConfigDeltas(in.From.MemberID, wavespanv1.GossipDirection_GOSSIP_RECV, in.ConfigDeltas)
+	g.consumeHeldBuckets(in.HeldBuckets)
 	return g.outgoing()
 }
 
@@ -222,6 +250,7 @@ func (g *Gossip) merge(reply *GossipMessage) {
 	}
 	g.consumeSummaries(wavespanv1.GossipDirection_GOSSIP_RECV, reply.Summaries)
 	g.consumeConfigDeltas(reply.From.MemberID, wavespanv1.GossipDirection_GOSSIP_RECV, reply.ConfigDeltas)
+	g.consumeHeldBuckets(reply.HeldBuckets)
 }
 
 // outgoing builds the local gossip delta plus this node's holder summary and known config overrides.
@@ -232,6 +261,9 @@ func (g *Gossip) outgoing() *GossipMessage {
 	}
 	if g.provideConfig != nil {
 		msg.ConfigDeltas = g.provideConfig()
+	}
+	if g.provideBuckets != nil {
+		msg.HeldBuckets = g.provideBuckets()
 	}
 	return msg
 }
