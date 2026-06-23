@@ -100,6 +100,7 @@ export interface ReportSection {
   total: number;
   agg: unknown;
   app: unknown;
+  fwShare: number;
   perNode: unknown;
   notes: string[];
 }
