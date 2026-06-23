@@ -10,30 +10,30 @@ import (
 	"github.com/cwire/wavespan/internal/storage"
 )
 
-// Manager wraps a dragonboat NodeHost hosting replicated-collection shards over a shared wavesdb store
-// (design/30 §12.5, Appendix B). M-0: built-in transport + default Pebble LogDB; the cheap-mTLS
-// transport, SWIM node registry, and wavesdb-backed LogDB are layered in later milestones.
+// Manager is the dragonboat implementation of RaftShard: a NodeHost hosting replicated-collection
+// shards over a shared wavesdb store (design/30 §12.5, Appendix B). M-A uses dragonboat's built-in
+// transport + default Pebble LogDB; the cheap-mTLS transport, SWIM node registry, and wavesdb-backed
+// LogDB (Appendix B.4-B.6) are later milestones.
 type Manager struct {
 	nh    *dragonboat.NodeHost
 	store storage.LocalStore
 }
 
+var _ RaftShard = (*Manager)(nil)
+
 // NewManager opens a NodeHost rooted at nodeHostDir, bound to raftAddr, applying shard state to store.
 func NewManager(nodeHostDir, raftAddr string, store storage.LocalStore) (*Manager, error) {
-	nhc := config.NodeHostConfig{
+	nh, err := dragonboat.NewNodeHost(config.NodeHostConfig{
 		NodeHostDir:    nodeHostDir,
 		RTTMillisecond: 50,
 		RaftAddress:    raftAddr,
-	}
-	nh, err := dragonboat.NewNodeHost(nhc)
+	})
 	if err != nil {
 		return nil, err
 	}
 	return &Manager{nh: nh, store: store}, nil
 }
 
-// StartShard starts (or restarts) a Raft shard whose on-disk state machine applies into CFReplData.
-// initialMembers maps ReplicaID → RaftAddress; join is true when adding to an existing shard.
 func (m *Manager) StartShard(shardID, replicaID uint64, initialMembers map[uint64]string, join bool) error {
 	cfg := config.Config{
 		ShardID:            shardID,
@@ -48,32 +48,19 @@ func (m *Manager) StartShard(shardID, replicaID uint64, initialMembers map[uint6
 	return m.nh.StartOnDiskReplica(initialMembers, join, factory, cfg)
 }
 
-// Propose commits a mutation through the shard leader and returns the Update result value.
-func (m *Manager) Propose(ctx context.Context, shardID uint64, c command) (uint64, error) {
-	res, err := m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), encodeCommand(c))
+func (m *Manager) Propose(ctx context.Context, shardID uint64, cmd []byte) (uint64, error) {
+	res, err := m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
 	if err != nil {
 		return 0, err
 	}
 	return res.Value, nil
 }
 
-// Get reads a key. linearizable=true routes a read-index through the leader; false serves a
-// bounded-stale local read (design/30 §5.4, §13.10). Returns nil when the key is absent.
-func (m *Manager) Get(ctx context.Context, shardID uint64, key []byte, linearizable bool) ([]byte, error) {
-	var (
-		v   interface{}
-		err error
-	)
+func (m *Manager) Read(ctx context.Context, shardID uint64, query interface{}, linearizable bool) (interface{}, error) {
 	if linearizable {
-		v, err = m.nh.SyncRead(ctx, shardID, key)
-	} else {
-		v, err = m.nh.StaleRead(shardID, key)
+		return m.nh.SyncRead(ctx, shardID, query)
 	}
-	if err != nil || v == nil {
-		return nil, err
-	}
-	return v.([]byte), nil
+	return m.nh.StaleRead(shardID, query)
 }
 
-// Close stops the NodeHost (does not close the shared store).
-func (m *Manager) Close() { m.nh.Close() }
+func (m *Manager) Stop() { m.nh.Close() }
