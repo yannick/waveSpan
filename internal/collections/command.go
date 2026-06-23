@@ -30,12 +30,13 @@ var (
 type opKind byte
 
 const (
-	opSAdd opKind = 1 // set add
-	opSRem opKind = 2 // set remove
-	opHSet opKind = 3 // hash set field(s)
-	opHDel opKind = 4 // hash delete field(s)
-	opZAdd opKind = 5 // sorted-set add (member+score)
-	opZRem opKind = 6 // sorted-set remove
+	opSAdd   opKind = 1 // set add
+	opSRem   opKind = 2 // set remove
+	opHSet   opKind = 3 // hash set field(s)
+	opHDel   opKind = 4 // hash delete field(s)
+	opZAdd   opKind = 5 // sorted-set add (member+score)
+	opZRem   opKind = 6 // sorted-set remove
+	opExpire opKind = 7 // leader-proposed TTL deletion (design/30 §10)
 )
 
 // collType is the fixed datatype of a collection, recorded in its header.
@@ -47,7 +48,7 @@ const (
 	typeZSet collType = 3
 )
 
-// typeForOp maps an op to the datatype it requires.
+// typeForOp maps a mutation op to the datatype it requires (0 = type-agnostic, e.g. opExpire).
 func typeForOp(op opKind) collType {
 	switch op {
 	case opSAdd, opSRem:
@@ -61,10 +62,13 @@ func typeForOp(op opKind) collType {
 }
 
 // item is one element of a command: a set member, a hash field(+value), or a zset member(+score).
+// ExpiryMs, when > 0, is the absolute expiry time (unix ms) the leader stamped before proposing —
+// deterministic across replicas because it is fixed in the committed entry (design/30 §10 / N4).
 type item struct {
-	Key   []byte
-	Val   []byte
-	Score float64
+	Key      []byte
+	Val      []byte
+	Score    float64
+	ExpiryMs int64
 }
 
 // command is one proposed mutation carried in a Raft log entry's Cmd.
@@ -86,8 +90,9 @@ func encodeCommand(c command) []byte {
 	for _, it := range c.Items {
 		buf = appendChunk(buf, it.Key)
 		buf = appendChunk(buf, it.Val)
-		var sc [8]byte
-		binary.BigEndian.PutUint64(sc[:], math.Float64bits(it.Score))
+		var sc [16]byte
+		binary.BigEndian.PutUint64(sc[0:8], math.Float64bits(it.Score))
+		binary.BigEndian.PutUint64(sc[8:16], uint64(it.ExpiryMs))
 		buf = append(buf, sc[:]...)
 	}
 	return buf
@@ -98,7 +103,7 @@ func decodeCommand(b []byte) (command, error) {
 		return command{}, errShortCommand
 	}
 	c := command{Op: opKind(b[0])}
-	if typeForOp(c.Op) == 0 {
+	if typeForOp(c.Op) == 0 && c.Op != opExpire {
 		return command{}, errUnknownOp
 	}
 	rest := b[1:]
@@ -123,11 +128,12 @@ func decodeCommand(b []byte) (command, error) {
 		if it.Val, rest, err = takeChunk(rest); err != nil {
 			return command{}, err
 		}
-		if len(rest) < 8 {
+		if len(rest) < 16 {
 			return command{}, errShortCommand
 		}
 		it.Score = math.Float64frombits(binary.BigEndian.Uint64(rest[:8]))
-		rest = rest[8:]
+		it.ExpiryMs = int64(binary.BigEndian.Uint64(rest[8:16]))
+		rest = rest[16:]
 		c.Items = append(c.Items, it)
 	}
 	return c, nil

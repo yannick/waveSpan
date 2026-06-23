@@ -178,13 +178,15 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		if err != nil {
 			return nil, err
 		}
-		ok, err := u.ensureType(c.NS, c.Coll, typeForOp(c.Op))
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			entries[i].Result = sm.Result{Value: 0, Data: wrongType}
-			continue
+		if c.Op != opExpire { // opExpire is type-agnostic: it only deletes existing elements
+			ok, err := u.ensureType(c.NS, c.Coll, typeForOp(c.Op))
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				entries[i].Result = sm.Result{Value: 0, Data: wrongType}
+				continue
+			}
 		}
 		changed, err := u.applyCommand(c)
 		if err != nil {
@@ -235,6 +237,11 @@ func (u *updateCtx) applyCommand(c command) (int64, error) {
 				u.cardDelta[ck]++
 				changed++
 			}
+			if it.ExpiryMs > 0 { // SADD with a TTL (re)sets the member's expiry
+				if err := u.setTTL(c.NS, c.Coll, it.Key, uint64(it.ExpiryMs)); err != nil {
+					return 0, err
+				}
+			}
 		case opSRem, opHDel:
 			ek := s.elemKey(c.NS, c.Coll, it.Key)
 			present, err := u.elemExists(ek)
@@ -246,6 +253,31 @@ func (u *updateCtx) applyCommand(c command) (int64, error) {
 				u.exists[string(ek)] = false
 				u.cardDelta[ck]--
 				changed++
+			}
+			if err := u.clearTTL(c.NS, c.Coll, it.Key); err != nil { // no-op when no TTL
+				return 0, err
+			}
+		case opExpire:
+			exp, found, err := s.ttlExpiryOf(c.NS, c.Coll, it.Key)
+			if err != nil {
+				return 0, err
+			}
+			if !found || exp > uint64(it.ExpiryMs) {
+				continue // refreshed to a later time, or already cleared
+			}
+			ek := s.elemKey(c.NS, c.Coll, it.Key)
+			present, err := u.elemExists(ek)
+			if err != nil {
+				return 0, err
+			}
+			if present {
+				u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: ek, Delete: true})
+				u.exists[string(ek)] = false
+				u.cardDelta[ck]--
+				changed++
+			}
+			if err := u.clearTTL(c.NS, c.Coll, it.Key); err != nil {
+				return 0, err
 			}
 		case opHSet:
 			ek := s.elemKey(c.NS, c.Coll, it.Key)
@@ -357,6 +389,8 @@ func (s *shardSM) Lookup(query interface{}) (interface{}, error) {
 			it.Next()
 		}
 		return out, it.Err()
+	case ttlDueQuery:
+		return s.scanDue(snap, q.NowMs, q.Limit)
 	default:
 		return nil, errors.New("collections: unknown lookup query")
 	}

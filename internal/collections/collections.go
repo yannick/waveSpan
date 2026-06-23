@@ -3,6 +3,7 @@ package collections
 import (
 	"bytes"
 	"context"
+	"time"
 )
 
 // Collections is the typed datatype API over the consensus tier (design/30 §13.4-13.6): sets, hash
@@ -41,6 +42,18 @@ func (c *Collections) SAdd(ctx context.Context, ns, coll []byte, members ...[]by
 
 func (c *Collections) SRem(ctx context.Context, ns, coll []byte, members ...[]byte) (uint64, error) {
 	return c.propose(ctx, ns, coll, command{Op: opSRem, NS: ns, Coll: coll, Items: itemsFromKeys(members)})
+}
+
+// SAddTTL adds members that expire after ttlMs. The absolute expiry is stamped here (before propose)
+// so every replica applies the same deterministic time; the leader's sweeper deletes them when due
+// (design/30 §10).
+func (c *Collections) SAddTTL(ctx context.Context, ns, coll []byte, ttlMs int64, members ...[]byte) (uint64, error) {
+	expiry := time.Now().UnixMilli() + ttlMs
+	items := make([]item, len(members))
+	for i, m := range members {
+		items[i] = item{Key: m, ExpiryMs: expiry}
+	}
+	return c.propose(ctx, ns, coll, command{Op: opSAdd, NS: ns, Coll: coll, Items: items})
 }
 
 func (c *Collections) SIsMember(ctx context.Context, ns, coll, member []byte, linearizable bool) (bool, error) {
