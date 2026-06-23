@@ -1,0 +1,96 @@
+# WaveSpan release. Fires on version tags (e.g. v0.0.1). Re-verifies the tagged commit, then
+# builds and pushes versioned multi-arch wavespan-node images to GHCR. The sibling wavesdb module
+# is checked out at the same tag so the released image pins the matching wavesdb source.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  # wavesdb is co-versioned with wavespan (both tagged v0.0.1, ...). Override owner/name if it
+  # lives elsewhere. The ref is the release tag (see the checkout step).
+  WAVESDB_REPO: ${{ github.repository_owner }}/wavesdb
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout wavespan (at the release tag)
+        uses: actions/checkout@v4
+        with:
+          path: waveSpan
+
+      - name: Checkout wavesdb at the same version tag
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WAVESDB_REPO }}
+          ref: ${{ github.ref_name }}
+          path: wavesdb
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: waveSpan/go.sum
+
+      - name: Build
+        working-directory: waveSpan
+        run: make build
+
+      - name: Unit tests
+        working-directory: waveSpan
+        run: make test
+
+  images:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/wavespan-node
+    steps:
+      - name: Checkout wavespan (at the release tag)
+        uses: actions/checkout@v4
+        with:
+          path: waveSpan
+
+      - name: Checkout wavesdb at the same version tag
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WAVESDB_REPO }}
+          ref: ${{ github.ref_name }}
+          path: wavesdb
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (semver tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          # v0.0.1 -> tags 0.0.1, 0.0, and latest
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build + push the multi-arch release image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: waveSpan/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
