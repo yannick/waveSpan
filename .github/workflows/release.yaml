@@ -26,6 +26,7 @@ jobs:
         with:
           repository: ${{ env.WAVESDB_REPO }}
           ref: ${{ github.ref_name }}
+          token: ${{ secrets.WAVESDB_TOKEN }}
           path: wavesdb
 
       - uses: actions/setup-go@v5
@@ -60,6 +61,7 @@ jobs:
         with:
           repository: ${{ env.WAVESDB_REPO }}
           ref: ${{ github.ref_name }}
+          token: ${{ secrets.WAVESDB_TOKEN }}
           path: wavesdb
 
       - uses: docker/setup-qemu-action@v3

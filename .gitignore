@@ -17,3 +17,7 @@ perf-report/
 /wavespan-node
 /wavespan-profile
 /wavespan-bench
+
+# Local secrets (e.g. GITHUB_TOKEN for CI setup) — never commit
+.env
+.env.*
