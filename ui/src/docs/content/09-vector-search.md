@@ -94,12 +94,19 @@ the buckets to probe (`Probe`):
 
 | Quantizer | How | When |
 |-----------|-----|------|
-| **LSH** (default) | sign pattern against random hyperplanes; multi-probe flips the lowest-margin bits | zero training, angular/cosine, cold-start |
-| **IVF** | nearest of k k-means centroids; probe = nprobe nearest centroids | balanced buckets, any metric, after training |
+| **LSH** | sign pattern against random hyperplanes; multi-probe flips the lowest-margin bits | the cold-start default — zero training, angular/cosine |
+| **IVF** | nearest of k k-means centroids; probe = nprobe nearest centroids | balanced buckets; installed automatically once a collection has enough vectors |
 
 The LSH planes are seeded from the collection name, so **every node derives identical buckets** — no
-coordination needed. `nprobe` is the recall dial: more probed buckets → more holders queried → higher
-recall.
+coordination needed.
+
+**IVF is trained automatically.** A single elected node (lowest member id) periodically gathers a
+cross-node sample, trains k-means centroids, and publishes a **versioned, replicated centroid
+artifact**; every node reads and installs it, so the whole cluster agrees on buckets. A retrain bumps
+the version (`qver`) and starts new buckets — old vectors stay put and simply re-advertise under the
+new version, so **no data migration is needed** and routing stays correct across the change.
+
+`nprobe` is the recall dial: more probed buckets → more holders queried → higher recall.
 
 ### Held-bucket directory
 Each node tracks the set of buckets it holds per collection and **gossips it** (an explicit,
@@ -114,6 +121,8 @@ bucket id. Consequences:
 - Holders are **computable locally** from the ring (gossip-independent) — covering nodes that just
   joined and haven't advertised yet — *and* confirmed by the gossiped directory.
 - A membership change moves only **~1/N of buckets** (HRW), so rebalancing is cheap.
+- **Closest-replica routing:** when a bucket has several holders, the query goes to just the
+  lowest-latency one (by the latency graph) rather than all of them.
 
 Putting it together, a search:
 
@@ -155,9 +164,8 @@ Operational notes:
 
 ## Roadmap
 
-- **IVF training + versioning** — train centroids from a sample and replicate them as a shared,
-  versioned artifact (so all nodes agree on buckets), with background re-bucketing on retrain. The IVF
-  quantizer exists; the shared-artifact pipeline is the remaining work.
-- **Closest-replica routing** and per-bucket load metrics for skew.
+- **Background re-bucketing** — on a retrain, optionally migrate old vectors to their new-version ring
+  to re-concentrate buckets (correctness already holds without it).
+- **Per-bucket load metrics** to surface and mitigate hot-bucket skew.
 
 See design docs 08 (vector engine) and 29 (vector KV search) for the full specification.
