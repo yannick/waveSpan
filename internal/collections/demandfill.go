@@ -36,6 +36,13 @@ func (m *Manager) RemoveLearner(ctx context.Context, shardID, replicaID uint64) 
 	return m.nh.SyncRequestDeleteReplica(ctx, shardID, replicaID, 0)
 }
 
+// TransferLeadership asks the shard to move leadership to targetReplicaID — used when gracefully
+// draining a node that currently leads a shard, so a peer leads before this node's replica is removed.
+// The transfer completes asynchronously; this returns dragonboat's immediate acceptance error.
+func (m *Manager) TransferLeadership(shardID, targetReplicaID uint64) error {
+	return m.nh.RequestLeaderTransfer(shardID, targetReplicaID)
+}
+
 // StopLocalReplica stops and deregisters a locally hosted replica (after eviction, or on drain).
 func (m *Manager) StopLocalReplica(shardID, replicaID uint64) error {
 	err := m.nh.StopReplica(shardID, replicaID)
