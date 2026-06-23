@@ -130,8 +130,36 @@
 }
 
 /* anchored headings */
-.ws-prose :is(h1, h2, h3) {
+.ws-prose :is(h1, h2, h3, h4) {
   scroll-margin-top: var(--ws-space-lg);
+}
+
+/* the "#" copy-link affordance shown beside a heading on hover */
+.ws-prose__heading {
+  position: relative;
+}
+.ws-prose__anchor {
+  margin-left: var(--ws-space-xs);
+  padding: 0 var(--ws-space-xs);
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+  color: var(--ws-color-ink-muted);
+  background: transparent;
+  border: var(--ws-stroke-regular) solid transparent;
+  border-radius: var(--ws-radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.ws-prose__heading:hover .ws-prose__anchor,
+.ws-prose__anchor:focus-visible {
+  opacity: 1;
+}
+.ws-prose__anchor:hover {
+  color: var(--ws-color-teal);
+  border-color: var(--ws-color-border);
 }
 
 /* tables inside prose reuse the component look */
