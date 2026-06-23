@@ -39,7 +39,7 @@ define warn
 endef
 
 .DEFAULT_GOAL := help
-.PHONY: help all build ui ui-dev test test-race test-integration lint \
+.PHONY: help all build ui ui-dev docs-site docs-site-serve docs-deploy test test-race test-integration lint \
         proto proto-check tools sdk-proto sdk-test sdk-example \
         docker-up docker-kill image \
         container-image container-single container-up container-down clean
@@ -89,6 +89,20 @@ ui: ## Build the embedded SPA into internal/ui/dist
 ui-dev: ## Run the Vite dev server (pair with WAVESPAN_UI_DEV=1 on the node)
 	@$(call step,Starting the Vite dev server)
 	@cd ui && npm run dev
+
+docs-site: ## Export the docs as a standalone static website into ./docs-site (deploy anywhere)
+	@$(call step,Building the static documentation site)
+	@cd ui && [ -d node_modules ] || npm ci
+	@cd ui && npm run build:docs
+	@$(call ok,static site in ./docs-site — deploy the folder, or 'make docs-site-serve' to preview)
+
+docs-site-serve: docs-site ## Build then locally preview the static docs site (http://localhost:4173)
+	@$(call step,Serving ./docs-site at http://localhost:4173)
+	@cd ui && npm run preview:docs
+
+docs-deploy: docs-site ## Build + publish ./docs-site to the gh-pages branch (GitHub Pages)
+	@$(call step,Publishing the docs site to the gh-pages branch)
+	@./scripts/deploy-docs-site.sh
 
 # ======================================================================
 ##@ Test & lint

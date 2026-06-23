@@ -78,6 +78,26 @@ ui-dev:
     @printf '{{bold}}{{blue}}▸{{reset}} {{bold}}%s{{reset}}\n' 'Starting the Vite dev server'
     @cd ui && npm run dev
 
+# Export the docs as a standalone static website into ./docs-site (deploy anywhere)
+[group('build & ui')]
+docs-site:
+    @printf '{{bold}}{{blue}}▸{{reset}} {{bold}}%s{{reset}}\n' 'Building the static documentation site'
+    @cd ui && { [ -d node_modules ] || npm ci; }
+    @cd ui && npm run build:docs
+    @printf '{{green}}✓{{reset}} %s\n' "static site in ./docs-site — deploy the folder, or 'just docs-site-serve' to preview"
+
+# Build then locally preview the static docs site (http://localhost:4173)
+[group('build & ui')]
+docs-site-serve: docs-site
+    @printf '{{bold}}{{blue}}▸{{reset}} {{bold}}%s{{reset}}\n' 'Serving ./docs-site at http://localhost:4173'
+    @cd ui && npm run preview:docs
+
+# Build + publish ./docs-site to the gh-pages branch (GitHub Pages)
+[group('build & ui')]
+docs-deploy: docs-site
+    @printf '{{bold}}{{blue}}▸{{reset}} {{bold}}%s{{reset}}\n' 'Publishing the docs site to the gh-pages branch'
+    @./scripts/deploy-docs-site.sh
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Test & lint
 # ══════════════════════════════════════════════════════════════════════════════
