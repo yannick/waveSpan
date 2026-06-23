@@ -31,9 +31,19 @@ func shortMethod(procedure string) string {
 	return procedure
 }
 
-// classify buckets a method into read/write/other by name. Write keywords win over read keywords so
-// e.g. SetTunable and StoreReplica classify as writes; VectorGet/VectorSearch as reads.
+// classify buckets a method into read / write / other. Internal cluster machinery (gossip,
+// replication, cache fetch, subscription streams) is "other" so QPS / reads/sec / writes/sec reflect
+// CLIENT throughput; the storage-level commit rate that includes replication is wavespan_transactions
+// (TPS). Among client methods, write keywords win over read keywords (VectorPut → write, VectorGet →
+// read).
 func classify(method string) string {
+	switch method {
+	case "Exchange", "StoreReplica", "FetchReplica", "Subscribe":
+		return "other" // inter-node: gossip, origin+1 replication, closest-holder fetch, cache stream
+	}
+	if strings.HasSuffix(method, "Local") {
+		return "other" // SearchLocal / ScanLocal / InspectLocal — per-node fan-out fragments of one client op
+	}
 	containsAny := func(s string, subs ...string) bool {
 		for _, sub := range subs {
 			if strings.Contains(s, sub) {
@@ -43,12 +53,12 @@ func classify(method string) string {
 		return false
 	}
 	switch {
-	case containsAny(method, "Put", "Delete", "Store", "Write", "Set", "Apply", "Train"):
+	case containsAny(method, "Put", "Delete", "Write", "Set", "Train"):
 		return "write"
 	case containsAny(method, "Get", "Scan", "Search", "Query", "Read", "List", "Sample", "Inspect", "Explore", "View", "Subgraph"):
 		return "read"
 	default:
-		return "other" // gossip exchange, subscribe streams, health, …
+		return "other"
 	}
 }
 

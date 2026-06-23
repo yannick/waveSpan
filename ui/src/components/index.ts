@@ -6,5 +6,6 @@ export { Badge, TONE, type Tone } from "./Badge";
 export { Table } from "./Table";
 export { CodeInline, CodeBlock, Kbd } from "./Code";
 export { StatCard } from "./StatCard";
+export { Sparkline } from "./Sparkline";
 export { Spinner, EmptyState, InlineMessage } from "./Feedback";
 export { ThemeToggle } from "./ThemeToggle";

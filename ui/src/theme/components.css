@@ -395,6 +395,18 @@ select.ws-field {
   color: var(--ws-color-ink-muted);
   margin-top: var(--ws-space-xs);
 }
+/* Cards carrying a live history chart are wider + taller for readability. */
+.ws-stat--chart {
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+.ws-stat__chart {
+  margin-top: var(--ws-space-sm);
+}
+.ws-spark {
+  display: block;
+  width: 100%;
+}
 
 /* =====================================================================
  * Misc — empty state, spinner, divider

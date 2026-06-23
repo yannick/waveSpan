@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { obs } from "../transport";
-import { Badge, EmptyState, StatCard, Table } from "../components";
+import { Badge, EmptyState, Sparkline, StatCard, Table } from "../components";
 import { color } from "../theme/tokens";
 import { parsePrometheus, type MetricFamily } from "../lib/promparse";
 
@@ -83,9 +83,11 @@ export function MetricsSummary() {
   const [error, setError] = useState("");
   const [, forceTick] = useState(0); // re-render so the "updated …s ago" label keeps ticking
   const updatedRef = useRef<number | null>(null);
-  // Per-second rates are derived from monotonic counters by differencing successive scrapes.
+  // Per-second rates are derived from monotonic counters by differencing successive scrapes; a
+  // rolling history per metric (capped) feeds the live sparklines for as long as the tab is open.
   const [rates, setRates] = useState<Record<string, number> | null>(null);
   const prevRef = useRef<{ t: number; totals: Record<string, number> } | null>(null);
+  const historyRef = useRef<Record<string, number[]>>({});
 
   useEffect(() => {
     let live = true;
@@ -122,6 +124,12 @@ export function MetricsSummary() {
           if (dt > 0) {
             const r: Record<string, number> = {};
             for (const k of Object.keys(totals)) r[k] = Math.max(0, (totals[k] - (prevRef.current.totals[k] ?? 0)) / dt);
+            const MAX_POINTS = 240; // ~8 min at the 2s poll
+            for (const k of Object.keys(r)) {
+              const arr = historyRef.current[k] ?? (historyRef.current[k] = []);
+              arr.push(r[k]);
+              if (arr.length > MAX_POINTS) arr.shift();
+            }
             setRates(r);
           }
         }
@@ -180,12 +188,12 @@ export function MetricsSummary() {
 
       <h3 className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>Throughput</h3>
       <div style={{ display: "flex", gap: "var(--ws-space-lg)", flexWrap: "wrap", marginBottom: "var(--ws-space-xl)" }}>
-        <StatCard label="QPS" value={fmtRate(rates?.qps)} hint="read + write RPCs / sec" accent={color.teal} />
-        <StatCard label="Reads/s" value={fmtRate(rates?.reads)} hint="Get · Scan · Search · Query" accent={color.blue} />
-        <StatCard label="Writes/s" value={fmtRate(rates?.writes)} hint="Put · Delete · Store" accent={color.orange} />
-        <StatCard label="TPS" value={fmtRate(rates?.txns)} hint="durable commits / sec" accent={color.olive} />
-        <StatCard label="Bandwidth" value={fmtBandwidth(rates?.bytes)} hint="rx + tx, all listeners" accent={color.mustard} />
-        <StatCard label="New conns/s" value={fmtRate(rates?.conns)} hint="accepted connections / sec" accent={color.purple} />
+        <StatCard label="QPS" value={fmtRate(rates?.qps)} hint="read + write RPCs / sec" accent={color.teal} chart={<Sparkline data={historyRef.current.qps ?? []} stroke={color.teal} />} />
+        <StatCard label="Reads/s" value={fmtRate(rates?.reads)} hint="Get · Scan · Search · Query" accent={color.blue} chart={<Sparkline data={historyRef.current.reads ?? []} stroke={color.blue} />} />
+        <StatCard label="Writes/s" value={fmtRate(rates?.writes)} hint="Put · Delete · Store" accent={color.orange} chart={<Sparkline data={historyRef.current.writes ?? []} stroke={color.orange} />} />
+        <StatCard label="TPS" value={fmtRate(rates?.txns)} hint="durable commits / sec" accent={color.olive} chart={<Sparkline data={historyRef.current.txns ?? []} stroke={color.olive} />} />
+        <StatCard label="Bandwidth" value={fmtBandwidth(rates?.bytes)} hint="rx + tx, all listeners" accent={color.mustard} chart={<Sparkline data={historyRef.current.bytes ?? []} stroke={color.mustard} />} />
+        <StatCard label="New conns/s" value={fmtRate(rates?.conns)} hint="accepted connections / sec" accent={color.purple} chart={<Sparkline data={historyRef.current.conns ?? []} stroke={color.purple} />} />
       </div>
 
       <h3 className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>Cluster</h3>

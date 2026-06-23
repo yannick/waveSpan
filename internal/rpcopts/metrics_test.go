@@ -17,9 +17,10 @@ func TestShortMethod(t *testing.T) {
 }
 
 func TestClassify(t *testing.T) {
-	reads := []string{"Get", "MultiGet", "Scan", "ScanLocal", "Search", "SearchLocal", "VectorGet", "VectorSearch", "Query", "SampleVectors", "GetClusterView", "GetConfig", "InspectLocal", "GraphExplore", "GraphSubgraph"}
-	writes := []string{"Put", "Delete", "VectorPut", "VectorDelete", "StoreReplica", "SetTunable", "Apply"}
-	others := []string{"GossipExchange", "Subscribe", "Healthz"}
+	reads := []string{"Get", "MultiGet", "Scan", "Search", "VectorGet", "VectorSearch", "Query", "SampleVectors", "GetClusterView", "GetConfig", "GraphExplore", "GraphSubgraph"}
+	writes := []string{"Put", "Delete", "VectorPut", "VectorDelete", "SetTunable"}
+	// Internal cluster machinery + per-node fan-out fragments are excluded from client throughput.
+	others := []string{"Exchange", "StoreReplica", "FetchReplica", "Subscribe", "SearchLocal", "ScanLocal", "InspectLocal", "Healthz"}
 
 	for _, m := range reads {
 		if got := classify(m); got != "read" {
