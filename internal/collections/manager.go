@@ -36,13 +36,31 @@ type shardReg struct {
 
 var _ RaftShard = (*Manager)(nil)
 
-// NewManager opens a NodeHost rooted at nodeHostDir, bound to raftAddr, applying shard state to store.
+// Options configures optional engine integrations for a Manager (design/30 §12): a custom Raft
+// transport and node registry. The zero value uses dragonboat's built-in TCP transport + static
+// registry.
+type Options struct {
+	TransportFactory config.TransportFactory
+	RegistryFactory  config.NodeRegistryFactory
+}
+
+// NewManager opens a NodeHost rooted at nodeHostDir, bound to raftAddr, applying shard state to store,
+// using dragonboat's built-in transport.
 func NewManager(nodeHostDir, raftAddr string, store storage.LocalStore) (*Manager, error) {
-	nh, err := dragonboat.NewNodeHost(config.NodeHostConfig{
+	return NewManagerWithOptions(nodeHostDir, raftAddr, store, Options{})
+}
+
+// NewManagerWithOptions is NewManager with a custom transport / node registry (e.g. the cheap-mTLS
+// transport + SWIM registry, design/30 §12).
+func NewManagerWithOptions(nodeHostDir, raftAddr string, store storage.LocalStore, opts Options) (*Manager, error) {
+	nhc := config.NodeHostConfig{
 		NodeHostDir:    nodeHostDir,
 		RTTMillisecond: 50,
 		RaftAddress:    raftAddr,
-	})
+	}
+	nhc.Expert.TransportFactory = opts.TransportFactory
+	nhc.Expert.NodeRegistryFactory = opts.RegistryFactory
+	nh, err := dragonboat.NewNodeHost(nhc)
 	if err != nil {
 		return nil, err
 	}
@@ -106,6 +124,10 @@ func (m *Manager) Read(ctx context.Context, shardID uint64, query interface{}, l
 	}
 	return m.nh.StaleRead(shardID, query)
 }
+
+// NodeHostID returns this node's dragonboat NodeHostID — the stable membership target in NodeHostID
+// addressing mode (with a custom node registry, design/30 §12).
+func (m *Manager) NodeHostID() string { return m.nh.ID() }
 
 // hasLeader reports whether the shard currently has an elected leader (ready for proposes/reads).
 func (m *Manager) hasLeader(shardID uint64) bool {
