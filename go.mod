@@ -11,7 +11,7 @@ require (
 	golang.org/x/sys v0.44.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
-	wavesdb v0.0.0
+	wavesdb v0.0.1
 )
 
 require (
@@ -40,4 +40,4 @@ require (
 	golang.org/x/text v0.37.0 // indirect
 )
 
-replace wavesdb v0.0.0 => ../wavesdb
+replace wavesdb v0.0.1 => ../wavesdb
