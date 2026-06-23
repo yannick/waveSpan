@@ -104,17 +104,3 @@ func SeedSets(ctx context.Context, dataAddr, ns string, n, filler, conc int, mem
 	}
 	return seedWith(ctx, n, conc, addSet, progress)
 }
-
-// ReAddMember re-adds member to each of colls (for repeat / closed-loop runs).
-func ReAddMember(ctx context.Context, dataAddr, ns string, colls [][]byte, member []byte) error {
-	c := bench.CollectionsClient(dataAddr)
-	for _, coll := range colls {
-		opCtx, cancel := withDeadline(ctx, collOpTimeout) // SAdd commits through Raft, which needs a deadline
-		err := bench.OpSAdd(opCtx, c, ns, coll, member)
-		cancel()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
