@@ -14,9 +14,9 @@ import (
 
 // Manager is the dragonboat implementation of RaftShard: a NodeHost hosting replicated-collection
 // shards (and the meta shard) over a shared wavesdb store (design/30 §12.5, Appendix B). It runs the
-// TTL sweeper for data shards it leads (log-driven expiry, design/30 §10). M-A/M-D use dragonboat's
-// built-in transport + default Pebble LogDB; the cheap-mTLS transport, SWIM node registry, and
-// wavesdb-backed LogDB (Appendix B.4-B.6) are later milestones.
+// TTL sweeper for data shards it leads (log-driven expiry, design/30 §10). The default transport is
+// dragonboat's built-in TCP; pass Options to NewManagerWithOptions for the cheap-mTLS transport +
+// SWIM node registry (Appendix B.4-B.5). The wavesdb-backed LogDB (Appendix B.6) remains future work.
 type Manager struct {
 	nh    *dragonboat.NodeHost
 	store storage.LocalStore

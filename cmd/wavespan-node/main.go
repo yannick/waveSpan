@@ -515,7 +515,11 @@ func run() error {
 		if raftAddr == "" {
 			raftAddr = fmt.Sprintf("127.0.0.1:%d", cfg.Ports.Data+1000)
 		}
-		if mgr, err := collections.NewManager(filepath.Join(cfg.Storage.Path, "collections-raft"), raftAddr, store); err != nil {
+		// Carry Raft traffic over the cluster's mTLS via the cheap-mTLS transport (design/30 §12). In
+		// dev mode serverMTLS is nil, so the transport falls back to plaintext HTTP.
+		raftTLSClient, _ := tlsCfg.ClientTLS()
+		raftOpts := collections.Options{TransportFactory: &collections.TransportFactory{ServerTLS: serverMTLS, ClientTLS: raftTLSClient}}
+		if mgr, err := collections.NewManagerWithOptions(filepath.Join(cfg.Storage.Path, "collections-raft"), raftAddr, store, raftOpts); err != nil {
 			logger.Error("collections: NodeHost init failed; tier disabled", "err", err)
 		} else {
 			members := map[uint64]string{1: raftAddr}
