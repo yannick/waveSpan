@@ -181,6 +181,17 @@ func (c *Collections) ZRange(ctx context.Context, ns, coll []byte, limit int, li
 	return out, nil
 }
 
+// CardCheck returns the stored cardinality counter and the actual element count from one consistent
+// snapshot; they must always be equal (an internal invariant probe for tests/ops).
+func (c *Collections) CardCheck(ctx context.Context, ns, coll []byte, linearizable bool) (CardCheck, error) {
+	v, err := c.read(ctx, ns, coll, cardCheckQuery{NS: ns, Coll: coll}, linearizable)
+	if err != nil {
+		return CardCheck{}, err
+	}
+	cc, _ := v.(CardCheck)
+	return cc, nil
+}
+
 // --- shared ---
 
 func (c *Collections) card(ctx context.Context, ns, coll []byte, linearizable bool) (uint64, error) {

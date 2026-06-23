@@ -67,6 +67,7 @@ func (s *shardSM) zptrKey(ns, coll, member []byte) []byte {
 
 type isMemberQuery struct{ NS, Coll, Member []byte }
 type cardQuery struct{ NS, Coll []byte }
+type cardCheckQuery struct{ NS, Coll []byte }
 type membersQuery struct {
 	NS, Coll []byte
 	Limit    int
@@ -81,6 +82,10 @@ type zRangeQuery struct {
 	NS, Coll []byte
 	Limit    int
 }
+
+// CardCheck reports the stored cardinality counter against the actual element count, read from one
+// consistent snapshot. They must always be equal — an internal invariant probe for tests/ops.
+type CardCheck struct{ Stored, Counted uint64 }
 
 // FieldValue is a hash field/value pair (HGETALL).
 type FieldValue struct{ Field, Value []byte }
@@ -327,6 +332,23 @@ func (s *shardSM) Lookup(query interface{}) (interface{}, error) {
 		return found, err
 	case cardQuery:
 		return s.snapCard(snap, q.NS, q.Coll)
+	case cardCheckQuery:
+		stored, err := s.snapCard(snap, q.NS, q.Coll)
+		if err != nil {
+			return nil, err
+		}
+		mp := s.elemPrefix(q.NS, q.Coll)
+		it, err := snap.Scan(storage.CFReplData, mp, prefixEnd(mp), 0)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = it.Close() }()
+		var counted uint64
+		for it.Valid() {
+			counted++
+			it.Next()
+		}
+		return CardCheck{Stored: stored, Counted: counted}, it.Err()
 	case membersQuery:
 		mp := s.elemPrefix(q.NS, q.Coll)
 		return scanSuffixes(snap, mp, q.Limit)

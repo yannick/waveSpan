@@ -96,11 +96,16 @@ func (b *baseSM) SaveSnapshot(ctx interface{}, w io.Writer, stopc <-chan struct{
 }
 
 // RecoverFromSnapshot installs a snapshot stream (applied index + every key under the shard prefix).
-// TODO(M-B): clear the shard prefix first so recovery replaces rather than merges for a populated
-// replica; a fresh learner is empty so this merges safely.
+// It first clears the shard prefix so recovery REPLACES rather than merges: a replica that fell behind
+// and is caught up by a snapshot may already hold stale keys absent from the snapshot (e.g. set
+// members removed since), and merging would leave them behind — diverging the data from the counter.
+// Clear + install is idempotent, so a crash mid-recovery is re-run safely from the same snapshot.
 func (b *baseSM) RecoverFromSnapshot(r io.Reader, stopc <-chan struct{}) error {
 	idxBytes, err := readChunk(r)
 	if err != nil {
+		return err
+	}
+	if err := b.clearPrefix(); err != nil {
 		return err
 	}
 	ops := []storage.StoreOp{}
@@ -137,6 +142,43 @@ func (b *baseSM) RecoverFromSnapshot(r io.Reader, stopc <-chan struct{}) error {
 		}
 	}
 	ops = append(ops, storage.StoreOp{CF: storage.CFReplData, Key: b.appliedKey(), Value: idxBytes})
+	return flush()
+}
+
+// clearPrefix deletes every key under the shard prefix (used before installing a snapshot). Keys are
+// collected first, then deleted in batches, so the iterator is not mutated mid-scan.
+func (b *baseSM) clearPrefix() error {
+	it, err := b.store.Scan(storage.CFReplData, b.prefix, prefixEnd(b.prefix), 0)
+	if err != nil {
+		return err
+	}
+	var keys [][]byte
+	for it.Valid() {
+		keys = append(keys, append([]byte(nil), it.Key()...))
+		it.Next()
+	}
+	serr := it.Err()
+	_ = it.Close()
+	if serr != nil {
+		return serr
+	}
+	ops := make([]storage.StoreOp, 0, 1024)
+	flush := func() error {
+		if len(ops) == 0 {
+			return nil
+		}
+		e := b.store.Batch(ops)
+		ops = ops[:0]
+		return e
+	}
+	for _, k := range keys {
+		ops = append(ops, storage.StoreOp{CF: storage.CFReplData, Key: k, Delete: true})
+		if len(ops) >= 1024 {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+	}
 	return flush()
 }
 
