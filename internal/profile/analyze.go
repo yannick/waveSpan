@@ -14,18 +14,18 @@ import (
 
 // FuncStat is one function's aggregated flat (leaf) and cumulative (anywhere-in-stack) value.
 type FuncStat struct {
-	Function string
-	Flat     int64
-	Cum      int64
+	Function string `json:"function"`
+	Flat     int64  `json:"flat"`
+	Cum      int64  `json:"cum"`
 }
 
 // Analysis is the aggregated view of a single profile.
 type Analysis struct {
-	Kind  string     // "cpu", "alloc", "block", "mutex", "goroutine"
-	Unit  string     // value unit, e.g. "nanoseconds", "bytes", "count"
-	Total int64      // total cumulative value across all samples (sum of leaf flat)
-	Flat  []FuncStat // functions sorted by flat, descending
-	Cum   []FuncStat // functions sorted by cum, descending
+	Kind  string     `json:"kind"`  // "cpu", "alloc", "block", "mutex", "goroutine"
+	Unit  string     `json:"unit"`  // value unit, e.g. "nanoseconds", "bytes", "count"
+	Total int64      `json:"total"` // total cumulative value across all samples (sum of leaf flat)
+	Flat  []FuncStat `json:"flat"`  // functions sorted by flat, descending
+	Cum   []FuncStat `json:"cum"`   // functions sorted by cum, descending
 }
 
 // valuePreference picks which sample-value column to aggregate for each profile kind: the one that

@@ -8,24 +8,24 @@ import (
 
 // Section is one profile dimension aggregated across the cluster.
 type Section struct {
-	Kind    string
-	Title   string
-	Explain string
-	Unit    string
-	Total   int64
-	Agg     []FuncStat // full aggregate across nodes, sorted by cum desc
-	App     []FuncStat // application/storage/RPC frames only (the actionable view)
-	FwShare float64    // fraction of leaf cost in Go runtime / HTTP plumbing
-	PerNode map[string]*Analysis
-	Notes   []string
+	Kind    string               `json:"kind"`
+	Title   string               `json:"title"`
+	Explain string               `json:"explain"`
+	Unit    string               `json:"unit"`
+	Total   int64                `json:"total"`
+	Agg     []FuncStat           `json:"agg"`     // full aggregate across nodes, sorted by cum desc
+	App     []FuncStat           `json:"app"`     // application/storage/RPC frames only (the actionable view)
+	FwShare float64              `json:"fwShare"` // fraction of leaf cost in Go runtime / HTTP plumbing
+	PerNode map[string]*Analysis `json:"perNode"`
+	Notes   []string             `json:"notes"`
 }
 
 // Report is the full cross-node performance breakdown.
 type Report struct {
-	Bench      string
-	Nodes      []string
-	CPUSeconds int
-	Sections   []Section
+	Bench      string    `json:"bench"`
+	Nodes      []string  `json:"nodes"`
+	CPUSeconds int       `json:"cpuSeconds"`
+	Sections   []Section `json:"sections"`
 }
 
 type sectionSpec struct{ kind, title, explain string }

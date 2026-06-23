@@ -60,6 +60,7 @@ type datasetLoadRequest struct {
 
 // handleDatasetLoad runs bench.Load in a goroutine and streams its progress callbacks as SSE.
 func (s *Server) handleDatasetLoad(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB; these bodies are tiny
 	var req datasetLoadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)

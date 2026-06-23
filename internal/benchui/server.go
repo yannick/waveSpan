@@ -32,11 +32,10 @@ type Server struct {
 	opts Options
 	spa  fs.FS
 
-	mu       sync.Mutex
-	active   *benchengine.Run
-	activeID string
-	runs     map[string]*benchengine.Run
-	runSeq   int
+	mu     sync.Mutex
+	active *benchengine.Run
+	runs   map[string]*benchengine.Run
+	runSeq int
 
 	profMu   sync.Mutex
 	profiles map[string]*profileResult

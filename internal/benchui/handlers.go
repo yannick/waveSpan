@@ -70,6 +70,7 @@ func runFinished(r *benchengine.Run) bool {
 }
 
 func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB; these bodies are tiny
 	var req createRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -111,7 +112,6 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 	id := s.nextRunID()
 	s.runs[id] = run
 	s.active = run
-	s.activeID = id
 	s.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]string{"id": id})
