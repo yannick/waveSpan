@@ -4,6 +4,7 @@
 package benchui
 
 import (
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"strconv"
@@ -17,6 +18,11 @@ import (
 // Options configures the benchui server.
 type Options struct {
 	Addr string
+	// DefaultDataAddr / DefaultAdminAddr pre-fill the Target panel so a benchmark works out of the box
+	// against the cluster the benchui runs in (set from env in cmd/wavespan-benchui). Empty = the UI's
+	// local-dev defaults.
+	DefaultDataAddr  string
+	DefaultAdminAddr string
 }
 
 // profileResult holds a completed profiling capture: the analyzed report plus the raw
@@ -56,6 +62,7 @@ func New(opts Options) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("GET /api/workloads", s.handleWorkloads)
 	mux.HandleFunc("POST /api/runs", s.handleCreateRun)
 	mux.HandleFunc("GET /api/runs/{id}", s.handleGetRun)
@@ -76,6 +83,16 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("/", s.serveSPA)
 	return mux
+}
+
+// handleConfig exposes server-side defaults (set from env) so the UI can pre-fill the Target panel and
+// work against the cluster the benchui runs in without the operator typing addresses.
+func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"defaultDataAddr":  s.opts.DefaultDataAddr,
+		"defaultAdminAddr": s.opts.DefaultAdminAddr,
+	})
 }
 
 // serveSPA mirrors internal/ui/server.go: it serves embedded files, falling back to index.html

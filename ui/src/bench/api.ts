@@ -158,6 +158,18 @@ async function postNoBody(path: string, body?: unknown): Promise<void> {
 // Endpoints
 // ---------------------------------------------------------------------------------------------------
 
+/** Server-side defaults (`GET /api/config`) so the Target panel pre-fills the right cluster addresses
+ *  — empty strings when the server has no defaults (local dev). */
+export interface BenchConfig {
+  defaultDataAddr: string;
+  defaultAdminAddr: string;
+}
+
+/** `GET /api/config` — server-provided default target addresses for the UI. */
+export function getConfig(): Promise<BenchConfig> {
+  return getJSON<BenchConfig>("/api/config");
+}
+
 /** `GET /api/workloads` — available workload kinds and their parameters. */
 export function listWorkloads(): Promise<WorkloadInfo[]> {
   return getJSON<WorkloadInfo[]>("/api/workloads");

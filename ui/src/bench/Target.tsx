@@ -1,7 +1,7 @@
 // Target panel: pick the cluster data port + the admin endpoints of each node, then probe them for
 // reachability and profiling support. The probe result is lifted up via `onProbed` so the parent can
 // gate the rest of the dashboard (and the Profiling panel) on it.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Badge,
   Button,
@@ -12,7 +12,7 @@ import {
   Panel,
   Spinner,
 } from "../components";
-import { probeTarget, type NodeRef, type ProbeResult } from "./api";
+import { getConfig, probeTarget, type NodeRef, type ProbeResult } from "./api";
 
 interface TargetProps {
   /** Reports the probe result plus the node refs that were probed (the API's ProbeResult has no
@@ -42,14 +42,11 @@ export function Target({ onProbed }: TargetProps) {
   const remove = (id: number) => setRows((rs) => rs.filter((r) => r.id !== id));
   const add = () => setRows((rs) => [...rs, newRow()]);
 
-  const probe = async () => {
+  const runProbe = async (addr: string, nodes: NodeRef[]) => {
     setBusy(true);
     setErr(null);
     try {
-      const nodes: NodeRef[] = rows
-        .filter((r) => r.name.trim() && r.adminAddr.trim())
-        .map(({ name, adminAddr }) => ({ name: name.trim(), adminAddr: adminAddr.trim() }));
-      const res = await probeTarget({ dataAddr: dataAddr.trim(), nodes });
+      const res = await probeTarget({ dataAddr: addr.trim(), nodes });
       setResult(res);
       onProbed(res, nodes);
     } catch (e) {
@@ -58,6 +55,35 @@ export function Target({ onProbed }: TargetProps) {
       setBusy(false);
     }
   };
+
+  const probe = () =>
+    runProbe(
+      dataAddr,
+      rows
+        .filter((r) => r.name.trim() && r.adminAddr.trim())
+        .map(({ name, adminAddr }) => ({ name: name.trim(), adminAddr: adminAddr.trim() })),
+    );
+
+  // Pre-fill from server-provided defaults (set in-cluster via env) and auto-probe once, so a
+  // benchmark works out of the box without typing any addresses. No-op in local dev (empty config).
+  useEffect(() => {
+    let live = true;
+    getConfig()
+      .then((cfg) => {
+        if (!live || !cfg.defaultDataAddr) return;
+        setDataAddr(cfg.defaultDataAddr);
+        const node: NodeRef = { name: "n1", adminAddr: cfg.defaultAdminAddr || "" };
+        setRows([newRow(node.name, node.adminAddr)]);
+        void runProbe(cfg.defaultDataAddr, node.adminAddr ? [node] : []);
+      })
+      .catch(() => {
+        /* no server config (local dev) — keep the localhost defaults */
+      });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const canProbe = !busy && dataAddr.trim().length > 0;
 
