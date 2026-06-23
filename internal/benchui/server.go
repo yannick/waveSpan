@@ -75,6 +75,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/runs/{id}/stream", s.handleStream)
 	mux.HandleFunc("POST /api/dataset/load", s.handleDatasetLoad)
 
+	// Collections benchmarking (seed + bulk-remove + sweep)
+	mux.HandleFunc("POST /api/collections/seed", s.handleCollectionsSeed)
+	mux.HandleFunc("POST /api/collections/bulk-remove", s.handleCollectionsBulkRemove)
+	mux.HandleFunc("POST /api/collections/sweep", s.handleCollectionsSweep)
+
 	// Profiling (TASK 6)
 	mux.HandleFunc("POST /api/target/probe", s.handleProbe)
 	mux.HandleFunc("POST /api/runs/{id}/profile", s.handleProfileRun)

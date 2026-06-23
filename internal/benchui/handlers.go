@@ -35,6 +35,27 @@ var workloadCatalog = []workloadDesc{
 	{Kind: "cypher", Params: []paramDesc{
 		{Name: "queries", Type: "string", Default: "all"},
 	}},
+	{Kind: "set", Params: []paramDesc{
+		{Name: "collections", Type: "int", Default: 1000},
+		{Name: "members", Type: "int", Default: 100},
+		{Name: "writeRatio", Type: "float", Default: 0.5},
+	}},
+	{Kind: "hash", Params: []paramDesc{
+		{Name: "collections", Type: "int", Default: 1000},
+		{Name: "fields", Type: "int", Default: 100},
+		{Name: "writeRatio", Type: "float", Default: 0.5},
+		{Name: "counterRatio", Type: "float", Default: 0.2},
+	}},
+	{Kind: "zset", Params: []paramDesc{
+		{Name: "collections", Type: "int", Default: 1000},
+		{Name: "members", Type: "int", Default: 100},
+		{Name: "writeRatio", Type: "float", Default: 0.5},
+	}},
+	{Kind: "bulkremove", Params: []paramDesc{
+		{Name: "collections", Type: "int", Default: 1000},
+		{Name: "batch", Type: "int", Default: 50},
+		{Name: "member", Type: "string", Default: "doomed"},
+	}},
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
