@@ -14,6 +14,7 @@ type Hist struct {
 	count   uint64
 }
 
+// NewHist returns an empty latency histogram.
 func NewHist() *Hist { return &Hist{buckets: make([]uint64, 64<<subBucketBits)} }
 
 func bucketIndex(us uint64) int {
@@ -39,6 +40,7 @@ func bucketValueUS(idx int) uint64 { // midpoint reconstruction
 	return base + uint64(sub)*step + step/2
 }
 
+// Record adds one latency observation.
 func (h *Hist) Record(d time.Duration) {
 	us := uint64(d.Microseconds())
 	i := bucketIndex(us)
@@ -49,8 +51,10 @@ func (h *Hist) Record(d time.Duration) {
 	h.count++
 }
 
+// Count returns the number of recorded observations.
 func (h *Hist) Count() uint64 { return h.count }
 
+// Merge folds another histogram's buckets into h.
 func (h *Hist) Merge(o *Hist) {
 	for i := range o.buckets {
 		h.buckets[i] += o.buckets[i]
@@ -58,6 +62,7 @@ func (h *Hist) Merge(o *Hist) {
 	h.count += o.count
 }
 
+// Percentile returns the approximate q-quantile latency (q in [0,1]).
 func (h *Hist) Percentile(q float64) time.Duration {
 	if h.count == 0 {
 		return 0

@@ -43,7 +43,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			fmt.Fprintf(w, "data: %s\n\n", b)
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+				return // client gone
+			}
 			flusher.Flush()
 		}
 	}
@@ -119,6 +121,6 @@ func (s *Server) handleDatasetLoad(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeSSEData(w http.ResponseWriter, flusher http.Flusher, msg string) {
-	fmt.Fprintf(w, "data: %s\n\n", msg)
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", msg)
 	flusher.Flush()
 }

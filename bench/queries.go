@@ -1,3 +1,5 @@
+// Package benchqueries embeds the benchmark Cypher query suite (bench/queries/*.cypher) so it ships
+// inside the wavespan-benchui binary with no filesystem dependency.
 package benchqueries
 
 import (

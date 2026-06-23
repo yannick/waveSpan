@@ -45,6 +45,7 @@ func OpCreateNode(ctx context.Context, c wavespanv1connect.CypherClient, graph s
 	return OpCypher(ctx, c, graph, fmt.Sprintf("CREATE (:User {id:'user-%d', name:'User %d', age:%d, city:'%s'})", i, i, 18+i%60, city))
 }
 
+// OpCreateEdge creates one FOLLOWS edge between two users (the loader's edge statement).
 func OpCreateEdge(ctx context.Context, c wavespanv1connect.CypherClient, graph string, a, b int) error {
 	return OpCypher(ctx, c, graph, fmt.Sprintf("MATCH (a:User {id:'user-%d'}), (b:User {id:'user-%d'}) CREATE (a)-[:FOLLOWS]->(b)", a, b))
 }

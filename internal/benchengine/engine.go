@@ -1,3 +1,5 @@
+// Package benchengine is the controllable, streaming benchmark run engine: it runs workloads with
+// start/pause/resume/stop control and emits per-second windowed throughput + latency samples.
 package benchengine
 
 import (
@@ -12,6 +14,7 @@ import (
 // State is the lifecycle phase of a Run.
 type State int
 
+// Run lifecycle states.
 const (
 	StateIdle State = iota
 	StateRunning

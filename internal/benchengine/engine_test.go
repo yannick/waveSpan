@@ -10,7 +10,7 @@ import (
 
 func TestEngineLifecycleWithFakeOp(t *testing.T) {
 	var ops atomic.Int64
-	r := newRunForTest(func(ctx context.Context) error { ops.Add(1); return nil }, 4 /*workers*/)
+	r := newRunForTest(func(_ context.Context) error { ops.Add(1); return nil }, 4 /*workers*/)
 
 	if r.State() != StateIdle {
 		t.Fatalf("state=%v", r.State())
@@ -54,7 +54,7 @@ func TestEngineLifecycleWithFakeOp(t *testing.T) {
 // (fatal "sync: Unlock of unlocked RWMutex", which kills the process and cannot be recovered).
 // Must pass under -race and must not crash.
 func TestConcurrentControl(t *testing.T) {
-	r := newRunForTest(func(ctx context.Context) error { return nil }, 4 /*workers*/)
+	r := newRunForTest(func(_ context.Context) error { return nil }, 4 /*workers*/)
 	r.Start()
 
 	const (
