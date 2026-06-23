@@ -48,12 +48,12 @@ func (m *Manager) StartShard(shardID, replicaID uint64, initialMembers map[uint6
 	return m.nh.StartOnDiskReplica(initialMembers, join, factory, cfg)
 }
 
-func (m *Manager) Propose(ctx context.Context, shardID uint64, cmd []byte) (uint64, error) {
+func (m *Manager) Propose(ctx context.Context, shardID uint64, cmd []byte) (ProposeResult, error) {
 	res, err := m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
 	if err != nil {
-		return 0, err
+		return ProposeResult{}, err
 	}
-	return res.Value, nil
+	return ProposeResult{Value: res.Value, Data: res.Data}, nil
 }
 
 func (m *Manager) Read(ctx context.Context, shardID uint64, query interface{}, linearizable bool) (interface{}, error) {
