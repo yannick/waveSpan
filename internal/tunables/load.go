@@ -3,7 +3,6 @@ package tunables
 import (
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/knadh/koanf/parsers/yaml"
@@ -98,17 +97,4 @@ func loadEnv(r *Registry, env map[string]string) error {
 		}
 	}
 	return nil
-}
-
-// snapshotKeysByGroup returns keys grouped, preserving group order and sorting keys within a group
-// for stable reference output.
-func keysByGroup(r *Registry) ([]string, map[string][]*Param) {
-	byGroup := map[string][]*Param{}
-	for _, p := range r.All() {
-		byGroup[p.Group] = append(byGroup[p.Group], p)
-	}
-	for g := range byGroup {
-		sort.SliceStable(byGroup[g], func(i, j int) bool { return byGroup[g][i].Key < byGroup[g][j].Key })
-	}
-	return r.Groups(), byGroup
 }

@@ -68,9 +68,14 @@ func (v *IVF) Probe(vec []float32, nprobe int) []uint32 {
 	return out
 }
 
+// NumBuckets returns the number of IVF centroids (coarse-quantizer cells).
 func (v *IVF) NumBuckets() int { return len(v.centroids) }
+
+// Version returns the quantizer model version.
 func (v *IVF) Version() uint32 { return v.version }
-func (v *IVF) Kind() string    { return "ivf" }
+
+// Kind returns the quantizer kind identifier.
+func (v *IVF) Kind() string { return "ivf" }
 
 // TrainIVF runs Lloyd's k-means over a sample to produce k centroids. It uses k-means++ seeding for a
 // good init and a bounded iteration count. An empty/too-small sample yields fewer centroids. The

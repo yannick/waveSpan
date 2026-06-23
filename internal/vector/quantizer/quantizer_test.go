@@ -32,7 +32,7 @@ func randUnit(rng *rand.Rand, dim int) []float32 {
 func TestLSHDeterministic(t *testing.T) {
 	q := NewLSH(16, 8, 42, 1)
 	v := []float32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-	if q.Bucket(v) != q.Bucket(v) {
+	if b1, b2 := q.Bucket(v), q.Bucket(v); b1 != b2 {
 		t.Fatal("bucket not deterministic")
 	}
 	// A different seed gives a different planeset (almost surely a different bucket for a random vec).
