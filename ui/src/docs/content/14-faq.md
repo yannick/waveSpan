@@ -56,4 +56,4 @@ If your workload needs strong consistency, multi-key serializable transactions, 
 
 ---
 
-*This documentation is rendered inside the WaveSpan node console, styled with the Linea/Olivetti design system. Use the navigation to explore each subsystem, or switch to the live tabs to inspect a running cluster.*
+*This documentation is rendered inside the WaveSpan node console, styled with the Linea design system. Use the navigation to explore each subsystem, or switch to the live tabs to inspect a running cluster.*

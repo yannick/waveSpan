@@ -195,7 +195,7 @@
   font-size: inherit;
 }
 
-/* highlight.js — Linea / Olivetti palette */
+/* highlight.js — Linea palette */
 .hljs-comment,
 .hljs-quote {
   color: var(--ws-color-ink-muted);

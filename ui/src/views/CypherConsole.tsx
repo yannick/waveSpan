@@ -39,6 +39,9 @@ const EXAMPLES = [
   "MATCH (n:User) RETURN n.name LIMIT 25",
   "MATCH (n:User)-[:FOLLOWS]->(m) RETURN n.name, m.name",
   "MATCH (n:User) WHERE n.age >= 30 RETURN n.name, n.age",
+  "MATCH (u:User) RETURN u.name, kv.get('profile', u.id) AS profile",
+  "CALL kv.put('profile', 'u1', '{\"v\":2}') YIELD version RETURN version",
+  "RETURN kv.get('profile', 'u1') AS profile",
 ];
 
 export function CypherConsole() {
