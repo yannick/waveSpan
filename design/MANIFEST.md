@@ -29,9 +29,12 @@
 - `26_node_ui_and_observability.md`
 - `27_transport_performance.md`
 - `28_replication_factor_and_node_sync.md`
+- `29_vector_kv_search.md`
+- `29_vector_kv_search_plan.md`
 - `README.md`
 - `adr/0001_eventual_consistency.md`
 - `adr/0002_origin_plus_one_write_ack.md`
 - `adr/0003_cache_replicas_are_derived.md`
 - `adr/0004_global_active_active_conflicts.md`
 - `adr/0005_go_and_wavesdb_engine.md`
+- `adr/0006_pure_go_hnsw.md`

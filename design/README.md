@@ -56,11 +56,14 @@ Read in this order:
 27. `26_node_ui_and_observability.md`
 28. `27_transport_performance.md`
 29. `28_replication_factor_and_node_sync.md`
-30. `adr/0001_eventual_consistency.md`
-31. `adr/0002_origin_plus_one_write_ack.md`
-32. `adr/0003_cache_replicas_are_derived.md`
-33. `adr/0004_global_active_active_conflicts.md`
-34. `adr/0005_go_and_wavesdb_engine.md`
+30. `29_vector_kv_search.md`
+31. `29_vector_kv_search_plan.md`
+32. `adr/0001_eventual_consistency.md`
+33. `adr/0002_origin_plus_one_write_ack.md`
+34. `adr/0003_cache_replicas_are_derived.md`
+35. `adr/0004_global_active_active_conflicts.md`
+36. `adr/0005_go_and_wavesdb_engine.md`
+37. `adr/0006_pure_go_hnsw.md`
 
 ## Implementation stance
 
