@@ -189,7 +189,7 @@ func zMembers(t *testing.T, c *Collections, ns, coll []byte) [][]byte {
 	return out
 }
 
-func freeAddr(t *testing.T) string {
+func freeAddr(t testing.TB) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -200,7 +200,7 @@ func freeAddr(t *testing.T) string {
 	return addr
 }
 
-func newMgr(t *testing.T, dir, addr string, store storage.LocalStore) *Manager {
+func newMgr(t testing.TB, dir, addr string, store storage.LocalStore) *Manager {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
@@ -216,7 +216,7 @@ func newMgr(t *testing.T, dir, addr string, store storage.LocalStore) *Manager {
 }
 
 // waitReady probes with a zero-member SAdd (a committed no-op) until the shard has a leader.
-func waitReady(t *testing.T, c *Collections) {
+func waitReady(t testing.TB, c *Collections) {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
 	for {
