@@ -227,16 +227,20 @@ follow-up. This is acceptable for a centrally-written tier where splits are rare
 
 ### 6.2 Merge
 
-Merging adjacent ranges is more delicate (must not lose writes):
+Merge is the inverse of §6.1 and, with dragonboat, **also migrate-based** (the left group can't simply
+"absorb" an independent right group's data in place). Merging the range starting at `boundary` into its
+left neighbour `[a, boundary)`:
 
-1. PD first **aligns replica sets** — moves replicas so the left and right ranges share the same nodes.
-2. The right range is **frozen** (stops accepting proposals; in-flight ones drain or abort).
-3. A `RangeMerge` entry is committed in the **left** group; on apply, the left group absorbs the right
-   range's key span and data, and the right group is retired.
-4. The directory updates; the right `group_id` is tombstoned.
+1. **migrate** the right range `[boundary, c)` — read the right shard's keys and ingest them into the
+   left shard (route keys are partitioned by range, so there are no key collisions in the left shard);
+2. **extend** the left range to `[a, c)` in the directory and **drop** the right range entry;
+3. **purge** the right shard's data; the now-unreferenced shard is retired.
 
-The freeze window is the only unavailability and is bounded; merges are rate-limited and only chosen
-for sustained low load.
+v1 assumes the right range is **quiescent** during migration (mirror of §6.1). The hardened version
+must not lose writes: the PD aligns replica sets, **freezes** the right range (stops proposals;
+in-flight drain or abort), then performs the migrate+cutover; clean dragonboat replica teardown of the
+retired shard is a follow-up. The freeze window is the only unavailability and is bounded; merges are
+rate-limited and only chosen for sustained low load.
 
 ### 6.3 Interaction with cursors and in-flight ops
 

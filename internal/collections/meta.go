@@ -18,7 +18,10 @@ import (
 
 type metaOp byte
 
-const opMetaPut metaOp = 1 // upsert a range [start,end) -> shardID (init and, later, split)
+const (
+	opMetaPut    metaOp = 1 // upsert a range [start,end) -> shardID (init / split)
+	opMetaDelete metaOp = 2 // remove the range keyed by start (merge)
+)
 
 type metaCommand struct {
 	Op      metaOp
@@ -92,6 +95,9 @@ func (m *metaSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		case opMetaPut:
 			val := append(appendChunk(nil, c.End), u64(c.ShardID)...)
 			ops = append(ops, storage.StoreOp{CF: storage.CFReplData, Key: m.rangeKey(c.Start), Value: val})
+			entries[i].Result = sm.Result{Value: 1}
+		case opMetaDelete:
+			ops = append(ops, storage.StoreOp{CF: storage.CFReplData, Key: m.rangeKey(c.Start), Delete: true})
 			entries[i].Result = sm.Result{Value: 1}
 		default:
 			return nil, errors.New("collections: unknown meta op")
@@ -192,6 +198,13 @@ func (d *RangeDirectory) rangeContaining(key []byte) (rangeEntry, bool) {
 		}
 	}
 	return rangeEntry{}, false
+}
+
+// all returns a copy of the current range set.
+func (d *RangeDirectory) all() []rangeEntry {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return append([]rangeEntry(nil), d.ranges...)
 }
 
 // maxShardID is the largest data shard id in the directory (for allocating the next one).

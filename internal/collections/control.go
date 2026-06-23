@@ -90,14 +90,8 @@ func (c *Control) Split(ctx context.Context, splitKey []byte, replicaID uint64, 
 	kvs, _ := v.([]rawKV)
 
 	// 3. ingest the subrange into the new shard (batched).
-	for off := 0; off < len(kvs); off += ingestBatch {
-		end := off + ingestBatch
-		if end > len(kvs) {
-			end = len(kvs)
-		}
-		if _, err := c.mgr.Propose(ctx, newShard, encodeIngest(kvs[off:end])); err != nil {
-			return 0, err
-		}
+	if err := c.ingestInto(ctx, newShard, kvs); err != nil {
+		return 0, err
 	}
 
 	// 4. cut the directory over: shrink the old range, add the new range.
@@ -113,6 +107,73 @@ func (c *Control) Split(ctx context.Context, splitKey []byte, replicaID uint64, 
 		return 0, err
 	}
 	return newShard, c.dir.Refresh(ctx)
+}
+
+// Merge absorbs the range starting at boundary into its left neighbour (whose end == boundary),
+// migrating the right range's data into the left shard and retiring the right range from the directory
+// (design/30 §6.2). Mirror of Split; same quiescent-subrange assumption for v1. The emptied shard is
+// left running but unreferenced — clean replica teardown is a follow-up.
+func (c *Control) Merge(ctx context.Context, boundary []byte) error {
+	if len(boundary) == 0 {
+		return errors.New("collections: empty merge boundary")
+	}
+	if err := c.dir.Refresh(ctx); err != nil {
+		return err
+	}
+	var left, right rangeEntry
+	var lok, rok bool
+	for _, r := range c.dir.all() {
+		if len(r.End) > 0 && bytes.Equal(r.End, boundary) {
+			left, lok = r, true
+		}
+		if bytes.Equal(r.Start, boundary) {
+			right, rok = r, true
+		}
+	}
+	if !lok || !rok {
+		return errors.New("collections: no adjacent ranges at the merge boundary")
+	}
+	if left.ShardID == right.ShardID {
+		return errors.New("collections: ranges already share a shard")
+	}
+
+	// 1. read the right range's data and 2. ingest it into the left shard.
+	v, err := c.mgr.Read(ctx, right.ShardID, migrateScanQuery{StartRoute: right.Start, EndRoute: right.End}, true)
+	if err != nil {
+		return err
+	}
+	kvs, _ := v.([]rawKV)
+	if err := c.ingestInto(ctx, left.ShardID, kvs); err != nil {
+		return err
+	}
+
+	// 3. extend the left range over the right, then drop the right range from the directory.
+	if _, err := c.mgr.Propose(ctx, MetaShardID, encodeMetaCommand(metaCommand{Op: opMetaPut, Start: left.Start, End: right.End, ShardID: left.ShardID})); err != nil {
+		return err
+	}
+	if _, err := c.mgr.Propose(ctx, MetaShardID, encodeMetaCommand(metaCommand{Op: opMetaDelete, Start: right.Start})); err != nil {
+		return err
+	}
+
+	// 4. purge the now-unreferenced right shard's data, then refresh.
+	if _, err := c.mgr.Propose(ctx, right.ShardID, encodePurge(right.Start, right.End)); err != nil {
+		return err
+	}
+	return c.dir.Refresh(ctx)
+}
+
+// ingestInto writes rawKV pairs into a shard in opIngest batches.
+func (c *Control) ingestInto(ctx context.Context, shard uint64, kvs []rawKV) error {
+	for off := 0; off < len(kvs); off += ingestBatch {
+		end := off + ingestBatch
+		if end > len(kvs) {
+			end = len(kvs)
+		}
+		if _, err := c.mgr.Propose(ctx, shard, encodeIngest(kvs[off:end])); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func waitLeader(ctx context.Context, mgr *Manager, shardID uint64) error {
