@@ -25,7 +25,7 @@ bin_dir   := env_var_or_default("BIN_DIR", justfile_directory() / "bin")     # w
 image     := env_var_or_default("IMAGE", "wavespan-node:dev")                # scratch image tag (just image)
 platforms := env_var_or_default("PLATFORMS", "linux/" + `go env GOARCH`)     # buildx platform list
 cgo       := env_var_or_default("CGO_ENABLED", "0")                          # CGO for `build` (0 = static scratch)
-cmds      := "wavespan-node wavespan-gateway wavespanctl wavespan-bench wavespan-profile"
+cmds      := "wavespan-node wavespan-gateway wavespanctl wavespan-bench wavespan-profile wavespan-benchui"
 
 # ── colors for the recipe banners (disabled when NO_COLOR is set) ──────────────
 nocolor := env_var_or_default("NO_COLOR", "")
