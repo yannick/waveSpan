@@ -892,8 +892,8 @@ const file_wavespan_v1_cypher_proto_rawDesc = "" +
 	"\x1dQUERY_CONSISTENCY_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aQUERY_CONSISTENCY_EVENTUAL\x10\x012J\n" +
 	"\x06Cypher\x12@\n" +
-	"\x05Query\x12\x1a.wavespan.v1.CypherRequest\x1a\x19.wavespan.v1.CypherResult0\x01B\xa3\x01\n" +
-	"\x0fcom.wavespan.v1B\vCypherProtoP\x01Z6github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
+	"\x05Query\x12\x1a.wavespan.v1.CypherRequest\x1a\x19.wavespan.v1.CypherResult0\x01B\xa5\x01\n" +
+	"\x0fcom.wavespan.v1B\vCypherProtoP\x01Z8github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
 	file_wavespan_v1_cypher_proto_rawDescOnce sync.Once
