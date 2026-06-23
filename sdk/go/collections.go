@@ -12,10 +12,29 @@ import (
 // tables, and sorted sets over the CP consensus tier. Writes are linearizable; reads default to
 // bounded-stale local reads — pass linearizable=true for a quorum read. Obtain one via
 // [Client.Collections].
-type CollectionsClient struct{ c *Client }
+type CollectionsClient struct {
+	c    *Client
+	idem string
+}
 
 // Collections returns the replicated-collections sub-client.
 func (c *Client) Collections() *CollectionsClient { return &CollectionsClient{c: c} }
+
+// WithIdempotencyKey returns a sub-client whose next write carries the given idempotency key, so a
+// retry (after a timeout) applies exactly once and returns the original result (design/30 §13.12). Use
+// a fresh key per logical write.
+func (cc *CollectionsClient) WithIdempotencyKey(key string) *CollectionsClient {
+	clone := *cc
+	clone.idem = key
+	return &clone
+}
+
+func (cc *CollectionsClient) idemPtr() *string {
+	if cc.idem == "" {
+		return nil
+	}
+	return &cc.idem
+}
 
 // FieldValue is a hash field/value pair.
 type FieldValue struct {
@@ -34,7 +53,7 @@ type ScoredMember struct {
 // SAdd adds members to the set, returning the number newly added.
 func (cc *CollectionsClient) SAdd(ctx context.Context, namespace string, collection []byte, members ...[]byte) (uint64, error) {
 	resp, err := cc.c.collections.SAdd(ctx, connect.NewRequest(&wavespanv1.SAddRequest{
-		Namespace: namespace, Collection: collection, Members: members,
+		Namespace: namespace, Collection: collection, Members: members, IdempotencyKey: cc.idemPtr(),
 	}))
 	if err != nil {
 		return 0, wrapErr("SAdd", err)
@@ -46,7 +65,7 @@ func (cc *CollectionsClient) SAdd(ctx context.Context, namespace string, collect
 func (cc *CollectionsClient) SAddTTL(ctx context.Context, namespace string, collection []byte, ttl time.Duration, members ...[]byte) (uint64, error) {
 	ms := ttl.Milliseconds()
 	resp, err := cc.c.collections.SAdd(ctx, connect.NewRequest(&wavespanv1.SAddRequest{
-		Namespace: namespace, Collection: collection, Members: members, TtlMs: &ms,
+		Namespace: namespace, Collection: collection, Members: members, TtlMs: &ms, IdempotencyKey: cc.idemPtr(),
 	}))
 	if err != nil {
 		return 0, wrapErr("SAddTTL", err)
@@ -57,7 +76,7 @@ func (cc *CollectionsClient) SAddTTL(ctx context.Context, namespace string, coll
 // SRem removes members from the set, returning the number removed.
 func (cc *CollectionsClient) SRem(ctx context.Context, namespace string, collection []byte, members ...[]byte) (uint64, error) {
 	resp, err := cc.c.collections.SRem(ctx, connect.NewRequest(&wavespanv1.KeysRequest{
-		Namespace: namespace, Collection: collection, Keys: members,
+		Namespace: namespace, Collection: collection, Keys: members, IdempotencyKey: cc.idemPtr(),
 	}))
 	if err != nil {
 		return 0, wrapErr("SRem", err)
@@ -107,7 +126,7 @@ func (cc *CollectionsClient) HSet(ctx context.Context, namespace string, collect
 		pb[i] = &wavespanv1.FieldValue{Field: f.Field, Value: f.Value}
 	}
 	resp, err := cc.c.collections.HSet(ctx, connect.NewRequest(&wavespanv1.HSetRequest{
-		Namespace: namespace, Collection: collection, Fields: pb,
+		Namespace: namespace, Collection: collection, Fields: pb, IdempotencyKey: cc.idemPtr(),
 	}))
 	if err != nil {
 		return 0, wrapErr("HSet", err)
@@ -118,7 +137,7 @@ func (cc *CollectionsClient) HSet(ctx context.Context, namespace string, collect
 // HDel deletes hash fields, returning the number removed.
 func (cc *CollectionsClient) HDel(ctx context.Context, namespace string, collection []byte, fields ...[]byte) (uint64, error) {
 	resp, err := cc.c.collections.HDel(ctx, connect.NewRequest(&wavespanv1.KeysRequest{
-		Namespace: namespace, Collection: collection, Keys: fields,
+		Namespace: namespace, Collection: collection, Keys: fields, IdempotencyKey: cc.idemPtr(),
 	}))
 	if err != nil {
 		return 0, wrapErr("HDel", err)
@@ -172,7 +191,7 @@ func (cc *CollectionsClient) ZAdd(ctx context.Context, namespace string, collect
 		pb[i] = &wavespanv1.ScoredMember{Member: m.Member, Score: m.Score}
 	}
 	resp, err := cc.c.collections.ZAdd(ctx, connect.NewRequest(&wavespanv1.ZAddRequest{
-		Namespace: namespace, Collection: collection, Members: pb,
+		Namespace: namespace, Collection: collection, Members: pb, IdempotencyKey: cc.idemPtr(),
 	}))
 	if err != nil {
 		return 0, wrapErr("ZAdd", err)
@@ -183,7 +202,7 @@ func (cc *CollectionsClient) ZAdd(ctx context.Context, namespace string, collect
 // ZRem removes sorted-set members, returning the number removed.
 func (cc *CollectionsClient) ZRem(ctx context.Context, namespace string, collection []byte, members ...[]byte) (uint64, error) {
 	resp, err := cc.c.collections.ZRem(ctx, connect.NewRequest(&wavespanv1.KeysRequest{
-		Namespace: namespace, Collection: collection, Keys: members,
+		Namespace: namespace, Collection: collection, Keys: members, IdempotencyKey: cc.idemPtr(),
 	}))
 	if err != nil {
 		return 0, wrapErr("ZRem", err)

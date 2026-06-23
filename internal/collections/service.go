@@ -71,22 +71,31 @@ func (s *Service) count(n uint64, err error) (*connect.Response[wavespanv1.Count
 	return connect.NewResponse(&wavespanv1.CountResult{Meta: s.meta(), Count: n}), nil
 }
 
+// write builds a mutation carrying the idempotency key and proposes it (forwarding to the leader if
+// this node isn't it). idem == "" means no dedup.
+func (s *Service) write(ctx context.Context, op opKind, ns, coll []byte, idem string, items []item) (*connect.Response[wavespanv1.CountResult], error) {
+	return s.count(s.cols.proposeCmd(ctx, command{Op: op, NS: ns, Coll: coll, Idem: []byte(idem), Items: items}))
+}
+
 // --- Set ---
 
 // SAdd adds set members (optionally with a TTL).
 func (s *Service) SAdd(ctx context.Context, req *connect.Request[wavespanv1.SAddRequest]) (*connect.Response[wavespanv1.CountResult], error) {
 	m := req.Msg
-	ns, coll := []byte(m.GetNamespace()), m.GetCollection()
+	items := itemsFromKeys(m.GetMembers())
 	if m.TtlMs != nil {
-		return s.count(s.cols.SAddTTL(ctx, ns, coll, m.GetTtlMs(), m.GetMembers()...))
+		exp := time.Now().UnixMilli() + m.GetTtlMs()
+		for i := range items {
+			items[i].ExpiryMs = exp
+		}
 	}
-	return s.count(s.cols.SAdd(ctx, ns, coll, m.GetMembers()...))
+	return s.write(ctx, opSAdd, []byte(m.GetNamespace()), m.GetCollection(), m.GetIdempotencyKey(), items)
 }
 
 // SRem removes set members.
 func (s *Service) SRem(ctx context.Context, req *connect.Request[wavespanv1.KeysRequest]) (*connect.Response[wavespanv1.CountResult], error) {
 	m := req.Msg
-	return s.count(s.cols.SRem(ctx, []byte(m.GetNamespace()), m.GetCollection(), m.GetKeys()...))
+	return s.write(ctx, opSRem, []byte(m.GetNamespace()), m.GetCollection(), m.GetIdempotencyKey(), itemsFromKeys(m.GetKeys()))
 }
 
 // SIsMember reports set membership.
@@ -120,17 +129,17 @@ func (s *Service) SMembers(ctx context.Context, req *connect.Request[wavespanv1.
 // HSet sets hash fields.
 func (s *Service) HSet(ctx context.Context, req *connect.Request[wavespanv1.HSetRequest]) (*connect.Response[wavespanv1.CountResult], error) {
 	m := req.Msg
-	fields := make([]FieldValue, len(m.GetFields()))
+	items := make([]item, len(m.GetFields()))
 	for i, f := range m.GetFields() {
-		fields[i] = FieldValue{Field: f.GetField(), Value: f.GetValue()}
+		items[i] = item{Key: f.GetField(), Val: f.GetValue()}
 	}
-	return s.count(s.cols.HSet(ctx, []byte(m.GetNamespace()), m.GetCollection(), fields...))
+	return s.write(ctx, opHSet, []byte(m.GetNamespace()), m.GetCollection(), m.GetIdempotencyKey(), items)
 }
 
 // HDel deletes hash fields.
 func (s *Service) HDel(ctx context.Context, req *connect.Request[wavespanv1.KeysRequest]) (*connect.Response[wavespanv1.CountResult], error) {
 	m := req.Msg
-	return s.count(s.cols.HDel(ctx, []byte(m.GetNamespace()), m.GetCollection(), m.GetKeys()...))
+	return s.write(ctx, opHDel, []byte(m.GetNamespace()), m.GetCollection(), m.GetIdempotencyKey(), itemsFromKeys(m.GetKeys()))
 }
 
 // HGet returns a hash field value.
@@ -168,17 +177,17 @@ func (s *Service) HGetAll(ctx context.Context, req *connect.Request[wavespanv1.R
 // ZAdd adds or updates sorted-set members.
 func (s *Service) ZAdd(ctx context.Context, req *connect.Request[wavespanv1.ZAddRequest]) (*connect.Response[wavespanv1.CountResult], error) {
 	m := req.Msg
-	members := make([]ScoredMember, len(m.GetMembers()))
+	items := make([]item, len(m.GetMembers()))
 	for i, sm := range m.GetMembers() {
-		members[i] = ScoredMember{Member: sm.GetMember(), Score: sm.GetScore()}
+		items[i] = item{Key: sm.GetMember(), Score: sm.GetScore()}
 	}
-	return s.count(s.cols.ZAdd(ctx, []byte(m.GetNamespace()), m.GetCollection(), members...))
+	return s.write(ctx, opZAdd, []byte(m.GetNamespace()), m.GetCollection(), m.GetIdempotencyKey(), items)
 }
 
 // ZRem removes sorted-set members.
 func (s *Service) ZRem(ctx context.Context, req *connect.Request[wavespanv1.KeysRequest]) (*connect.Response[wavespanv1.CountResult], error) {
 	m := req.Msg
-	return s.count(s.cols.ZRem(ctx, []byte(m.GetNamespace()), m.GetCollection(), m.GetKeys()...))
+	return s.write(ctx, opZRem, []byte(m.GetNamespace()), m.GetCollection(), m.GetIdempotencyKey(), itemsFromKeys(m.GetKeys()))
 }
 
 // ZScore returns a member's score.

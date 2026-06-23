@@ -104,6 +104,7 @@ type updateCtx struct {
 	zscore    map[string]*float64 // zset member ptr key -> current score (nil = absent)
 	cardDelta map[string]int64    // string(cardKey) -> delta
 	htype     map[string]collType // string(collScope) -> resolved type (0 = unknown/new)
+	dedupSeq  uint64              // idempotency ring sequence (design/30 §13.12)
 }
 
 func (u *updateCtx) elemExists(k []byte) (bool, error) {
@@ -165,6 +166,10 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	if u.dedupSeq, err = s.readDedupSeq(); err != nil {
+		return nil, err
+	}
+	startDedupSeq := u.dedupSeq
 	for i := range entries {
 		cmd := entries[i].Cmd
 		if len(cmd) > 0 && (opKind(cmd[0]) == opIngest || opKind(cmd[0]) == opPurge) {
@@ -190,6 +195,16 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 			entries[i].Result = sm.Result{Value: 0, Data: frozenMark} // splitting: client retries onto the new shard
 			continue
 		}
+		// Idempotency: a repeated keyed write returns its cached result without re-applying (§13.12).
+		deduped := mutates(c.Op) && len(c.Idem) > 0
+		if deduped {
+			if cached, found, derr := s.dedupGet(c.Idem); derr != nil {
+				return nil, derr
+			} else if found {
+				entries[i].Result = sm.Result{Value: cached}
+				continue
+			}
+		}
 		if c.Op != opExpire { // opExpire is type-agnostic: it only deletes existing elements
 			ok, err := u.ensureType(c.NS, c.Coll, typeForOp(c.Op))
 			if err != nil {
@@ -204,7 +219,15 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		if err != nil {
 			return nil, err
 		}
+		if deduped {
+			if derr := u.dedupRecord(c.Idem, uint64(changed)); derr != nil {
+				return nil, derr
+			}
+		}
 		entries[i].Result = sm.Result{Value: uint64(changed)}
+	}
+	if u.dedupSeq != startDedupSeq {
+		u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: s.dedupSeqKey(), Value: u64(u.dedupSeq)})
 	}
 	// flush card deltas
 	for ckStr, delta := range u.cardDelta {
