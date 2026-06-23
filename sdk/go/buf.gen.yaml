@@ -1,0 +1,23 @@
+# Generates the WaveSpan SDK's OWN copy of the protobuf messages + Connect client stubs, under an
+# internal package so they are not part of the SDK's public API (callers use the ergonomic wrappers).
+# This keeps the SDK module self-contained — depending only on protobuf + Connect, never on the
+# server module (which is private and carries a local `replace wavesdb`). The .proto files in
+# ../../proto are the single source of truth; regenerate with:
+#
+#   buf generate --template sdk/go/buf.gen.yaml          # run from the repo root
+#
+# (or `just sdk-proto` / `make sdk-proto`). Managed mode rewrites go_package to the SDK's internal
+# prefix, overriding the file-level go_package options.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/yannick/wavespan/sdk/go/internal/gen
+plugins:
+  - local: protoc-gen-go
+    out: sdk/go/internal/gen
+    opt: paths=source_relative
+  - local: protoc-gen-connect-go
+    out: sdk/go/internal/gen
+    opt: paths=source_relative

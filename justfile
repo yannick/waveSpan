@@ -131,6 +131,30 @@ tools:
     @printf '{{green}}✓{{reset}} %s\n' 'plugins installed'
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Go SDK (sdk/go)
+# ══════════════════════════════════════════════════════════════════════════════
+# The Go SDK is a self-contained module that vendors its own stubs; it builds OUTSIDE the server's
+# module graph, so these recipes pin GOWORK=off and run from sdk/go.
+
+# Regenerate the SDK's vendored stubs from proto/ (single source of truth)
+[group('go sdk')]
+sdk-proto:
+    @printf '{{bold}}{{blue}}▸{{reset}} {{bold}}%s{{reset}}\n' 'Regenerating SDK stubs into sdk/go/internal/gen'
+    @buf generate --template sdk/go/buf.gen.yaml && printf '{{green}}✓{{reset}} %s\n' 'SDK stubs regenerated'
+
+# Build, vet and test the Go SDK module
+[group('go sdk')]
+sdk-test:
+    @printf '{{bold}}{{blue}}▸{{reset}} {{bold}}%s{{reset}}\n' 'Testing the Go SDK'
+    @cd sdk/go && GOWORK=off {{go}} vet ./... && GOWORK=off {{go}} test ./... && printf '{{green}}✓{{reset}} %s\n' 'SDK tests passed'
+
+# Run the SDK quickstart against a node  (addr: host:port, default localhost:7800)
+[group('go sdk')]
+sdk-example addr="localhost:7800":
+    @printf '{{bold}}{{blue}}▸{{reset}} {{bold}}%s{{reset}}\n' 'Running the SDK quickstart against {{addr}}'
+    @cd sdk/go && GOWORK=off {{go}} run ./examples/quickstart --addr {{addr}}
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Cluster & images
 # ══════════════════════════════════════════════════════════════════════════════
 
