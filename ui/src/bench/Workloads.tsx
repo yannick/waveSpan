@@ -43,6 +43,10 @@ const PARAM_HINTS: Record<string, string[]> = {
   kv: ["concurrency", "keys", "readRatio", "valueSize"],
   multiget: ["concurrency", "batch", "keys"],
   cypher: ["concurrency", "graph"],
+  set: ["concurrency", "collections", "members", "writeRatio"],
+  hash: ["concurrency", "collections", "fields", "writeRatio", "counterRatio"],
+  zset: ["concurrency", "collections", "members", "writeRatio"],
+  bulkremove: ["concurrency", "collections", "batch", "member"],
 };
 
 interface SelState {

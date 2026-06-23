@@ -67,6 +67,48 @@ export interface LoadDatasetBody {
   kv: number;
 }
 
+/** Body for seeding collections (`POST /api/collections/seed`). */
+export interface SeedCollectionsBody {
+  dataAddr: string;
+  namespace: string;
+  sets: number;
+  filler: number;
+  member: string;
+  concurrency: number;
+}
+
+/** Body for the one-shot bulk remove (`POST /api/collections/bulk-remove`). */
+export interface BulkRemoveBody {
+  dataAddr: string;
+  namespace: string;
+  member: string;
+}
+
+/** Body for the scaling sweep (`POST /api/collections/sweep`). */
+export interface SweepCollectionsBody {
+  dataAddr: string;
+  namespace: string;
+  member: string;
+  sizes: number[];
+  filler: number;
+  concurrency: number;
+}
+
+/** Result of a bulk remove (`POST /api/collections/bulk-remove`). */
+export interface BulkRemoveResult {
+  sets: number;
+  removed: number;
+  wallMs: number;
+  setsPerSec: number;
+}
+
+/** One measured point of a scaling sweep (final frame of `POST /api/collections/sweep`). */
+export interface SweepPoint {
+  n: number;
+  wallMs: number;
+  setsPerSec: number;
+}
+
 /** One workload's rolling stats inside a `Sample` window. */
 export interface WindowStat {
   tput: number;
@@ -261,15 +303,16 @@ export function openSampleStream(
 }
 
 /**
- * Stream dataset-load progress (`POST /api/dataset/load`). Because the response is `text/event-stream`
- * over a POST body, the native `EventSource` (GET-only) cannot be used; we read the response body via
- * a `ReadableStream` reader and parse `data:` lines by hand. `onMsg` is called once per `data:` frame.
+ * Shared consumer for SSE-over-POST endpoints. Because the response is `text/event-stream` over a POST
+ * body, the native `EventSource` (GET-only) cannot be used; we read the response body via a
+ * `ReadableStream` reader and parse `data:` lines by hand. `onMsg` is called once per `data:` frame.
  *
  * Returns a handle: `close()` aborts the in-flight request. The returned promise resolves when the
  * stream ends, or rejects on a transport error (it does NOT reject on `close()` — that resolves).
  */
-export function openLoadStream(
-  body: LoadDatasetBody,
+export function openPostSSE(
+  path: string,
+  body: unknown,
   onMsg: (data: string) => void,
 ): StreamHandle & { done: Promise<void> } {
   const ctrl = new AbortController();
@@ -277,7 +320,7 @@ export function openLoadStream(
   const done = (async () => {
     let res: Response;
     try {
-      res = await fetch("/api/dataset/load", {
+      res = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
         body: JSON.stringify(body),
@@ -287,8 +330,8 @@ export function openLoadStream(
       if (ctrl.signal.aborted) return;
       throw err;
     }
-    if (!res.ok) throw new Error(`POST /api/dataset/load failed: ${res.status} ${res.statusText}`);
-    if (!res.body) throw new Error("POST /api/dataset/load: response has no body to stream");
+    if (!res.ok) throw new Error(`POST ${path} failed: ${res.status} ${res.statusText}`);
+    if (!res.body) throw new Error(`POST ${path}: response has no body to stream`);
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -330,4 +373,42 @@ export function openLoadStream(
   })();
 
   return { close: () => ctrl.abort(), done };
+}
+
+/** Stream dataset-load progress (`POST /api/dataset/load`); one `onMsg` per `data:` frame. */
+export function openLoadStream(
+  body: LoadDatasetBody,
+  onMsg: (data: string) => void,
+): StreamHandle & { done: Promise<void> } {
+  return openPostSSE("/api/dataset/load", body, onMsg);
+}
+
+/**
+ * Stream collection-seeding progress (`POST /api/collections/seed`). Frames are JSON: progress
+ * `{"done":d,"total":t}`, optional `{"error":"…"}`, then the stream ends.
+ */
+export function seedCollections(
+  body: SeedCollectionsBody,
+  onMsg: (data: string) => void,
+): StreamHandle & { done: Promise<void> } {
+  return openPostSSE("/api/collections/seed", body, onMsg);
+}
+
+/**
+ * Stream a scaling sweep (`POST /api/collections/sweep`). Frames are textual progress lines, then a
+ * FINAL JSON frame `{"points":[{n,wallMs,setsPerSec}, …]}`, then the stream ends.
+ */
+export function sweepCollections(
+  body: SweepCollectionsBody,
+  onMsg: (data: string) => void,
+): StreamHandle & { done: Promise<void> } {
+  return openPostSSE("/api/collections/sweep", body, onMsg);
+}
+
+/**
+ * `POST /api/collections/bulk-remove` — one blocking call that removes `member` from EVERY set in the
+ * namespace. Returns plain JSON (no progress; the caller shows a spinner for the duration).
+ */
+export function bulkRemove(body: BulkRemoveBody): Promise<BulkRemoveResult> {
+  return postJSON<BulkRemoveResult>("/api/collections/bulk-remove", body);
 }

@@ -14,6 +14,7 @@ import { Target } from "./Target";
 import { Workloads, type WorkloadConfig } from "./Workloads";
 import { RunControls, type RunPhase } from "./RunControls";
 import { Charts, type ChartsHandle } from "./Charts";
+import { BulkRemove } from "./BulkRemove";
 import { Profiling } from "./Profiling";
 import {
   createRun,
@@ -246,6 +247,8 @@ export function BenchApp() {
             </EmptyState>
           )}
         </Panel>
+
+        <BulkRemove dataAddr={dataAddr} />
 
         {profilingCapable && (
           <Profiling runId={runId} profilingCapable={profilingCapable} nodes={probedNodes} />
