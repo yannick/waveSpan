@@ -20,6 +20,9 @@ type RaftShard interface {
 	// Read answers a query: linearizable routes a read-index through the leader; otherwise a
 	// bounded-stale local read (design/30 §5.4).
 	Read(ctx context.Context, shardID uint64, query interface{}, linearizable bool) (interface{}, error)
+	// IsLeader reports whether this node is (believed to be) the shard's leader — the write fast path;
+	// false routes the write to a peer (design/30 §13.13).
+	IsLeader(shardID uint64) bool
 	// Stop releases the engine (not the shared store).
 	Stop()
 }

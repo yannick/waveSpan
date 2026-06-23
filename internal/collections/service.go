@@ -211,6 +211,18 @@ func (s *Service) ZRange(ctx context.Context, req *connect.Request[wavespanv1.Ra
 	return connect.NewResponse(&wavespanv1.ScoredMembersResult{Meta: s.meta(), Members: members}), nil
 }
 
+// ProposeForward applies a write forwarded by a peer that was not the shard's leader (node-side leader
+// routing, design/30 §13.13). It commits locally only — if this node also isn't the leader, the error
+// propagates and the forwarder tries the next peer.
+func (s *Service) ProposeForward(ctx context.Context, req *connect.Request[wavespanv1.ProposeForwardRequest]) (*connect.Response[wavespanv1.CountResult], error) {
+	m := req.Msg
+	n, err := s.cols.ProposeRaw(ctx, []byte(m.GetNamespace()), m.GetCollection(), m.GetCommand())
+	if err != nil {
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(&wavespanv1.CountResult{Meta: s.meta(), Count: n}), nil
+}
+
 // AdmitLearner admits a peer as a non-voting learner of a shard this node hosts (demand-fill server).
 func (s *Service) AdmitLearner(ctx context.Context, req *connect.Request[wavespanv1.AdmitLearnerRequest]) (*connect.Response[wavespanv1.AdmitLearnerResponse], error) {
 	if s.admit == nil {

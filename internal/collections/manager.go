@@ -144,6 +144,18 @@ func (m *Manager) LeaderID(shardID uint64) (uint64, bool) {
 	return id, true
 }
 
+// IsLeader reports whether this node is the shard's current leader.
+func (m *Manager) IsLeader(shardID uint64) bool {
+	lead, ok := m.LeaderID(shardID)
+	if !ok {
+		return false
+	}
+	m.mu.Lock()
+	reg, hosted := m.shards[shardID]
+	m.mu.Unlock()
+	return hosted && reg.replicaID == lead
+}
+
 // Stop halts the sweeper then closes the NodeHost (does not close the shared store).
 func (m *Manager) Stop() {
 	close(m.stopCh)

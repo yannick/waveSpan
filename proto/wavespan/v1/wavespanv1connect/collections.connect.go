@@ -71,6 +71,9 @@ const (
 	// CollectionServiceAdmitLearnerProcedure is the fully-qualified name of the CollectionService's
 	// AdmitLearner RPC.
 	CollectionServiceAdmitLearnerProcedure = "/wavespan.v1.CollectionService/AdmitLearner"
+	// CollectionServiceProposeForwardProcedure is the fully-qualified name of the CollectionService's
+	// ProposeForward RPC.
+	CollectionServiceProposeForwardProcedure = "/wavespan.v1.CollectionService/ProposeForward"
 )
 
 // CollectionServiceClient is a client for the wavespan.v1.CollectionService service.
@@ -97,6 +100,11 @@ type CollectionServiceClient interface {
 	// non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
 	// not host a collection's shard calls this on a peer that does, then starts its local learner.
 	AdmitLearner(context.Context, *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error)
+	// ProposeForward is the node-side leader-routing hop (design/30 §13.13): a node that is not the
+	// owning shard's leader forwards the (already-encoded) write to a peer until the leader accepts, so
+	// the client can stay oblivious and call any node. The receiving node applies it locally only (never
+	// re-forwards), so there are no loops. Internal — not a client surface.
+	ProposeForward(context.Context, *connect.Request[v1.ProposeForwardRequest]) (*connect.Response[v1.CountResult], error)
 }
 
 // NewCollectionServiceClient constructs a client for the wavespan.v1.CollectionService service. By
@@ -206,27 +214,34 @@ func NewCollectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(collectionServiceMethods.ByName("AdmitLearner")),
 			connect.WithClientOptions(opts...),
 		),
+		proposeForward: connect.NewClient[v1.ProposeForwardRequest, v1.CountResult](
+			httpClient,
+			baseURL+CollectionServiceProposeForwardProcedure,
+			connect.WithSchema(collectionServiceMethods.ByName("ProposeForward")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // collectionServiceClient implements CollectionServiceClient.
 type collectionServiceClient struct {
-	sAdd         *connect.Client[v1.SAddRequest, v1.CountResult]
-	sRem         *connect.Client[v1.KeysRequest, v1.CountResult]
-	sIsMember    *connect.Client[v1.MemberRequest, v1.BoolResult]
-	sCard        *connect.Client[v1.CardRequest, v1.CountResult]
-	sMembers     *connect.Client[v1.RangeRequest, v1.MembersResult]
-	hSet         *connect.Client[v1.HSetRequest, v1.CountResult]
-	hDel         *connect.Client[v1.KeysRequest, v1.CountResult]
-	hGet         *connect.Client[v1.MemberRequest, v1.ValueResult]
-	hLen         *connect.Client[v1.CardRequest, v1.CountResult]
-	hGetAll      *connect.Client[v1.RangeRequest, v1.FieldsResult]
-	zAdd         *connect.Client[v1.ZAddRequest, v1.CountResult]
-	zRem         *connect.Client[v1.KeysRequest, v1.CountResult]
-	zScore       *connect.Client[v1.MemberRequest, v1.ScoreResult]
-	zCard        *connect.Client[v1.CardRequest, v1.CountResult]
-	zRange       *connect.Client[v1.RangeRequest, v1.ScoredMembersResult]
-	admitLearner *connect.Client[v1.AdmitLearnerRequest, v1.AdmitLearnerResponse]
+	sAdd           *connect.Client[v1.SAddRequest, v1.CountResult]
+	sRem           *connect.Client[v1.KeysRequest, v1.CountResult]
+	sIsMember      *connect.Client[v1.MemberRequest, v1.BoolResult]
+	sCard          *connect.Client[v1.CardRequest, v1.CountResult]
+	sMembers       *connect.Client[v1.RangeRequest, v1.MembersResult]
+	hSet           *connect.Client[v1.HSetRequest, v1.CountResult]
+	hDel           *connect.Client[v1.KeysRequest, v1.CountResult]
+	hGet           *connect.Client[v1.MemberRequest, v1.ValueResult]
+	hLen           *connect.Client[v1.CardRequest, v1.CountResult]
+	hGetAll        *connect.Client[v1.RangeRequest, v1.FieldsResult]
+	zAdd           *connect.Client[v1.ZAddRequest, v1.CountResult]
+	zRem           *connect.Client[v1.KeysRequest, v1.CountResult]
+	zScore         *connect.Client[v1.MemberRequest, v1.ScoreResult]
+	zCard          *connect.Client[v1.CardRequest, v1.CountResult]
+	zRange         *connect.Client[v1.RangeRequest, v1.ScoredMembersResult]
+	admitLearner   *connect.Client[v1.AdmitLearnerRequest, v1.AdmitLearnerResponse]
+	proposeForward *connect.Client[v1.ProposeForwardRequest, v1.CountResult]
 }
 
 // SAdd calls wavespan.v1.CollectionService.SAdd.
@@ -309,6 +324,11 @@ func (c *collectionServiceClient) AdmitLearner(ctx context.Context, req *connect
 	return c.admitLearner.CallUnary(ctx, req)
 }
 
+// ProposeForward calls wavespan.v1.CollectionService.ProposeForward.
+func (c *collectionServiceClient) ProposeForward(ctx context.Context, req *connect.Request[v1.ProposeForwardRequest]) (*connect.Response[v1.CountResult], error) {
+	return c.proposeForward.CallUnary(ctx, req)
+}
+
 // CollectionServiceHandler is an implementation of the wavespan.v1.CollectionService service.
 type CollectionServiceHandler interface {
 	// Set
@@ -333,6 +353,11 @@ type CollectionServiceHandler interface {
 	// non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
 	// not host a collection's shard calls this on a peer that does, then starts its local learner.
 	AdmitLearner(context.Context, *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error)
+	// ProposeForward is the node-side leader-routing hop (design/30 §13.13): a node that is not the
+	// owning shard's leader forwards the (already-encoded) write to a peer until the leader accepts, so
+	// the client can stay oblivious and call any node. The receiving node applies it locally only (never
+	// re-forwards), so there are no loops. Internal — not a client surface.
+	ProposeForward(context.Context, *connect.Request[v1.ProposeForwardRequest]) (*connect.Response[v1.CountResult], error)
 }
 
 // NewCollectionServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -438,6 +463,12 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 		connect.WithSchema(collectionServiceMethods.ByName("AdmitLearner")),
 		connect.WithHandlerOptions(opts...),
 	)
+	collectionServiceProposeForwardHandler := connect.NewUnaryHandler(
+		CollectionServiceProposeForwardProcedure,
+		svc.ProposeForward,
+		connect.WithSchema(collectionServiceMethods.ByName("ProposeForward")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.CollectionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CollectionServiceSAddProcedure:
@@ -472,6 +503,8 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 			collectionServiceZRangeHandler.ServeHTTP(w, r)
 		case CollectionServiceAdmitLearnerProcedure:
 			collectionServiceAdmitLearnerHandler.ServeHTTP(w, r)
+		case CollectionServiceProposeForwardProcedure:
+			collectionServiceProposeForwardHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -543,4 +576,8 @@ func (UnimplementedCollectionServiceHandler) ZRange(context.Context, *connect.Re
 
 func (UnimplementedCollectionServiceHandler) AdmitLearner(context.Context, *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.AdmitLearner is not implemented"))
+}
+
+func (UnimplementedCollectionServiceHandler) ProposeForward(context.Context, *connect.Request[v1.ProposeForwardRequest]) (*connect.Response[v1.CountResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.ProposeForward is not implemented"))
 }

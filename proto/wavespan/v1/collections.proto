@@ -35,6 +35,18 @@ service CollectionService {
   // non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
   // not host a collection's shard calls this on a peer that does, then starts its local learner.
   rpc AdmitLearner(AdmitLearnerRequest) returns (AdmitLearnerResponse);
+
+  // ProposeForward is the node-side leader-routing hop (design/30 §13.13): a node that is not the
+  // owning shard's leader forwards the (already-encoded) write to a peer until the leader accepts, so
+  // the client can stay oblivious and call any node. The receiving node applies it locally only (never
+  // re-forwards), so there are no loops. Internal — not a client surface.
+  rpc ProposeForward(ProposeForwardRequest) returns (CountResult);
+}
+
+message ProposeForwardRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  bytes command = 3; // the engine-encoded write command (opaque on the wire)
 }
 
 message AdmitLearnerRequest {
@@ -67,6 +79,8 @@ message SAddRequest {
   repeated bytes members = 3;
   // ttl_ms, when set, makes each added member expire after the given duration (log-driven, design/30 §10).
   optional int64 ttl_ms = 4;
+  // idempotency_key dedupes a retried write so it applies exactly once (design/30 §13.12).
+  optional string idempotency_key = 5;
 }
 
 // KeysRequest removes members/fields (SRem, HDel, ZRem).
@@ -74,6 +88,7 @@ message KeysRequest {
   string namespace = 1;
   bytes collection = 2;
   repeated bytes keys = 3;
+  optional string idempotency_key = 4;
 }
 
 // MemberRequest reads a single member/field (SIsMember, HGet, ZScore).
@@ -103,12 +118,14 @@ message HSetRequest {
   string namespace = 1;
   bytes collection = 2;
   repeated FieldValue fields = 3;
+  optional string idempotency_key = 4;
 }
 
 message ZAddRequest {
   string namespace = 1;
   bytes collection = 2;
   repeated ScoredMember members = 3;
+  optional string idempotency_key = 4;
 }
 
 // --- responses ---

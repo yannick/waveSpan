@@ -89,14 +89,16 @@ type command struct {
 	Op    opKind
 	NS    []byte
 	Coll  []byte
+	Idem  []byte // optional idempotency key (design/30 §13.12); empty = no dedup
 	Items []item
 }
 
 func encodeCommand(c command) []byte {
-	buf := make([]byte, 0, 1+8+len(c.NS)+len(c.Coll))
+	buf := make([]byte, 0, 1+12+len(c.NS)+len(c.Coll))
 	buf = append(buf, byte(c.Op))
 	buf = appendChunk(buf, c.NS)
 	buf = appendChunk(buf, c.Coll)
+	buf = appendChunk(buf, c.Idem)
 	var cnt [4]byte
 	binary.BigEndian.PutUint32(cnt[:], uint32(len(c.Items)))
 	buf = append(buf, cnt[:]...)
@@ -125,6 +127,9 @@ func decodeCommand(b []byte) (command, error) {
 		return command{}, err
 	}
 	if c.Coll, rest, err = takeChunk(rest); err != nil {
+		return command{}, err
+	}
+	if c.Idem, rest, err = takeChunk(rest); err != nil {
 		return command{}, err
 	}
 	if len(rest) < 4 {

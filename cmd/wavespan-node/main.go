@@ -564,7 +564,9 @@ func run() error {
 			spotRID := collections.SpotReplicaID(cfg.MemberID)
 			admitter := collections.NewRPCAdmitter(httpClient, peersFn)
 			dir := collections.NewRangeDirectory(mgr, collections.MetaShardID)
-			cols := collections.New(mgr, dir).WithDemandFill(collections.NewDemandFiller(mgr, spotRID, raftAddr, admitter))
+			cols := collections.New(mgr, dir).
+				WithDemandFill(collections.NewDemandFiller(mgr, spotRID, raftAddr, admitter)).
+				WithForwarder(collections.NewRPCForwarder(httpClient, peersFn)) // spot nodes never lead; forward all writes
 			collectionsSvc = collections.NewService(cols, self)
 			dataMux.Handle(collectionsSvc.Handler())
 			cypherSvc.WithCollections(collections.NewCypherCollections(cols))
@@ -590,6 +592,7 @@ func run() error {
 				// asking peers over RPC to admit us as a learner.
 				admitter := collections.NewRPCAdmitter(httpClient, peersFn)
 				cols.WithDemandFill(collections.NewDemandFiller(mgr, selfReplicaID, raftAddr, admitter))
+				cols.WithForwarder(collections.NewRPCForwarder(httpClient, peersFn)) // forward writes when not this shard's leader
 				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr)
 				dataMux.Handle(collectionsSvc.Handler())
 				cypherSvc.WithCollections(collections.NewCypherCollections(cols)) // set.*/hash.*/zset.* built-ins
