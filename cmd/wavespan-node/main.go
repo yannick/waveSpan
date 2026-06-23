@@ -78,6 +78,16 @@ func run() error {
 	metrics := observability.NewMetrics()
 	ready := observability.NewReadiness()
 
+	// Throughput observability (QPS/reads/writes via a Connect interceptor on every service; wire
+	// bandwidth + accepted connections via a listener wrapper). Installed before any handler/listener
+	// is built so they all carry the instrumentation.
+	rpcopts.InstallMetrics(metrics.Registry)
+	netMetrics := observability.NewNetMetrics(metrics.Registry)
+	committedTxns := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "wavespan_transactions_total", Help: "Durable record commits applied (origin + replica + anti-entropy + bootstrap + cross-cluster).",
+	})
+	metrics.Registry.MustRegister(committedTxns)
+
 	// Local storage + durable storage identity (M1).
 	if err := os.MkdirAll(cfg.Storage.Path, 0o755); err != nil {
 		return fmt.Errorf("create storage dir: %w", err)
@@ -319,6 +329,7 @@ func run() error {
 	// bootstrap, cross-cluster) so a vector written anywhere becomes searchable on each holder. Only
 	// the LWW winner is applied; an older/losing write is ignored.
 	rstore.SetApplyObserver(func(rec *wavespanv1.StoredRecord, won bool) {
+		committedTxns.Inc() // every durable commit (all write paths) — the TPS counter
 		if !won || !vector.IsMutationNamespace(rec.GetNamespace()) {
 			return
 		}
@@ -563,22 +574,36 @@ func run() error {
 	adminMux.Handle("/", adminIdentity.EnforceHTTP(ui.NewServer().Handler())) // SPA at root (health/metrics take precedence)
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: adminTLS, ConnState: connStateGauge(openConns.WithLabelValues("admin"))}
 
+	// Byte/connection-counting listeners (bandwidth + new connections per listener).
+	gossipLn, err := netMetrics.Listen(gossipSrv.Addr, "gossip")
+	if err != nil {
+		return fmt.Errorf("gossip listen: %w", err)
+	}
+	dataLn, err := netMetrics.Listen(dataSrv.Addr, "data")
+	if err != nil {
+		return fmt.Errorf("data listen: %w", err)
+	}
+	adminLn, err := netMetrics.Listen(adminSrv.Addr, "admin")
+	if err != nil {
+		return fmt.Errorf("admin listen: %w", err)
+	}
+
 	errCh := make(chan error, 3)
 	go func() {
 		logger.Info("gossip server listening", "addr", gossipSrv.Addr, "tls", gossipSrv.TLSConfig != nil)
-		if err := serve(gossipSrv); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := serve(gossipSrv, gossipLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("gossip server: %w", err)
 		}
 	}()
 	go func() {
 		logger.Info("data server listening", "addr", dataSrv.Addr, "tls", dataSrv.TLSConfig != nil)
-		if err := serve(dataSrv); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := serve(dataSrv, dataLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("data server: %w", err)
 		}
 	}()
 	go func() {
 		logger.Info("admin server listening", "addr", adminSrv.Addr, "tls", adminSrv.TLSConfig != nil)
-		if err := serve(adminSrv); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := serve(adminSrv, adminLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("admin server: %w", err)
 		}
 	}()
@@ -667,13 +692,14 @@ func connStateGauge(g prometheus.Gauge) func(net.Conn, http.ConnState) {
 	}
 }
 
-// serve runs an HTTP server over mTLS when a TLSConfig is present (certs are embedded in it, so the
-// empty ListenAndServeTLS args are correct), and plaintext otherwise (insecureDevMode).
-func serve(srv *http.Server) error {
+// serve runs an HTTP server over the given (byte/connection-counting) listener — mTLS when a
+// TLSConfig is present (certs are embedded in it, so the empty ServeTLS args are correct), plaintext
+// otherwise (insecureDevMode).
+func serve(srv *http.Server, ln net.Listener) error {
 	if srv.TLSConfig != nil {
-		return srv.ListenAndServeTLS("", "")
+		return srv.ServeTLS(ln, "", "")
 	}
-	return srv.ListenAndServe()
+	return srv.Serve(ln)
 }
 
 // transportTuning resolves the connection-pool tuning: start from the cheap-mTLS defaults and apply

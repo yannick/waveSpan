@@ -9,12 +9,43 @@ const REFRESH_MS = 2000;
 // Subsystem grouping: WaveSpan-specific metrics lead; Go/process runtime trails. Order here is the
 // render order; the first matching prefix wins, and anything unmatched falls into "Other".
 const GROUPS: { name: string; blurb: string; prefixes: string[] }[] = [
+  { name: "Throughput", blurb: "RPC, transaction, bandwidth and connection counters (per-second rates shown above).", prefixes: ["wavespan_rpc_", "wavespan_transactions_", "wavespan_network_", "wavespan_connections_", "wavespan_vector_search_scattered"] },
   { name: "KV store", blurb: "Replication health and the TTL sweeper.", prefixes: ["kv_"] },
+  { name: "Vector", blurb: "Per-collection vector load, buckets, and quantizer version.", prefixes: ["wavespan_vector_"] },
   { name: "Global replication", blurb: "Cross-cluster active-active shipping, lag, and conflicts.", prefixes: ["global_repl_"] },
   { name: "Transport", blurb: "TLS handshakes and open connections per listener.", prefixes: ["tls_", "node_"] },
   { name: "Runtime", blurb: "Go runtime and process counters.", prefixes: ["go_", "process_"] },
 ];
 const OTHER = "Other";
+
+type Labels = Record<string, string>;
+
+/** Sum a counter family's samples (optionally filtered by label), or 0 when absent. */
+function sumFamily(families: MetricFamily[], name: string, filter?: (l: Labels) => boolean): number {
+  const f = families.find((fam) => fam.name === name);
+  if (!f) return 0;
+  return f.samples.reduce((s, sm) => (!filter || filter(sm.labels) ? s + sm.value : s), 0);
+}
+
+/** Per-second rate from a monotonic counter delta, formatted with 1 decimal. */
+function fmtRate(perSec: number | undefined): string {
+  if (perSec === undefined) return "…";
+  if (perSec >= 1000) return `${(perSec / 1000).toFixed(1)}k`;
+  return perSec >= 100 || perSec === 0 ? Math.round(perSec).toString() : perSec.toFixed(1);
+}
+
+/** Bytes/sec to a human-readable bandwidth string. */
+function fmtBandwidth(bytesPerSec: number | undefined): string {
+  if (bytesPerSec === undefined) return "…";
+  const u = ["B/s", "KB/s", "MB/s", "GB/s"];
+  let v = bytesPerSec;
+  let i = 0;
+  while (v >= 1024 && i < u.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
+}
 
 function groupFor(name: string): string {
   for (const g of GROUPS) {
@@ -52,6 +83,9 @@ export function MetricsSummary() {
   const [error, setError] = useState("");
   const [, forceTick] = useState(0); // re-render so the "updated …s ago" label keeps ticking
   const updatedRef = useRef<number | null>(null);
+  // Per-second rates are derived from monotonic counters by differencing successive scrapes.
+  const [rates, setRates] = useState<Record<string, number> | null>(null);
+  const prevRef = useRef<{ t: number; totals: Record<string, number> } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -70,8 +104,30 @@ export function MetricsSummary() {
           setMembers(view.members.length);
           setUnderReplicated(view.underReplicatedEstimate);
         }
-        setFamilies(parsePrometheus(metricsText).filter((f) => f.samples.length > 0));
-        updatedRef.current = Date.now();
+        const fams = parsePrometheus(metricsText).filter((f) => f.samples.length > 0);
+        setFamilies(fams);
+
+        // Difference the throughput counters against the previous scrape to get per-second rates.
+        const now = Date.now();
+        const totals: Record<string, number> = {
+          reads: sumFamily(fams, "wavespan_rpc_requests_total", (l) => l.kind === "read"),
+          writes: sumFamily(fams, "wavespan_rpc_requests_total", (l) => l.kind === "write"),
+          qps: sumFamily(fams, "wavespan_rpc_requests_total", (l) => l.kind === "read" || l.kind === "write"),
+          txns: sumFamily(fams, "wavespan_transactions_total"),
+          bytes: sumFamily(fams, "wavespan_network_received_bytes_total") + sumFamily(fams, "wavespan_network_transmitted_bytes_total"),
+          conns: sumFamily(fams, "wavespan_connections_accepted_total"),
+        };
+        if (prevRef.current) {
+          const dt = (now - prevRef.current.t) / 1000;
+          if (dt > 0) {
+            const r: Record<string, number> = {};
+            for (const k of Object.keys(totals)) r[k] = Math.max(0, (totals[k] - (prevRef.current.totals[k] ?? 0)) / dt);
+            setRates(r);
+          }
+        }
+        prevRef.current = { t: now, totals };
+
+        updatedRef.current = now;
         setUpdatedAt(updatedRef.current);
         setError("");
       } catch (e) {
@@ -122,6 +178,17 @@ export function MetricsSummary() {
         </span>
       </div>
 
+      <h3 className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>Throughput</h3>
+      <div style={{ display: "flex", gap: "var(--ws-space-lg)", flexWrap: "wrap", marginBottom: "var(--ws-space-xl)" }}>
+        <StatCard label="QPS" value={fmtRate(rates?.qps)} hint="read + write RPCs / sec" accent={color.teal} />
+        <StatCard label="Reads/s" value={fmtRate(rates?.reads)} hint="Get · Scan · Search · Query" accent={color.blue} />
+        <StatCard label="Writes/s" value={fmtRate(rates?.writes)} hint="Put · Delete · Store" accent={color.orange} />
+        <StatCard label="TPS" value={fmtRate(rates?.txns)} hint="durable commits / sec" accent={color.olive} />
+        <StatCard label="Bandwidth" value={fmtBandwidth(rates?.bytes)} hint="rx + tx, all listeners" accent={color.mustard} />
+        <StatCard label="New conns/s" value={fmtRate(rates?.conns)} hint="accepted connections / sec" accent={color.purple} />
+      </div>
+
+      <h3 className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>Cluster</h3>
       <div style={{ display: "flex", gap: "var(--ws-space-lg)", flexWrap: "wrap", marginBottom: "var(--ws-space-xl)" }}>
         <StatCard
           label="Members"
