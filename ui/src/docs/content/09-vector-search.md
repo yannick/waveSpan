@@ -121,8 +121,13 @@ bucket id. Consequences:
 - Holders are **computable locally** from the ring (gossip-independent) — covering nodes that just
   joined and haven't advertised yet — *and* confirmed by the gossiped directory.
 - A membership change moves only **~1/N of buckets** (HRW), so rebalancing is cheap.
-- **Closest-replica routing:** when a bucket has several holders, the query goes to just the
-  lowest-latency one (by the latency graph) rather than all of them.
+- **Closest-replica routing:** the query hits just the lowest-latency *ring* member of each probed
+  bucket (a full replica), so it's a single hop per bucket instead of querying every replica.
+- **Background re-bucketing:** each node continuously migrates any vector it holds that's off its
+  current ring back onto the ring, then drops the local copy — reclaiming the off-ring origin copies
+  affinity placement leaves behind, and re-concentrating after an IVF retrain reassigns buckets. The
+  durable record is kept until the ring has acknowledged the move, so there's no data loss. (While a
+  bucket is mid-migration, routing also queries the partial holders, so results stay correct.)
 
 Putting it together, a search:
 
@@ -160,12 +165,17 @@ Operational notes:
   node (the worst case for the per-node HNSW's memory).
 - Per-node HNSW is in-memory; affinity placement bounds each node to its share of buckets.
 
+### Metrics
+Per-collection gauges on each node's `/metrics`:
+
+| Metric | Meaning |
+|--------|---------|
+| `wavespan_vector_local_vectors` | live vectors held locally |
+| `wavespan_vector_held_buckets` | distinct buckets held locally |
+| `wavespan_vector_bucket_skew` | local bucket-size skew (max/mean; `1.0` = balanced, higher = a hot bucket) |
+| `wavespan_vector_quantizer_version` | live quantizer version (rises when an IVF retrain installs) |
+| `wavespan_vector_search_scattered_nodes` | histogram of peer nodes a query scattered to (routing fan-out) |
+
 ---
-
-## Roadmap
-
-- **Background re-bucketing** — on a retrain, optionally migrate old vectors to their new-version ring
-  to re-concentrate buckets (correctness already holds without it).
-- **Per-bucket load metrics** to surface and mitigate hot-bucket skew.
 
 See design docs 08 (vector engine) and 29 (vector KV search) for the full specification.
