@@ -17,10 +17,16 @@ local-node writes and tunable durability. Use the KV cache for high-volume local
 collections when many nodes must agree on the same set/map/leaderboard. The two tiers share the same
 `wavesdb` store but never touch each other's hot paths. The full design is in `design/30`.
 
-> **Enabling it.** The tier is opt-in: start the node with `WAVESPAN_COLLECTIONS_ENABLED=1`. Until it
-> is enabled, the RPC/Cypher/UI surfaces return *"collections backend not configured"*. It is
-> experimental (single-node bootstrap today; multi-node placement and a hardened transport are
-> in progress).
+> **Enabling it.** The tier is opt-in via environment variables:
+> - `WAVESPAN_COLLECTIONS_ENABLED=1` — turn the tier on (otherwise the RPC/Cypher/UI surfaces return
+>   *"collections backend not configured"*).
+> - `WAVESPAN_COLLECTIONS_RAFT_ADDR` — this node's Raft transport address (default: data port + 1000).
+>   Raft traffic rides the cluster's mTLS.
+> - `WAVESPAN_COLLECTIONS_VOTERS` — comma-separated Raft addresses of the **stable core** (voters);
+>   `replicaID = index + 1`. Each listed node bootstraps the meta + data shards with this voter set.
+>   Empty ⇒ single-node. A node **not** in the list is a **spot node**: it holds no shards, joins the
+>   meta shard as a learner in the background to obtain the directory, then serves collections by
+>   demand-filling each one's data shard on first read.
 
 ## Data model
 
