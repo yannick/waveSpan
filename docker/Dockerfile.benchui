@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+# Standalone wavespan-benchui (benchmarking web UI). Multi-stage: ① build the React SPA, ② cross-
+# compile the Go server (CGO-free) embedding that SPA, ③ FROM scratch. Build context is the PARENT
+# of waveSpan/ so the sibling `wavesdb` module (referenced via `replace wavesdb => ../wavesdb`) is
+# present — same as docker/Dockerfile.
+#
+# Node WORKDIR is /waveSpan/ui so build:bench's outDir "../internal/benchui/dist" resolves to
+# /waveSpan/internal/benchui/dist (matching the COPY --from=ui below).
+FROM --platform=$BUILDPLATFORM node:20 AS ui
+WORKDIR /waveSpan/ui
+COPY waveSpan/ui/package.json waveSpan/ui/package-lock.json ./
+RUN npm ci
+COPY waveSpan/ui/ ./
+RUN npm run build:bench
+
+FROM --platform=$BUILDPLATFORM golang:1.26 AS build
+ARG TARGETOS
+ARG TARGETARCH
+WORKDIR /src
+COPY wavesdb/ ./wavesdb/
+COPY waveSpan/ ./waveSpan/
+# Overlay the built SPA BEFORE go build so //go:embed all:dist sees real assets (not just .gitkeep).
+COPY --from=ui /waveSpan/internal/benchui/dist/ ./waveSpan/internal/benchui/dist/
+WORKDIR /src/waveSpan
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /out/wavespan-benchui ./cmd/wavespan-benchui
+
+FROM scratch
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /out/wavespan-benchui /wavespan-benchui
+EXPOSE 8088
+ENTRYPOINT ["/wavespan-benchui"]
+CMD ["--addr", "0.0.0.0:8088"]

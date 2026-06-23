@@ -150,6 +150,63 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  benchui-image:
+    # Validate the bench WebUI container build on every PR; build AND push to GHCR on pushes to main.
+    runs-on: ubuntu-latest
+    needs: build-test
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/wavespan-benchui
+    steps:
+      - name: Checkout wavespan
+        uses: actions/checkout@v4
+        with:
+          path: waveSpan
+
+      - name: Checkout wavesdb (sibling module)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WAVESDB_REPO }}
+          token: ${{ secrets.WAVESDB_TOKEN }}
+          path: wavesdb
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        # Skip on pull requests: forked PRs cannot access packages:write, and we don't push from PRs.
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build (and push on main) the wavespan-benchui image, multi-arch
+        # Context is the workspace root holding the waveSpan/ and wavesdb/ siblings the
+        # Dockerfile COPYs; the build stage cross-compiles from $BUILDPLATFORM (CGO-free).
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: waveSpan/docker/Dockerfile.benchui
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   binaries:
     # Cross-compile all cmd/* binaries (linux/darwin/windows) and upload them as downloadable
     # workflow artifacts. Retained per the repo's Actions artifact-retention setting.
@@ -179,11 +236,12 @@ jobs:
           cache: npm
           cache-dependency-path: waveSpan/ui/package-lock.json
 
-      # cmd/wavespan-node embeds the SPA, so build the real UI before compiling. Uses the committed
-      # ui/src/gen client (no proto regen needed here).
+      # cmd/wavespan-node embeds the node console SPA (internal/ui/dist) and cmd/wavespan-benchui
+      # embeds the bench SPA (internal/benchui/dist), so build both real UIs before compiling. Uses
+      # the committed ui/src/gen client (no proto regen needed here).
       - name: Build UI (embedded SPA)
         working-directory: waveSpan/ui
-        run: npm ci && npm run build
+        run: npm ci && npm run build && npm run build:bench
 
       - name: Cross-compile all binaries
         working-directory: waveSpan

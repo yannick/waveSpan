@@ -2,6 +2,8 @@ package profile
 
 import (
 	"bytes"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/pprof/profile"
@@ -67,5 +69,26 @@ func TestBuildReportAggregatesNodes(t *testing.T) {
 	}
 	if len(rep.Sections[0].Notes) == 0 {
 		t.Fatal("expected interpretation notes")
+	}
+}
+
+// TestReportJSONIsCamelCase guards the API contract: the report serializes with camelCase keys so the
+// frontend sees a consistent shape across every benchui response.
+func TestReportJSONIsCamelCase(t *testing.T) {
+	rep := BuildReport("kv test", []string{"node1"}, 10, map[string][]byte{"node1": buildCPU(t)}, nil)
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal report: %v", err)
+	}
+	js := string(b)
+	for _, key := range []string{`"bench"`, `"cpuSeconds"`, `"sections"`, `"fwShare"`, `"function"`, `"cum"`} {
+		if !strings.Contains(js, key) {
+			t.Fatalf("expected camelCase key %s in report JSON, got: %s", key, js)
+		}
+	}
+	for _, key := range []string{`"Bench"`, `"CPUSeconds"`, `"Sections"`, `"FwShare"`} {
+		if strings.Contains(js, key) {
+			t.Fatalf("unexpected PascalCase key %s in report JSON", key)
+		}
 	}
 }

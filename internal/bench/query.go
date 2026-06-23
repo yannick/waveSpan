@@ -9,8 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"connectrpc.com/connect"
-	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // NamedQuery is a query file's name + body.
@@ -48,7 +47,7 @@ func LoadQueries(dir string) ([]NamedQuery, error) {
 
 // RunQueries replays each query under concurrency for dur, returning per-query latencies.
 func RunQueries(addr, graph string, queries []NamedQuery, conc int, dur time.Duration) []QueryResult {
-	cy := cypherClient(addr)
+	cy := CypherClient(addr)
 	out := make([]QueryResult, 0, len(queries))
 	for _, q := range queries {
 		out = append(out, QueryResult{Name: q.Name, Lat: runOneQuery(cy, graph, q, conc, dur)})
@@ -56,9 +55,7 @@ func RunQueries(addr, graph string, queries []NamedQuery, conc int, dur time.Dur
 	return out
 }
 
-func runOneQuery(cy interface {
-	Query(context.Context, *connect.Request[wavespanv1.CypherRequest]) (*connect.ServerStreamForClient[wavespanv1.CypherResult], error)
-}, graph string, q NamedQuery, conc int, dur time.Duration) *Latencies {
+func runOneQuery(cy wavespanv1connect.CypherClient, graph string, q NamedQuery, conc int, dur time.Duration) *Latencies {
 	lat := &Latencies{}
 	ctx, cancel := context.WithTimeout(context.Background(), dur)
 	defer cancel()
@@ -69,16 +66,7 @@ func runOneQuery(cy interface {
 			defer wg.Done()
 			for ctx.Err() == nil {
 				start := time.Now()
-				stream, err := cy.Query(ctx, connect.NewRequest(&wavespanv1.CypherRequest{GraphId: graph, Query: q.Body}))
-				if err != nil {
-					if ctx.Err() == nil {
-						lat.AddErr()
-					}
-					continue
-				}
-				for stream.Receive() { //nolint:revive // drain rows
-				}
-				if stream.Err() != nil {
+				if err := OpCypher(ctx, cy, graph, q.Body); err != nil {
 					if ctx.Err() == nil {
 						lat.AddErr()
 					}

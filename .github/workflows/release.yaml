@@ -97,6 +97,61 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  benchui-images:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/wavespan-benchui
+    steps:
+      - name: Checkout wavespan (at the release tag)
+        uses: actions/checkout@v4
+        with:
+          path: waveSpan
+
+      - name: Checkout wavesdb at the same version tag
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WAVESDB_REPO }}
+          ref: ${{ github.ref_name }}
+          token: ${{ secrets.WAVESDB_TOKEN }}
+          path: wavesdb
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (semver tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          # v0.0.1 -> tags 0.0.1, 0.0, and latest
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build + push the multi-arch release image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: waveSpan/docker/Dockerfile.benchui
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   binaries:
     # Cross-compile all cmd/* binaries and attach them to the GitHub Release for this tag, so they
     # are downloadable from the Releases page.
@@ -131,7 +186,7 @@ jobs:
 
       - name: Build UI (embedded SPA)
         working-directory: waveSpan/ui
-        run: npm ci && npm run build
+        run: npm ci && npm run build && npm run build:bench
 
       - name: Cross-compile all binaries
         working-directory: waveSpan

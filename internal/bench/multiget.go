@@ -7,9 +7,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"connectrpc.com/connect"
-	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // MultiGetOptions configures the batched-read load test.
@@ -28,7 +25,7 @@ type MultiGetResult struct {
 
 // RunMultiGet hammers MultiGet, each RPC fetching Batch random keys; the headline number is keys/s.
 func RunMultiGet(addr string, opt MultiGetOptions) *MultiGetResult {
-	client := kvClient(addr)
+	client := KVClient(addr)
 	res := &MultiGetResult{Lat: &Latencies{}}
 	var keys atomic.Int64
 	ctx, cancel := context.WithTimeout(context.Background(), opt.Duration)
@@ -46,7 +43,7 @@ func RunMultiGet(addr string, opt MultiGetOptions) *MultiGetResult {
 					batch[i] = []byte(fmt.Sprintf("bench/%d", rng.Intn(opt.Keys)))
 				}
 				start := time.Now()
-				_, err := client.MultiGet(ctx, connect.NewRequest(&wavespanv1.MultiGetRequest{Namespace: "default", Keys: batch}))
+				err := OpMultiGet(ctx, client, "default", batch)
 				switch {
 				case err == nil:
 					res.Lat.Add(time.Since(start))
