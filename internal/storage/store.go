@@ -26,6 +26,8 @@ const (
 	CFReplLog
 	// CFCacheMeta holds dynamic cache subscriptions, watermarks, and leases.
 	CFCacheMeta
+	// CFReplData holds the applied state of replicated-collection Raft shards (design/30).
+	CFReplData
 )
 
 // StoreOp is a single write within an atomic Batch.

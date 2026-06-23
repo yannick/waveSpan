@@ -12,12 +12,13 @@ var cfNames = map[ColumnFamily]string{
 	CFVectorIndex: "vector_index",
 	CFReplLog:     "repl_log",
 	CFCacheMeta:   "cache_meta",
+	CFReplData:    "repl_data",
 }
 
 // allColumnFamilies is the set ensured present on open, in declaration order.
 var allColumnFamilies = []ColumnFamily{
 	CFSys, CFKVData, CFKVMeta, CFGraphData, CFGraphIndex,
-	CFVectorRaw, CFVectorIndex, CFReplLog, CFCacheMeta,
+	CFVectorRaw, CFVectorIndex, CFReplLog, CFCacheMeta, CFReplData,
 }
 
 // Name returns the wavesdb column-family name for a logical family.
