@@ -66,6 +66,13 @@ jobs:
         working-directory: waveSpan
         run: make proto-check
 
+      # Build the real SPA into internal/ui/dist: the committed .gitkeep lets go:embed compile,
+      # but internal/ui's server tests need a real index.html to serve. Runs after the proto gate
+      # so the generated TS client (ui/src/gen) exists.
+      - name: Build UI (embedded SPA)
+        working-directory: waveSpan/ui
+        run: npm run build
+
       - name: Lint
         # Official action: reliable pinned install (no flaky checksum), caching, respects
         # waveSpan/.golangci.yml (config version 2 → golangci-lint v2).
