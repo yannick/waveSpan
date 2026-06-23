@@ -527,6 +527,7 @@ func run() error {
 			} else {
 				collectionsMgr = mgr
 				dataMux.Handle(collections.NewService(ctrl.Collections(), self).Handler())
+				cypherSvc.WithCollections(collections.NewCypherCollections(ctrl.Collections())) // set.*/hash.*/zset.* built-ins
 				logger.Info("collections: replicated-collections tier enabled", "raftAddr", raftAddr)
 			}
 		}

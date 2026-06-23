@@ -47,6 +47,8 @@ type Executor struct {
 
 	// KV, when set, backs the kv.* built-ins. Nil ⇒ kv.* returns "backend not configured".
 	KV KVAccess
+	// Collections, when set, backs the set.*/hash.*/zset.* built-ins. Nil ⇒ "backend not configured".
+	Collections CollectionsAccess
 	// evalErr captures the first error raised inside expression evaluation (evalScalar cannot
 	// return an error); Execute aborts the query with it after the current operator.
 	evalErr error
@@ -80,6 +82,23 @@ type KVAccess interface {
 	Get(ctx context.Context, namespace string, key []byte) (value []byte, found bool, partial bool, err error)
 	Put(ctx context.Context, namespace string, key, value []byte, ttlMs *int64) (version string, err error)
 	Delete(ctx context.Context, namespace string, key []byte) (version string, err error)
+}
+
+// CollectionsAccess is the replicated-collections surface the cypher set.*/hash.*/zset.* built-ins
+// use (design/30). It is satisfied by internal/collections.CypherCollections, which routes through the
+// same Collections engine the CollectionService RPC API uses; reads are bounded-stale.
+type CollectionsAccess interface {
+	SAdd(ctx context.Context, ns string, coll, member []byte) (uint64, error)
+	SRem(ctx context.Context, ns string, coll, member []byte) (uint64, error)
+	SIsMember(ctx context.Context, ns string, coll, member []byte) (bool, error)
+	SCard(ctx context.Context, ns string, coll []byte) (uint64, error)
+	SMembers(ctx context.Context, ns string, coll []byte, limit int) ([][]byte, error)
+	HSet(ctx context.Context, ns string, coll, field, value []byte) (uint64, error)
+	HGet(ctx context.Context, ns string, coll, field []byte) (value []byte, found bool, err error)
+	HGetAll(ctx context.Context, ns string, coll []byte, limit int) (fields, values [][]byte, err error)
+	ZAdd(ctx context.Context, ns string, coll, member []byte, score float64) (uint64, error)
+	ZScore(ctx context.Context, ns string, coll, member []byte) (score float64, found bool, err error)
+	ZRange(ctx context.Context, ns string, coll []byte, limit int) (members [][]byte, scores []float64, err error)
 }
 
 // ScalarFunc is a CALL-free function usable inline in expressions, e.g. kv.get(ns, key).

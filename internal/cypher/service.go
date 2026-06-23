@@ -27,6 +27,7 @@ type Service struct {
 	vectorLive    func(name string) (*vector.LiveIndex, bool)
 	vectorScatter ScatterFunc
 	kv            planner.KVAccess
+	collections   planner.CollectionsAccess
 }
 
 // NewService wires the Cypher service. newVersion supplies an HLC version for graph mutations
@@ -58,6 +59,13 @@ func (s *Service) WithKV(kv planner.KVAccess) *Service {
 	return s
 }
 
+// WithCollections enables the set.*/hash.*/zset.* built-ins over the replicated-collections tier
+// (design/30), routing through the same engine the CollectionService RPC API exposes.
+func (s *Service) WithCollections(c planner.CollectionsAccess) *Service {
+	s.collections = c
+	return s
+}
+
 // Handler returns the mountable Connect handler for the data port.
 func (s *Service) Handler() (string, http.Handler) {
 	return wavespanv1connect.NewCypherHandler(s, rpcopts.Handler()...)
@@ -75,7 +83,7 @@ func (s *Service) Query(ctx context.Context, req *connect.Request[wavespanv1.Cyp
 		Params: req.Msg.GetParameters(), NewVersion: s.newVersion,
 		VectorStore: s.vectorStore, VectorIndex: s.vectorIndex, VectorLive: s.vectorLive,
 		Ctx: ctx, VectorScatter: s.vectorScatter,
-		KV: s.kv,
+		KV: s.kv, Collections: s.collections,
 	}
 	res, err := exec.Execute(ast)
 	if err != nil {
