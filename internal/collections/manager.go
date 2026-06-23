@@ -67,8 +67,10 @@ func shardConfig(shardID, replicaID uint64) config.Config {
 	}
 }
 
-func (m *Manager) startReplica(shardID, replicaID uint64, members map[uint64]string, join bool, factory sm.CreateOnDiskStateMachineFunc, isData bool) error {
-	if err := m.nh.StartOnDiskReplica(members, join, factory, shardConfig(shardID, replicaID)); err != nil {
+func (m *Manager) startReplica(shardID, replicaID uint64, members map[uint64]string, join bool, factory sm.CreateOnDiskStateMachineFunc, isData, nonVoting bool) error {
+	cfg := shardConfig(shardID, replicaID)
+	cfg.IsNonVoting = nonVoting
+	if err := m.nh.StartOnDiskReplica(members, join, factory, cfg); err != nil {
 		return err
 	}
 	m.mu.Lock()
@@ -80,13 +82,13 @@ func (m *Manager) startReplica(shardID, replicaID uint64, members map[uint64]str
 // StartShard starts (or restarts) a data shard (datatype state machine).
 func (m *Manager) StartShard(shardID, replicaID uint64, initialMembers map[uint64]string, join bool) error {
 	factory := func(sid, _ uint64) sm.IOnDiskStateMachine { return newShardSM(m.store, sid) }
-	return m.startReplica(shardID, replicaID, initialMembers, join, factory, true)
+	return m.startReplica(shardID, replicaID, initialMembers, join, factory, true, false)
 }
 
 // StartMetaShard starts (or restarts) the meta shard (range directory state machine, design/30 §7).
 func (m *Manager) StartMetaShard(shardID, replicaID uint64, initialMembers map[uint64]string, join bool) error {
 	factory := func(sid, _ uint64) sm.IOnDiskStateMachine { return newMetaSM(m.store, sid) }
-	return m.startReplica(shardID, replicaID, initialMembers, join, factory, false)
+	return m.startReplica(shardID, replicaID, initialMembers, join, factory, false, false)
 }
 
 // Propose commits an encoded command through the shard leader and returns the apply result.
