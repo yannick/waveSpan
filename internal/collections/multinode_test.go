@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // TestThreeNodeQuorum brings up a real 3-voter shard (dragonboat's built-in transport over localhost),

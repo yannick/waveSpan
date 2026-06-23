@@ -9,7 +9,7 @@ import (
 	"github.com/lni/dragonboat/v4/config"
 	sm "github.com/lni/dragonboat/v4/statemachine"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // Manager is the dragonboat implementation of RaftShard: a NodeHost hosting replicated-collection

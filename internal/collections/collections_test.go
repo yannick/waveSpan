@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // TestSetOpsAndRestart exercises the Set datatype end to end over a single dragonboat shard

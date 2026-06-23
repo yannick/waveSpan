@@ -3,7 +3,7 @@ package collections
 import (
 	"encoding/binary"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // TTL key layout (design/30 §10). A shard-level, expiry-ordered index lets the leader sweep all

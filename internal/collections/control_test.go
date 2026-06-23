@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // TestControlBootstrapAndRoute brings up the control plane (meta shard + range directory + initial

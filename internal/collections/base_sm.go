@@ -7,7 +7,7 @@ import (
 
 	sm "github.com/lni/dragonboat/v4/statemachine"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // subMeta is the reserved sub-space holding a shard's applied Raft index.

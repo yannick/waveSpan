@@ -9,7 +9,7 @@ import (
 
 	sm "github.com/lni/dragonboat/v4/statemachine"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // The meta shard (design/30 §7) is a Raft group holding the authoritative range directory: an ordered

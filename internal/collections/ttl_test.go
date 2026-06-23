@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // TestSetTTLExpiry checks that a member added with a TTL is present immediately and is removed by the

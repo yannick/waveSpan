@@ -7,7 +7,7 @@ import (
 
 	sm "github.com/lni/dragonboat/v4/statemachine"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // shardSM is the dragonboat on-disk state machine for one Raft shard (design/30 §5.3, Appendix B.3).
