@@ -91,6 +91,18 @@ function nodeDisplay(n: GraphNode): string {
   return valToStr(n.properties["title"]) || valToStr(n.properties["name"]) || n.nodeId;
 }
 
+// expandQueryFor builds the Cypher that "expand from here" runs: select this node by a string-valued
+// identifying property, then its neighbours in both directions. Returns null when the node has no
+// string property to anchor on (e.g. properties redacted), so the caller can fall back to a BFS.
+function expandQueryFor(n: { labels: string[]; properties: Record<string, Value> }): string | null {
+  const strKeys = Object.keys(n.properties).filter((k) => n.properties[k]?.value?.case === "stringValue");
+  if (strKeys.length === 0) return null;
+  const key = ["id", "name", "title", "label", "key"].find((k) => strKeys.includes(k)) ?? strKeys[0];
+  const value = String((n.properties[key].value as { value: string }).value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const label = n.labels[0] ? `:${n.labels[0]}` : "";
+  return `MATCH (n${label} {${key}: '${value}'})-[r]-(m)\nRETURN n, m`;
+}
+
 // The force-graph node/link objects carry our domain fields alongside the simulation's x/y/z.
 type GNode = NodeObject & {
   id: string;
@@ -229,14 +241,14 @@ export function NodeExplorer() {
     }
   };
 
-  const runCypher = async () => {
-    if (!query.trim()) return;
+  const runCypher = async (q: string = query, neighborDepth: number = expandNeighbors ? 1 : 0) => {
+    if (!q.trim()) return;
     setError("");
     setRunning(true);
     setMeta(null);
     const idSet = new Set<string>();
     try {
-      for await (const res of cypher.query({ graphId, query, parameters: {} })) {
+      for await (const res of cypher.query({ graphId, query: q, parameters: {} })) {
         if (res.msg.case === "row") {
           for (const v of Object.values(res.msg.value.columns)) collectIds(v as Value, idSet);
         } else if (res.msg.case === "meta") {
@@ -246,7 +258,7 @@ export function NodeExplorer() {
       const resp = await obs.graphSubgraph({
         graphId,
         nodeIds: [...idSet],
-        neighborDepth: expandNeighbors ? 1 : 0,
+        neighborDepth,
         includeValue: true,
       });
       setNodes(resp.nodes);
@@ -329,7 +341,7 @@ export function NodeExplorer() {
           style={{ flex: "1 1 420px", height: 58, boxSizing: "border-box" }}
         />
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--ws-space-xs)" }}>
-          <Button variant="primary" onClick={runCypher} disabled={running}>
+          <Button variant="primary" onClick={() => runCypher()} disabled={running}>
             {running ? <Spinner /> : null}
             {running ? "Running…" : "Run Cypher (⌘↵)"}
           </Button>
@@ -433,7 +445,22 @@ export function NodeExplorer() {
                 <div className="ws-caption">properties require admin</div>
               )}
               <div style={{ marginTop: "var(--ws-space-md)" }}>
-                <Button size="sm" onClick={() => { setSeed(selected.id); explore(selected.id); }}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    // Generate the equivalent Cypher, show it in the query box, and run it. The query
+                    // returns the node + its neighbours (the relationship pattern already gives one
+                    // hop), so the subgraph render needs no extra expansion.
+                    const q = expandQueryFor(selected);
+                    if (q) {
+                      setQuery(q);
+                      runCypher(q, 0);
+                    } else {
+                      setSeed(selected.id);
+                      explore(selected.id);
+                    }
+                  }}
+                >
                   expand from here
                 </Button>
               </div>
