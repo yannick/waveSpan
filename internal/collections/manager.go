@@ -135,6 +135,15 @@ func (m *Manager) hasLeader(shardID uint64) bool {
 	return err == nil && ok
 }
 
+// LeaderID returns the current leader's replicaID for a shard and whether one is known.
+func (m *Manager) LeaderID(shardID uint64) (uint64, bool) {
+	id, _, ok, err := m.nh.GetLeaderID(shardID)
+	if err != nil || !ok {
+		return 0, false
+	}
+	return id, true
+}
+
 // Stop halts the sweeper then closes the NodeHost (does not close the shared store).
 func (m *Manager) Stop() {
 	close(m.stopCh)

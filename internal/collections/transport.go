@@ -31,13 +31,18 @@ const (
 type TransportFactory struct {
 	ServerTLS *tls.Config
 	ClientTLS *tls.Config
+	// Gate, when set, is consulted before every send: Gate(src, dst) == false drops the message,
+	// simulating a network partition. Test-only (nil in production = all sends allowed).
+	Gate func(src, dst string) bool
 }
 
 var _ config.TransportFactory = (*TransportFactory)(nil)
 
 // Create builds the transport for a NodeHost, listening on its RaftAddress.
 func (f *TransportFactory) Create(nh config.NodeHostConfig, mh raftio.MessageHandler, ch raftio.ChunkHandler) raftio.ITransport {
-	return newHTTPTransport(nh.RaftAddress, f.ServerTLS, f.ClientTLS, mh, ch)
+	t := newHTTPTransport(nh.RaftAddress, f.ServerTLS, f.ClientTLS, mh, ch)
+	t.gate = f.Gate
+	return t
 }
 
 // Validate accepts any non-empty RaftAddress (the transport controls the address form).
@@ -49,9 +54,15 @@ type httpTransport struct {
 	clientTLS    *tls.Config
 	msgHandler   raftio.MessageHandler
 	chunkHandler raftio.ChunkHandler
+	gate         func(src, dst string) bool
 
 	client *http.Client
 	srv    *http.Server
+}
+
+// blocked reports whether a send from this node to target is partitioned away.
+func (t *httpTransport) blocked(target string) bool {
+	return t.gate != nil && !t.gate(t.listenAddr, target)
 }
 
 var _ raftio.ITransport = (*httpTransport)(nil)
@@ -142,21 +153,25 @@ func (t *httpTransport) scheme() string {
 }
 
 func (t *httpTransport) GetConnection(_ context.Context, target string) (raftio.IConnection, error) {
-	return &httpConn{t: t, url: t.scheme() + "://" + target + raftMsgPath}, nil
+	return &httpConn{t: t, target: target, url: t.scheme() + "://" + target + raftMsgPath}, nil
 }
 
 func (t *httpTransport) GetSnapshotConnection(_ context.Context, target string) (raftio.ISnapshotConnection, error) {
-	return &httpSnapshotConn{t: t, url: t.scheme() + "://" + target + raftChunkPath}, nil
+	return &httpSnapshotConn{t: t, target: target, url: t.scheme() + "://" + target + raftChunkPath}, nil
 }
 
 type httpConn struct {
-	t   *httpTransport
-	url string
+	t      *httpTransport
+	target string
+	url    string
 }
 
 func (c *httpConn) Close() {}
 
 func (c *httpConn) SendMessageBatch(batch pb.MessageBatch) error {
+	if c.t.blocked(c.target) {
+		return errors.New("wavespan raft transport: partitioned")
+	}
 	data, err := batch.Marshal()
 	if err != nil {
 		return err
@@ -165,13 +180,17 @@ func (c *httpConn) SendMessageBatch(batch pb.MessageBatch) error {
 }
 
 type httpSnapshotConn struct {
-	t   *httpTransport
-	url string
+	t      *httpTransport
+	target string
+	url    string
 }
 
 func (c *httpSnapshotConn) Close() {}
 
 func (c *httpSnapshotConn) SendChunk(chunk pb.Chunk) error {
+	if c.t.blocked(c.target) {
+		return errors.New("wavespan raft transport: partitioned")
+	}
 	data, err := chunk.Marshal()
 	if err != nil {
 		return err
