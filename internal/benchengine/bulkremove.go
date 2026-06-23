@@ -44,7 +44,8 @@ func bulkRemoveOnce(ctx context.Context, removeOp func(ctx context.Context) (cou
 }
 
 // RunFullNamespaceRemove times one BulkRemove(ns, nil, [member]) — removing member from EVERY set
-// in ns — and reports timing.
+// in ns — and reports timing. WARNING: this is destructive across the ENTIRE namespace; pass a
+// dedicated/isolated ns (Sweep uses per-N sub-namespaces) so it never wipes another workload's sets.
 func RunFullNamespaceRemove(ctx context.Context, dataAddr, ns string, member []byte) (BulkRemoveResult, error) {
 	c := bench.CollectionsClient(dataAddr)
 	return bulkRemoveOnce(ctx, func(ctx context.Context) (int, uint64, error) {
