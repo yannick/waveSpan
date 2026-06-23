@@ -21,9 +21,10 @@ type Service struct {
 	live       func(name string) (*LiveIndex, bool)                      // resolve the live ANN index
 
 	// replicate routes a vector write through the KV origin+1 coordinator (intra-cluster replication +
-	// cross-cluster tap); the holders' recordstore apply-observer feeds each HNSW. nil = local-only
-	// (single-node tests). dims, when set, validates a Put against the collection's declared dimensions.
-	replicate func(ctx context.Context, ns string, key, value []byte) error
+	// cross-cluster tap); the holders' recordstore apply-observer feeds each HNSW. It receives the
+	// collection + embedding so the node can place the write on the bucket's affinity ring. nil =
+	// local-only (single-node tests). dims, when set, validates a Put against the declared dimensions.
+	replicate func(ctx context.Context, ns string, key, value []byte, collection string, vec []float32) error
 	dims      func(collection string) (int, bool)
 
 	// Coordinator ops for the vector-as-key API (design/29): resolve a collection's index, scatter a
@@ -73,7 +74,7 @@ func (s *Service) WithSearch(index func(name string) (*IndexMeta, bool), live fu
 // WithReplication routes vector writes through the cluster (origin+1 + holders + cross-cluster tap) so
 // a vector is searchable on every holder and survives reboots, instead of living only on the ingest
 // node. dims validates Put requests against the collection's declared dimensionality.
-func (s *Service) WithReplication(replicate func(ctx context.Context, ns string, key, value []byte) error, dims func(collection string) (int, bool)) *Service {
+func (s *Service) WithReplication(replicate func(ctx context.Context, ns string, key, value []byte, collection string, vec []float32) error, dims func(collection string) (int, bool)) *Service {
 	s.replicate = replicate
 	s.dims = dims
 	return s
@@ -143,7 +144,7 @@ func (s *Service) putRecord(ctx context.Context, rec *wavespanv1.VectorRecord) (
 		if werr != nil {
 			return nil, connect.NewError(connect.CodeInternal, werr)
 		}
-		if err := s.replicate(ctx, sr.GetNamespace(), sr.GetLogicalKey(), sr.GetValue().GetInline()); err != nil {
+		if err := s.replicate(ctx, sr.GetNamespace(), sr.GetLogicalKey(), sr.GetValue().GetInline(), rec.GetCollection(), rec.GetValues()); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		return rec.GetVersion(), nil

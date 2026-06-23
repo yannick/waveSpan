@@ -83,15 +83,23 @@ type PutOutcome struct {
 // the origin copy durably, replicates to nearby candidates, and returns success only once at
 // least minAck nearby durable replicas acknowledged.
 func (c *Coordinator) Put(ctx context.Context, namespace string, key, value []byte, ttlMs *int64, idemKey string) (PutOutcome, error) {
-	return c.write(ctx, namespace, key, value, false, ttlMs, idemKey)
+	return c.write(ctx, namespace, key, value, false, ttlMs, idemKey, nil)
+}
+
+// PutTo coordinates a write to an explicit candidate set instead of latency-graph placement. It is
+// the affinity-placement entry point (design/29 Phase 3): vector writes target the bucket's HRW ring
+// so a bucket concentrates on a deterministic node-set. Origin+1 semantics are unchanged — the origin
+// is still locally durable and acks after minAck of the given candidates.
+func (c *Coordinator) PutTo(ctx context.Context, namespace string, key, value []byte, candidates []placement.Candidate, idemKey string) (PutOutcome, error) {
+	return c.write(ctx, namespace, key, value, false, nil, idemKey, candidates)
 }
 
 // Delete coordinates a tombstone write (design/03 "Delete path": Delete = Put(tombstone)).
 func (c *Coordinator) Delete(ctx context.Context, namespace string, key []byte, idemKey string) (PutOutcome, error) {
-	return c.write(ctx, namespace, key, nil, true, nil, idemKey)
+	return c.write(ctx, namespace, key, nil, true, nil, idemKey, nil)
 }
 
-func (c *Coordinator) write(ctx context.Context, namespace string, key, value []byte, tombstone bool, ttlMs *int64, idemKey string) (PutOutcome, error) {
+func (c *Coordinator) write(ctx context.Context, namespace string, key, value []byte, tombstone bool, ttlMs *int64, idemKey string, candidates []placement.Candidate) (PutOutcome, error) {
 	if idemKey != "" {
 		if v, ok := c.idem.Check(idemKey); ok {
 			return PutOutcome{Version: v, AckedNearbyReplicas: c.policy.MinAckNearbyReplicas}, nil
@@ -115,18 +123,30 @@ func (c *Coordinator) write(ctx context.Context, namespace string, key, value []
 		c.globalTap(namespace, key, rec) // ship to peer clusters (puts and tombstones)
 	}
 
-	cands, err := placement.Select(c.self, c.cluster.Members(), c.graph, c.policy)
-	if err != nil {
-		// minAck=0 explicitly opts into local-only writes (single-node dev / degraded mode):
-		// the origin copy is durable and the write is acknowledged with zero nearby replicas.
-		if c.policy.MinAckNearbyReplicas <= 0 {
-			if idemKey != "" {
-				c.idem.Record(idemKey, v)
+	cands := candidates
+	if cands == nil {
+		// Default path: choose nearby durable candidates by the latency graph.
+		selected, err := placement.Select(c.self, c.cluster.Members(), c.graph, c.policy)
+		if err != nil {
+			// minAck=0 explicitly opts into local-only writes (single-node dev / degraded mode):
+			// the origin copy is durable and the write is acknowledged with zero nearby replicas.
+			if c.policy.MinAckNearbyReplicas <= 0 {
+				if idemKey != "" {
+					c.idem.Record(idemKey, v)
+				}
+				return PutOutcome{Version: v, AckedNearbyReplicas: 0}, nil
 			}
-			return PutOutcome{Version: v, AckedNearbyReplicas: 0}, nil
+			// no candidate can host a nearby durable replica -> origin+1 cannot be satisfied
+			return PutOutcome{}, ErrInsufficientNearbyReplicas
 		}
-		// no candidate can host a nearby durable replica -> origin+1 cannot be satisfied
-		return PutOutcome{}, ErrInsufficientNearbyReplicas
+		cands = selected
+	} else if len(cands) == 0 {
+		// Affinity placement resolved to no off-origin candidate (e.g. the origin is the only ring
+		// member, or a single-node cluster): the origin copy is durable; ack local-only.
+		if idemKey != "" {
+			c.idem.Record(idemKey, v)
+		}
+		return PutOutcome{Version: v, AckedNearbyReplicas: 0}, nil
 	}
 
 	acked, spill := c.replicateMinAck(ctx, cands, namespace, key, rec, v)

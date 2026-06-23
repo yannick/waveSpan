@@ -429,9 +429,15 @@ func run() error {
 	// VectorService: SearchLocal fragment + the vector-as-key API (Put/Get/Delete/Search, design/29).
 	vectorSvc := vector.NewService(vstore, newGraphVersion).
 		WithHooks(indexSet.OnWrite, vectorGlobalTap).
-		WithReplication(func(ctx context.Context, ns string, key, value []byte) error {
-			// Route the vector write through the origin+1 coordinator so it replicates to holders and
-			// taps cross-cluster; each holder's apply-observer feeds its HNSW.
+		WithReplication(func(ctx context.Context, ns string, key, value []byte, collection string, vec []float32) error {
+			// Affinity placement (design/29 Phase 3): target the bucket's HRW ring so a bucket
+			// concentrates on a deterministic node-set (maximally selective routing). Origin+1 is
+			// unchanged. Fall back to latency placement when the collection has no quantizer.
+			if qz, ok := quantSet.For(collection); ok && len(vec) > 0 {
+				ring := vector.Ring(vector.BucketKey(collection, qz.Version(), qz.Bucket(vec)), aliveMemberIDs(svc), cfg.Replication.Target()+1)
+				_, err := coord.PutTo(ctx, ns, key, value, ringCandidates(svc, ring, self.MemberID), "")
+				return err
+			}
 			_, err := coord.Put(ctx, ns, key, value, nil, "")
 			return err
 		}, indexSet.CollectionDims).
@@ -439,7 +445,7 @@ func run() error {
 		WithCoordinator(
 			indexSet.IndexForCollection,
 			func(ctx context.Context, collection, idx string, q []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
-				return routedVectorScatter(ctx, self, svc, httpClient, quantSet, bucketDir, collection, idx, q, k, ef, nprobe, rerank)
+				return routedVectorScatter(ctx, self, svc, httpClient, quantSet, bucketDir, cfg.Replication.Target()+1, collection, idx, q, k, ef, nprobe, rerank)
 			},
 			func(ctx context.Context, ns string, key []byte) ([]byte, bool, error) {
 				res, err := reader.Get(ctx, ns, key, true)
@@ -879,13 +885,22 @@ func recomputeHeldBuckets(ctx context.Context, vstore *vector.Store, qs *vector.
 // routedVectorScatter queries peer holders for a kNN fragment. With nprobe>0 and routing info
 // available it scatters only to the advertised holders of the query's probed buckets; otherwise it
 // falls back to every alive peer. Self is excluded — the coordinator adds its own local fragment.
-func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, hc *http.Client, qs *vector.QuantSet, dir *vector.BucketDir, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
+func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, hc *http.Client, qs *vector.QuantSet, dir *vector.BucketDir, ringSize int, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
 	var allow map[string]bool
 	if nprobe > 0 {
 		if qz, ok := qs.For(collection); ok {
-			if members, ok := dir.Holders(collection, qz.Version(), qz.Probe(query, nprobe)); ok {
-				allow = map[string]bool{}
+			buckets := qz.Probe(query, nprobe)
+			allow = map[string]bool{}
+			// Gossiped held-bucket holders (catches off-affinity / cache replicas)...
+			if members, ok := dir.Holders(collection, qz.Version(), buckets); ok {
 				for _, mid := range members {
+					allow[mid] = true
+				}
+			}
+			// ...plus the affinity ring computed locally (gossip-independent; covers just-joined nodes).
+			ids := aliveMemberIDs(svc)
+			for _, b := range buckets {
+				for _, mid := range vector.Ring(vector.BucketKey(collection, qz.Version(), b), ids, ringSize) {
 					allow[mid] = true
 				}
 			}
@@ -923,4 +938,36 @@ func vectorHitsFromProto(in []*wavespanv1.VectorHit) []vector.Hit {
 		})
 	}
 	return out
+}
+
+// aliveMemberIDs returns the member ids of all alive members (the HRW ring input).
+func aliveMemberIDs(svc *membership.Service) []string {
+	var ids []string
+	for _, mv := range svc.Members() {
+		if mv.State == membership.StateAlive {
+			ids = append(ids, mv.Member.MemberID)
+		}
+	}
+	return ids
+}
+
+// ringCandidates maps ring member ids to replication candidates, excluding self (the origin is
+// already locally durable). This is the affinity placement set passed to Coordinator.PutTo.
+func ringCandidates(svc *membership.Service, ring []string, self string) []placement.Candidate {
+	byID := map[string]membership.Member{}
+	for _, mv := range svc.Members() {
+		if mv.State == membership.StateAlive {
+			byID[mv.Member.MemberID] = mv.Member
+		}
+	}
+	var cands []placement.Candidate
+	for _, id := range ring {
+		if id == self {
+			continue
+		}
+		if m, ok := byID[id]; ok {
+			cands = append(cands, placement.Candidate{Member: m})
+		}
+	}
+	return cands
 }
