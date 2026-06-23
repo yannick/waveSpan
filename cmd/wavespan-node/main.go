@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -504,10 +505,15 @@ func run() error {
 		dataMux.Handle(globalSrv.Handler())
 	}
 
-	// Replicated collections (design/30): experimental CP consensus tier over a dedicated dragonboat
-	// NodeHost that shares the wavesdb store. Opt-in via WAVESPAN_COLLECTIONS_ENABLED=1 with single-node
-	// bootstrap, until multi-node placement + the cheap-mTLS transport land; failures here never block
-	// node startup.
+	// Replicated collections (design/30): CP consensus tier over a dedicated dragonboat NodeHost that
+	// shares the wavesdb store, carries Raft over the cluster's mTLS, and bootstraps a multi-voter
+	// stable core. Opt-in via WAVESPAN_COLLECTIONS_ENABLED=1. Placement:
+	//   WAVESPAN_COLLECTIONS_RAFT_ADDR  this node's Raft transport address (default data port + 1000)
+	//   WAVESPAN_COLLECTIONS_VOTERS     comma-separated stable-core Raft addresses; replicaID = index+1.
+	//                                   Empty -> single-node (this node is the sole voter). A node not
+	//                                   in the list is a spot node (serving via demand-fill is a
+	//                                   follow-up — it needs the directory off the meta shard).
+	// Failures here never block node startup.
 	var collectionsMgr *collections.Manager
 	var collectionsSvc *collections.Service
 	if os.Getenv("WAVESPAN_COLLECTIONS_ENABLED") == "1" {
@@ -515,26 +521,62 @@ func run() error {
 		if raftAddr == "" {
 			raftAddr = fmt.Sprintf("127.0.0.1:%d", cfg.Ports.Data+1000)
 		}
-		// Carry Raft traffic over the cluster's mTLS via the cheap-mTLS transport (design/30 §12). In
-		// dev mode serverMTLS is nil, so the transport falls back to plaintext HTTP.
+		// Resolve placement from the voter list.
+		selfReplicaID := uint64(1)
+		voters := map[uint64]string{1: raftAddr}
+		voterEligible := true
+		if v := os.Getenv("WAVESPAN_COLLECTIONS_VOTERS"); strings.TrimSpace(v) != "" {
+			voters = map[uint64]string{}
+			voterEligible = false
+			for i, addr := range strings.Split(v, ",") {
+				addr = strings.TrimSpace(addr)
+				if addr == "" {
+					continue
+				}
+				rid := uint64(i + 1)
+				voters[rid] = addr
+				if addr == raftAddr {
+					selfReplicaID, voterEligible = rid, true
+				}
+			}
+		}
+		// Peers to ask for learner admission / general demand-fill (membership view minus self).
+		peersFn := func() []string {
+			var out []string
+			for _, mv := range svc.Members() {
+				if a := mv.Member.DataAddr; a != "" && a != self.DataAddr {
+					out = append(out, a)
+				}
+			}
+			return out
+		}
 		raftTLSClient, _ := tlsCfg.ClientTLS()
 		raftOpts := collections.Options{TransportFactory: &collections.TransportFactory{ServerTLS: serverMTLS, ClientTLS: raftTLSClient}}
-		if mgr, err := collections.NewManagerWithOptions(filepath.Join(cfg.Storage.Path, "collections-raft"), raftAddr, store, raftOpts); err != nil {
+		mgr, err := collections.NewManagerWithOptions(filepath.Join(cfg.Storage.Path, "collections-raft"), raftAddr, store, raftOpts)
+		switch {
+		case err != nil:
 			logger.Error("collections: NodeHost init failed; tier disabled", "err", err)
-		} else {
-			members := map[uint64]string{1: raftAddr}
-			bctx, bcancel := context.WithTimeout(context.Background(), 30*time.Second)
-			ctrl, berr := collections.Bootstrap(bctx, mgr, 1, members, members)
+		case !voterEligible:
+			logger.Warn("collections: this node is not in the voter set; spot-node serving is not yet wired, tier idle here", "raftAddr", raftAddr)
+			mgr.Stop()
+		default:
+			bctx, bcancel := context.WithTimeout(context.Background(), 40*time.Second)
+			ctrl, berr := collections.BootstrapWithPlacement(bctx, mgr, collections.Placement{SelfReplicaID: selfReplicaID, VoterEligible: true, Voters: voters})
 			bcancel()
-			if berr != nil {
+			if berr != nil || ctrl == nil {
 				logger.Error("collections: bootstrap failed; tier disabled", "err", berr)
 				mgr.Stop()
 			} else {
 				collectionsMgr = mgr
-				collectionsSvc = collections.NewService(ctrl.Collections(), self)
+				cols := ctrl.Collections()
+				// Demand-fill data shards this node does not host (e.g. ranges split onto other voters),
+				// asking peers over RPC to admit us as a learner.
+				admitter := collections.NewRPCAdmitter(httpClient, peersFn)
+				cols.WithDemandFill(collections.NewDemandFiller(mgr, selfReplicaID, raftAddr, admitter))
+				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr)
 				dataMux.Handle(collectionsSvc.Handler())
-				cypherSvc.WithCollections(collections.NewCypherCollections(ctrl.Collections())) // set.*/hash.*/zset.* built-ins
-				logger.Info("collections: replicated-collections tier enabled", "raftAddr", raftAddr)
+				cypherSvc.WithCollections(collections.NewCypherCollections(cols)) // set.*/hash.*/zset.* built-ins
+				logger.Info("collections: tier enabled", "raftAddr", raftAddr, "replicaID", selfReplicaID, "voters", len(voters))
 			}
 		}
 	}

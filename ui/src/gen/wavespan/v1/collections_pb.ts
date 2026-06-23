@@ -12,7 +12,53 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file wavespan/v1/collections.proto.
  */
 export const file_wavespan_v1_collections: GenFile = /*@__PURE__*/
-  fileDesc("Ch13YXZlc3Bhbi92MS9jb2xsZWN0aW9ucy5wcm90bxILd2F2ZXNwYW4udjEiKgoKRmllbGRWYWx1ZRINCgVmaWVsZBgBIAEoDBINCgV2YWx1ZRgCIAEoDCItCgxTY29yZWRNZW1iZXISDgoGbWVtYmVyGAEgASgMEg0KBXNjb3JlGAIgASgBImUKC1NBZGRSZXF1ZXN0EhEKCW5hbWVzcGFjZRgBIAEoCRISCgpjb2xsZWN0aW9uGAIgASgMEg8KB21lbWJlcnMYAyADKAwSEwoGdHRsX21zGAQgASgDSACIAQFCCQoHX3R0bF9tcyJCCgtLZXlzUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSEgoKY29sbGVjdGlvbhgCIAEoDBIMCgRrZXlzGAMgAygMIlwKDU1lbWJlclJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEhIKCmNvbGxlY3Rpb24YAiABKAwSDgoGbWVtYmVyGAMgASgMEhQKDGxpbmVhcml6YWJsZRgEIAEoCCJKCgtDYXJkUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSEgoKY29sbGVjdGlvbhgCIAEoDBIUCgxsaW5lYXJpemFibGUYAyABKAgiWgoMUmFuZ2VSZXF1ZXN0EhEKCW5hbWVzcGFjZRgBIAEoCRISCgpjb2xsZWN0aW9uGAIgASgMEg0KBWxpbWl0GAMgASgFEhQKDGxpbmVhcml6YWJsZRgEIAEoCCJdCgtIU2V0UmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSEgoKY29sbGVjdGlvbhgCIAEoDBInCgZmaWVsZHMYAyADKAsyFy53YXZlc3Bhbi52MS5GaWVsZFZhbHVlImAKC1pBZGRSZXF1ZXN0EhEKCW5hbWVzcGFjZRgBIAEoCRISCgpjb2xsZWN0aW9uGAIgASgMEioKB21lbWJlcnMYAyADKAsyGS53YXZlc3Bhbi52MS5TY29yZWRNZW1iZXIiRQoLQ291bnRSZXN1bHQSJwoEbWV0YRgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRINCgVjb3VudBgCIAEoBCJECgpCb29sUmVzdWx0EicKBG1ldGEYASABKAsyGS53YXZlc3Bhbi52MS5SZXNwb25zZU1ldGESDQoFdmFsdWUYAiABKAgiVAoLVmFsdWVSZXN1bHQSJwoEbWV0YRgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRINCgVmb3VuZBgCIAEoCBINCgV2YWx1ZRgDIAEoDCJUCgtTY29yZVJlc3VsdBInCgRtZXRhGAEgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEg0KBWZvdW5kGAIgASgIEg0KBXNjb3JlGAMgASgBIkkKDU1lbWJlcnNSZXN1bHQSJwoEbWV0YRgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRIPCgdtZW1iZXJzGAIgAygMImAKDEZpZWxkc1Jlc3VsdBInCgRtZXRhGAEgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEicKBmZpZWxkcxgCIAMoCzIXLndhdmVzcGFuLnYxLkZpZWxkVmFsdWUiagoTU2NvcmVkTWVtYmVyc1Jlc3VsdBInCgRtZXRhGAEgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEioKB21lbWJlcnMYAiADKAsyGS53YXZlc3Bhbi52MS5TY29yZWRNZW1iZXIyvAcKEUNvbGxlY3Rpb25TZXJ2aWNlEjoKBFNBZGQSGC53YXZlc3Bhbi52MS5TQWRkUmVxdWVzdBoYLndhdmVzcGFuLnYxLkNvdW50UmVzdWx0EjoKBFNSZW0SGC53YXZlc3Bhbi52MS5LZXlzUmVxdWVzdBoYLndhdmVzcGFuLnYxLkNvdW50UmVzdWx0EkAKCVNJc01lbWJlchIaLndhdmVzcGFuLnYxLk1lbWJlclJlcXVlc3QaFy53YXZlc3Bhbi52MS5Cb29sUmVzdWx0EjsKBVNDYXJkEhgud2F2ZXNwYW4udjEuQ2FyZFJlcXVlc3QaGC53YXZlc3Bhbi52MS5Db3VudFJlc3VsdBJBCghTTWVtYmVycxIZLndhdmVzcGFuLnYxLlJhbmdlUmVxdWVzdBoaLndhdmVzcGFuLnYxLk1lbWJlcnNSZXN1bHQSOgoESFNldBIYLndhdmVzcGFuLnYxLkhTZXRSZXF1ZXN0Ghgud2F2ZXNwYW4udjEuQ291bnRSZXN1bHQSOgoESERlbBIYLndhdmVzcGFuLnYxLktleXNSZXF1ZXN0Ghgud2F2ZXNwYW4udjEuQ291bnRSZXN1bHQSPAoESEdldBIaLndhdmVzcGFuLnYxLk1lbWJlclJlcXVlc3QaGC53YXZlc3Bhbi52MS5WYWx1ZVJlc3VsdBI6CgRITGVuEhgud2F2ZXNwYW4udjEuQ2FyZFJlcXVlc3QaGC53YXZlc3Bhbi52MS5Db3VudFJlc3VsdBI/CgdIR2V0QWxsEhkud2F2ZXNwYW4udjEuUmFuZ2VSZXF1ZXN0Ghkud2F2ZXNwYW4udjEuRmllbGRzUmVzdWx0EjoKBFpBZGQSGC53YXZlc3Bhbi52MS5aQWRkUmVxdWVzdBoYLndhdmVzcGFuLnYxLkNvdW50UmVzdWx0EjoKBFpSZW0SGC53YXZlc3Bhbi52MS5LZXlzUmVxdWVzdBoYLndhdmVzcGFuLnYxLkNvdW50UmVzdWx0Ej4KBlpTY29yZRIaLndhdmVzcGFuLnYxLk1lbWJlclJlcXVlc3QaGC53YXZlc3Bhbi52MS5TY29yZVJlc3VsdBI7CgVaQ2FyZBIYLndhdmVzcGFuLnYxLkNhcmRSZXF1ZXN0Ghgud2F2ZXNwYW4udjEuQ291bnRSZXN1bHQSRQoGWlJhbmdlEhkud2F2ZXNwYW4udjEuUmFuZ2VSZXF1ZXN0GiAud2F2ZXNwYW4udjEuU2NvcmVkTWVtYmVyc1Jlc3VsdEKqAQoPY29tLndhdmVzcGFuLnYxQhBDb2xsZWN0aW9uc1Byb3RvUAFaOGdpdGh1Yi5jb20veWFubmljay93YXZlc3Bhbi9wcm90by93YXZlc3Bhbi92MTt3YXZlc3BhbnYxogIDV1hYqgILV2F2ZXNwYW4uVjHKAgtXYXZlc3BhblxWMeICF1dhdmVzcGFuXFYxXEdQQk1ldGFkYXRh6gIMV2F2ZXNwYW46OlYxYgZwcm90bzM", [file_wavespan_v1_common]);
+  fileDesc("Ch13YXZlc3Bhbi92MS9jb2xsZWN0aW9ucy5wcm90bxILd2F2ZXNwYW4udjEiSwoTQWRtaXRMZWFybmVyUmVxdWVzdBIQCghzaGFyZF9pZBgBIAEoBBISCgpyZXBsaWNhX2lkGAIgASgEEg4KBnRhcmdldBgDIAEoCSI/ChRBZG1pdExlYXJuZXJSZXNwb25zZRInCgRtZXRhGAEgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhIioKCkZpZWxkVmFsdWUSDQoFZmllbGQYASABKAwSDQoFdmFsdWUYAiABKAwiLQoMU2NvcmVkTWVtYmVyEg4KBm1lbWJlchgBIAEoDBINCgVzY29yZRgCIAEoASJlCgtTQWRkUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSEgoKY29sbGVjdGlvbhgCIAEoDBIPCgdtZW1iZXJzGAMgAygMEhMKBnR0bF9tcxgEIAEoA0gAiAEBQgkKB190dGxfbXMiQgoLS2V5c1JlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEhIKCmNvbGxlY3Rpb24YAiABKAwSDAoEa2V5cxgDIAMoDCJcCg1NZW1iZXJSZXF1ZXN0EhEKCW5hbWVzcGFjZRgBIAEoCRISCgpjb2xsZWN0aW9uGAIgASgMEg4KBm1lbWJlchgDIAEoDBIUCgxsaW5lYXJpemFibGUYBCABKAgiSgoLQ2FyZFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEhIKCmNvbGxlY3Rpb24YAiABKAwSFAoMbGluZWFyaXphYmxlGAMgASgIIloKDFJhbmdlUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSEgoKY29sbGVjdGlvbhgCIAEoDBINCgVsaW1pdBgDIAEoBRIUCgxsaW5lYXJpemFibGUYBCABKAgiXQoLSFNldFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEhIKCmNvbGxlY3Rpb24YAiABKAwSJwoGZmllbGRzGAMgAygLMhcud2F2ZXNwYW4udjEuRmllbGRWYWx1ZSJgCgtaQWRkUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSEgoKY29sbGVjdGlvbhgCIAEoDBIqCgdtZW1iZXJzGAMgAygLMhkud2F2ZXNwYW4udjEuU2NvcmVkTWVtYmVyIkUKC0NvdW50UmVzdWx0EicKBG1ldGEYASABKAsyGS53YXZlc3Bhbi52MS5SZXNwb25zZU1ldGESDQoFY291bnQYAiABKAQiRAoKQm9vbFJlc3VsdBInCgRtZXRhGAEgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEg0KBXZhbHVlGAIgASgIIlQKC1ZhbHVlUmVzdWx0EicKBG1ldGEYASABKAsyGS53YXZlc3Bhbi52MS5SZXNwb25zZU1ldGESDQoFZm91bmQYAiABKAgSDQoFdmFsdWUYAyABKAwiVAoLU2NvcmVSZXN1bHQSJwoEbWV0YRgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRINCgVmb3VuZBgCIAEoCBINCgVzY29yZRgDIAEoASJJCg1NZW1iZXJzUmVzdWx0EicKBG1ldGEYASABKAsyGS53YXZlc3Bhbi52MS5SZXNwb25zZU1ldGESDwoHbWVtYmVycxgCIAMoDCJgCgxGaWVsZHNSZXN1bHQSJwoEbWV0YRgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRInCgZmaWVsZHMYAiADKAsyFy53YXZlc3Bhbi52MS5GaWVsZFZhbHVlImoKE1Njb3JlZE1lbWJlcnNSZXN1bHQSJwoEbWV0YRgBIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRIqCgdtZW1iZXJzGAIgAygLMhkud2F2ZXNwYW4udjEuU2NvcmVkTWVtYmVyMpEIChFDb2xsZWN0aW9uU2VydmljZRI6CgRTQWRkEhgud2F2ZXNwYW4udjEuU0FkZFJlcXVlc3QaGC53YXZlc3Bhbi52MS5Db3VudFJlc3VsdBI6CgRTUmVtEhgud2F2ZXNwYW4udjEuS2V5c1JlcXVlc3QaGC53YXZlc3Bhbi52MS5Db3VudFJlc3VsdBJACglTSXNNZW1iZXISGi53YXZlc3Bhbi52MS5NZW1iZXJSZXF1ZXN0Ghcud2F2ZXNwYW4udjEuQm9vbFJlc3VsdBI7CgVTQ2FyZBIYLndhdmVzcGFuLnYxLkNhcmRSZXF1ZXN0Ghgud2F2ZXNwYW4udjEuQ291bnRSZXN1bHQSQQoIU01lbWJlcnMSGS53YXZlc3Bhbi52MS5SYW5nZVJlcXVlc3QaGi53YXZlc3Bhbi52MS5NZW1iZXJzUmVzdWx0EjoKBEhTZXQSGC53YXZlc3Bhbi52MS5IU2V0UmVxdWVzdBoYLndhdmVzcGFuLnYxLkNvdW50UmVzdWx0EjoKBEhEZWwSGC53YXZlc3Bhbi52MS5LZXlzUmVxdWVzdBoYLndhdmVzcGFuLnYxLkNvdW50UmVzdWx0EjwKBEhHZXQSGi53YXZlc3Bhbi52MS5NZW1iZXJSZXF1ZXN0Ghgud2F2ZXNwYW4udjEuVmFsdWVSZXN1bHQSOgoESExlbhIYLndhdmVzcGFuLnYxLkNhcmRSZXF1ZXN0Ghgud2F2ZXNwYW4udjEuQ291bnRSZXN1bHQSPwoHSEdldEFsbBIZLndhdmVzcGFuLnYxLlJhbmdlUmVxdWVzdBoZLndhdmVzcGFuLnYxLkZpZWxkc1Jlc3VsdBI6CgRaQWRkEhgud2F2ZXNwYW4udjEuWkFkZFJlcXVlc3QaGC53YXZlc3Bhbi52MS5Db3VudFJlc3VsdBI6CgRaUmVtEhgud2F2ZXNwYW4udjEuS2V5c1JlcXVlc3QaGC53YXZlc3Bhbi52MS5Db3VudFJlc3VsdBI+CgZaU2NvcmUSGi53YXZlc3Bhbi52MS5NZW1iZXJSZXF1ZXN0Ghgud2F2ZXNwYW4udjEuU2NvcmVSZXN1bHQSOwoFWkNhcmQSGC53YXZlc3Bhbi52MS5DYXJkUmVxdWVzdBoYLndhdmVzcGFuLnYxLkNvdW50UmVzdWx0EkUKBlpSYW5nZRIZLndhdmVzcGFuLnYxLlJhbmdlUmVxdWVzdBogLndhdmVzcGFuLnYxLlNjb3JlZE1lbWJlcnNSZXN1bHQSUwoMQWRtaXRMZWFybmVyEiAud2F2ZXNwYW4udjEuQWRtaXRMZWFybmVyUmVxdWVzdBohLndhdmVzcGFuLnYxLkFkbWl0TGVhcm5lclJlc3BvbnNlQqoBCg9jb20ud2F2ZXNwYW4udjFCEENvbGxlY3Rpb25zUHJvdG9QAVo4Z2l0aHViLmNvbS95YW5uaWNrL3dhdmVzcGFuL3Byb3RvL3dhdmVzcGFuL3YxO3dhdmVzcGFudjGiAgNXWFiqAgtXYXZlc3Bhbi5WMcoCC1dhdmVzcGFuXFYx4gIXV2F2ZXNwYW5cVjFcR1BCTWV0YWRhdGHqAgxXYXZlc3Bhbjo6VjFiBnByb3RvMw", [file_wavespan_v1_common]);
+
+/**
+ * @generated from message wavespan.v1.AdmitLearnerRequest
+ */
+export type AdmitLearnerRequest = Message<"wavespan.v1.AdmitLearnerRequest"> & {
+  /**
+   * @generated from field: uint64 shard_id = 1;
+   */
+  shardId: bigint;
+
+  /**
+   * @generated from field: uint64 replica_id = 2;
+   */
+  replicaId: bigint;
+
+  /**
+   * the joining node's Raft transport address
+   *
+   * @generated from field: string target = 3;
+   */
+  target: string;
+};
+
+/**
+ * Describes the message wavespan.v1.AdmitLearnerRequest.
+ * Use `create(AdmitLearnerRequestSchema)` to create a new message.
+ */
+export const AdmitLearnerRequestSchema: GenMessage<AdmitLearnerRequest> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_collections, 0);
+
+/**
+ * @generated from message wavespan.v1.AdmitLearnerResponse
+ */
+export type AdmitLearnerResponse = Message<"wavespan.v1.AdmitLearnerResponse"> & {
+  /**
+   * @generated from field: wavespan.v1.ResponseMeta meta = 1;
+   */
+  meta?: ResponseMeta | undefined;
+};
+
+/**
+ * Describes the message wavespan.v1.AdmitLearnerResponse.
+ * Use `create(AdmitLearnerResponseSchema)` to create a new message.
+ */
+export const AdmitLearnerResponseSchema: GenMessage<AdmitLearnerResponse> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_collections, 1);
 
 /**
  * FieldValue is a hash field/value pair.
@@ -36,7 +82,7 @@ export type FieldValue = Message<"wavespan.v1.FieldValue"> & {
  * Use `create(FieldValueSchema)` to create a new message.
  */
 export const FieldValueSchema: GenMessage<FieldValue> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 0);
+  messageDesc(file_wavespan_v1_collections, 2);
 
 /**
  * ScoredMember is a sorted-set member and its score.
@@ -60,7 +106,7 @@ export type ScoredMember = Message<"wavespan.v1.ScoredMember"> & {
  * Use `create(ScoredMemberSchema)` to create a new message.
  */
 export const ScoredMemberSchema: GenMessage<ScoredMember> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 1);
+  messageDesc(file_wavespan_v1_collections, 3);
 
 /**
  * @generated from message wavespan.v1.SAddRequest
@@ -94,7 +140,7 @@ export type SAddRequest = Message<"wavespan.v1.SAddRequest"> & {
  * Use `create(SAddRequestSchema)` to create a new message.
  */
 export const SAddRequestSchema: GenMessage<SAddRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 2);
+  messageDesc(file_wavespan_v1_collections, 4);
 
 /**
  * KeysRequest removes members/fields (SRem, HDel, ZRem).
@@ -123,7 +169,7 @@ export type KeysRequest = Message<"wavespan.v1.KeysRequest"> & {
  * Use `create(KeysRequestSchema)` to create a new message.
  */
 export const KeysRequestSchema: GenMessage<KeysRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 3);
+  messageDesc(file_wavespan_v1_collections, 5);
 
 /**
  * MemberRequest reads a single member/field (SIsMember, HGet, ZScore).
@@ -157,7 +203,7 @@ export type MemberRequest = Message<"wavespan.v1.MemberRequest"> & {
  * Use `create(MemberRequestSchema)` to create a new message.
  */
 export const MemberRequestSchema: GenMessage<MemberRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 4);
+  messageDesc(file_wavespan_v1_collections, 6);
 
 /**
  * CardRequest reads a cardinality (SCard, HLen, ZCard).
@@ -186,7 +232,7 @@ export type CardRequest = Message<"wavespan.v1.CardRequest"> & {
  * Use `create(CardRequestSchema)` to create a new message.
  */
 export const CardRequestSchema: GenMessage<CardRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 5);
+  messageDesc(file_wavespan_v1_collections, 7);
 
 /**
  * RangeRequest enumerates a collection (SMembers, HGetAll, ZRange).
@@ -222,7 +268,7 @@ export type RangeRequest = Message<"wavespan.v1.RangeRequest"> & {
  * Use `create(RangeRequestSchema)` to create a new message.
  */
 export const RangeRequestSchema: GenMessage<RangeRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 6);
+  messageDesc(file_wavespan_v1_collections, 8);
 
 /**
  * @generated from message wavespan.v1.HSetRequest
@@ -249,7 +295,7 @@ export type HSetRequest = Message<"wavespan.v1.HSetRequest"> & {
  * Use `create(HSetRequestSchema)` to create a new message.
  */
 export const HSetRequestSchema: GenMessage<HSetRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 7);
+  messageDesc(file_wavespan_v1_collections, 9);
 
 /**
  * @generated from message wavespan.v1.ZAddRequest
@@ -276,7 +322,7 @@ export type ZAddRequest = Message<"wavespan.v1.ZAddRequest"> & {
  * Use `create(ZAddRequestSchema)` to create a new message.
  */
 export const ZAddRequestSchema: GenMessage<ZAddRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 8);
+  messageDesc(file_wavespan_v1_collections, 10);
 
 /**
  * @generated from message wavespan.v1.CountResult
@@ -298,7 +344,7 @@ export type CountResult = Message<"wavespan.v1.CountResult"> & {
  * Use `create(CountResultSchema)` to create a new message.
  */
 export const CountResultSchema: GenMessage<CountResult> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 9);
+  messageDesc(file_wavespan_v1_collections, 11);
 
 /**
  * @generated from message wavespan.v1.BoolResult
@@ -320,7 +366,7 @@ export type BoolResult = Message<"wavespan.v1.BoolResult"> & {
  * Use `create(BoolResultSchema)` to create a new message.
  */
 export const BoolResultSchema: GenMessage<BoolResult> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 10);
+  messageDesc(file_wavespan_v1_collections, 12);
 
 /**
  * @generated from message wavespan.v1.ValueResult
@@ -347,7 +393,7 @@ export type ValueResult = Message<"wavespan.v1.ValueResult"> & {
  * Use `create(ValueResultSchema)` to create a new message.
  */
 export const ValueResultSchema: GenMessage<ValueResult> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 11);
+  messageDesc(file_wavespan_v1_collections, 13);
 
 /**
  * @generated from message wavespan.v1.ScoreResult
@@ -374,7 +420,7 @@ export type ScoreResult = Message<"wavespan.v1.ScoreResult"> & {
  * Use `create(ScoreResultSchema)` to create a new message.
  */
 export const ScoreResultSchema: GenMessage<ScoreResult> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 12);
+  messageDesc(file_wavespan_v1_collections, 14);
 
 /**
  * @generated from message wavespan.v1.MembersResult
@@ -396,7 +442,7 @@ export type MembersResult = Message<"wavespan.v1.MembersResult"> & {
  * Use `create(MembersResultSchema)` to create a new message.
  */
 export const MembersResultSchema: GenMessage<MembersResult> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 13);
+  messageDesc(file_wavespan_v1_collections, 15);
 
 /**
  * @generated from message wavespan.v1.FieldsResult
@@ -418,7 +464,7 @@ export type FieldsResult = Message<"wavespan.v1.FieldsResult"> & {
  * Use `create(FieldsResultSchema)` to create a new message.
  */
 export const FieldsResultSchema: GenMessage<FieldsResult> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 14);
+  messageDesc(file_wavespan_v1_collections, 16);
 
 /**
  * @generated from message wavespan.v1.ScoredMembersResult
@@ -440,7 +486,7 @@ export type ScoredMembersResult = Message<"wavespan.v1.ScoredMembersResult"> & {
  * Use `create(ScoredMembersResultSchema)` to create a new message.
  */
 export const ScoredMembersResultSchema: GenMessage<ScoredMembersResult> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_collections, 15);
+  messageDesc(file_wavespan_v1_collections, 17);
 
 /**
  * CollectionService is the public replicated-collections API (design/30): sets, hash tables, and
@@ -577,6 +623,18 @@ export const CollectionService: GenService<{
     methodKind: "unary";
     input: typeof RangeRequestSchema;
     output: typeof ScoredMembersResultSchema;
+  },
+  /**
+   * AdmitLearner asks this node (a member of the shard) to admit replica_id, reachable at target, as a
+   * non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
+   * not host a collection's shard calls this on a peer that does, then starts its local learner.
+   *
+   * @generated from rpc wavespan.v1.CollectionService.AdmitLearner
+   */
+  admitLearner: {
+    methodKind: "unary";
+    input: typeof AdmitLearnerRequestSchema;
+    output: typeof AdmitLearnerResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_wavespan_v1_collections, 0);

@@ -30,6 +30,21 @@ service CollectionService {
   rpc ZScore(MemberRequest) returns (ScoreResult);
   rpc ZCard(CardRequest) returns (CountResult);
   rpc ZRange(RangeRequest) returns (ScoredMembersResult);
+
+  // AdmitLearner asks this node (a member of the shard) to admit replica_id, reachable at target, as a
+  // non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
+  // not host a collection's shard calls this on a peer that does, then starts its local learner.
+  rpc AdmitLearner(AdmitLearnerRequest) returns (AdmitLearnerResponse);
+}
+
+message AdmitLearnerRequest {
+  uint64 shard_id = 1;
+  uint64 replica_id = 2;
+  string target = 3; // the joining node's Raft transport address
+}
+
+message AdmitLearnerResponse {
+  ResponseMeta meta = 1;
 }
 
 // FieldValue is a hash field/value pair.

@@ -21,6 +21,110 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type AdmitLearnerRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ShardId       uint64                 `protobuf:"varint,1,opt,name=shard_id,json=shardId,proto3" json:"shard_id,omitempty"`
+	ReplicaId     uint64                 `protobuf:"varint,2,opt,name=replica_id,json=replicaId,proto3" json:"replica_id,omitempty"`
+	Target        string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"` // the joining node's Raft transport address
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdmitLearnerRequest) Reset() {
+	*x = AdmitLearnerRequest{}
+	mi := &file_wavespan_v1_collections_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdmitLearnerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdmitLearnerRequest) ProtoMessage() {}
+
+func (x *AdmitLearnerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_collections_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdmitLearnerRequest.ProtoReflect.Descriptor instead.
+func (*AdmitLearnerRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *AdmitLearnerRequest) GetShardId() uint64 {
+	if x != nil {
+		return x.ShardId
+	}
+	return 0
+}
+
+func (x *AdmitLearnerRequest) GetReplicaId() uint64 {
+	if x != nil {
+		return x.ReplicaId
+	}
+	return 0
+}
+
+func (x *AdmitLearnerRequest) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+type AdmitLearnerResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Meta          *ResponseMeta          `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdmitLearnerResponse) Reset() {
+	*x = AdmitLearnerResponse{}
+	mi := &file_wavespan_v1_collections_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdmitLearnerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdmitLearnerResponse) ProtoMessage() {}
+
+func (x *AdmitLearnerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_collections_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdmitLearnerResponse.ProtoReflect.Descriptor instead.
+func (*AdmitLearnerResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AdmitLearnerResponse) GetMeta() *ResponseMeta {
+	if x != nil {
+		return x.Meta
+	}
+	return nil
+}
+
 // FieldValue is a hash field/value pair.
 type FieldValue struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -32,7 +136,7 @@ type FieldValue struct {
 
 func (x *FieldValue) Reset() {
 	*x = FieldValue{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[0]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -44,7 +148,7 @@ func (x *FieldValue) String() string {
 func (*FieldValue) ProtoMessage() {}
 
 func (x *FieldValue) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[0]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -57,7 +161,7 @@ func (x *FieldValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FieldValue.ProtoReflect.Descriptor instead.
 func (*FieldValue) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{0}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *FieldValue) GetField() []byte {
@@ -85,7 +189,7 @@ type ScoredMember struct {
 
 func (x *ScoredMember) Reset() {
 	*x = ScoredMember{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[1]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -97,7 +201,7 @@ func (x *ScoredMember) String() string {
 func (*ScoredMember) ProtoMessage() {}
 
 func (x *ScoredMember) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[1]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -110,7 +214,7 @@ func (x *ScoredMember) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScoredMember.ProtoReflect.Descriptor instead.
 func (*ScoredMember) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{1}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ScoredMember) GetMember() []byte {
@@ -140,7 +244,7 @@ type SAddRequest struct {
 
 func (x *SAddRequest) Reset() {
 	*x = SAddRequest{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[2]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -152,7 +256,7 @@ func (x *SAddRequest) String() string {
 func (*SAddRequest) ProtoMessage() {}
 
 func (x *SAddRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[2]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -165,7 +269,7 @@ func (x *SAddRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SAddRequest.ProtoReflect.Descriptor instead.
 func (*SAddRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{2}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SAddRequest) GetNamespace() string {
@@ -208,7 +312,7 @@ type KeysRequest struct {
 
 func (x *KeysRequest) Reset() {
 	*x = KeysRequest{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[3]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -220,7 +324,7 @@ func (x *KeysRequest) String() string {
 func (*KeysRequest) ProtoMessage() {}
 
 func (x *KeysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[3]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -233,7 +337,7 @@ func (x *KeysRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeysRequest.ProtoReflect.Descriptor instead.
 func (*KeysRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{3}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *KeysRequest) GetNamespace() string {
@@ -270,7 +374,7 @@ type MemberRequest struct {
 
 func (x *MemberRequest) Reset() {
 	*x = MemberRequest{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[4]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -282,7 +386,7 @@ func (x *MemberRequest) String() string {
 func (*MemberRequest) ProtoMessage() {}
 
 func (x *MemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[4]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -295,7 +399,7 @@ func (x *MemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MemberRequest.ProtoReflect.Descriptor instead.
 func (*MemberRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{4}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *MemberRequest) GetNamespace() string {
@@ -338,7 +442,7 @@ type CardRequest struct {
 
 func (x *CardRequest) Reset() {
 	*x = CardRequest{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[5]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -350,7 +454,7 @@ func (x *CardRequest) String() string {
 func (*CardRequest) ProtoMessage() {}
 
 func (x *CardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[5]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -363,7 +467,7 @@ func (x *CardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CardRequest.ProtoReflect.Descriptor instead.
 func (*CardRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{5}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CardRequest) GetNamespace() string {
@@ -400,7 +504,7 @@ type RangeRequest struct {
 
 func (x *RangeRequest) Reset() {
 	*x = RangeRequest{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[6]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -412,7 +516,7 @@ func (x *RangeRequest) String() string {
 func (*RangeRequest) ProtoMessage() {}
 
 func (x *RangeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[6]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -425,7 +529,7 @@ func (x *RangeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RangeRequest.ProtoReflect.Descriptor instead.
 func (*RangeRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{6}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RangeRequest) GetNamespace() string {
@@ -467,7 +571,7 @@ type HSetRequest struct {
 
 func (x *HSetRequest) Reset() {
 	*x = HSetRequest{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[7]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -479,7 +583,7 @@ func (x *HSetRequest) String() string {
 func (*HSetRequest) ProtoMessage() {}
 
 func (x *HSetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[7]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -492,7 +596,7 @@ func (x *HSetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HSetRequest.ProtoReflect.Descriptor instead.
 func (*HSetRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{7}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *HSetRequest) GetNamespace() string {
@@ -527,7 +631,7 @@ type ZAddRequest struct {
 
 func (x *ZAddRequest) Reset() {
 	*x = ZAddRequest{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[8]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -539,7 +643,7 @@ func (x *ZAddRequest) String() string {
 func (*ZAddRequest) ProtoMessage() {}
 
 func (x *ZAddRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[8]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -552,7 +656,7 @@ func (x *ZAddRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ZAddRequest.ProtoReflect.Descriptor instead.
 func (*ZAddRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{8}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ZAddRequest) GetNamespace() string {
@@ -586,7 +690,7 @@ type CountResult struct {
 
 func (x *CountResult) Reset() {
 	*x = CountResult{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[9]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -598,7 +702,7 @@ func (x *CountResult) String() string {
 func (*CountResult) ProtoMessage() {}
 
 func (x *CountResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[9]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -611,7 +715,7 @@ func (x *CountResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CountResult.ProtoReflect.Descriptor instead.
 func (*CountResult) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{9}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CountResult) GetMeta() *ResponseMeta {
@@ -638,7 +742,7 @@ type BoolResult struct {
 
 func (x *BoolResult) Reset() {
 	*x = BoolResult{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[10]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -650,7 +754,7 @@ func (x *BoolResult) String() string {
 func (*BoolResult) ProtoMessage() {}
 
 func (x *BoolResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[10]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -663,7 +767,7 @@ func (x *BoolResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoolResult.ProtoReflect.Descriptor instead.
 func (*BoolResult) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{10}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *BoolResult) GetMeta() *ResponseMeta {
@@ -691,7 +795,7 @@ type ValueResult struct {
 
 func (x *ValueResult) Reset() {
 	*x = ValueResult{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[11]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -703,7 +807,7 @@ func (x *ValueResult) String() string {
 func (*ValueResult) ProtoMessage() {}
 
 func (x *ValueResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[11]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -716,7 +820,7 @@ func (x *ValueResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValueResult.ProtoReflect.Descriptor instead.
 func (*ValueResult) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{11}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ValueResult) GetMeta() *ResponseMeta {
@@ -751,7 +855,7 @@ type ScoreResult struct {
 
 func (x *ScoreResult) Reset() {
 	*x = ScoreResult{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[12]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -763,7 +867,7 @@ func (x *ScoreResult) String() string {
 func (*ScoreResult) ProtoMessage() {}
 
 func (x *ScoreResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[12]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -776,7 +880,7 @@ func (x *ScoreResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScoreResult.ProtoReflect.Descriptor instead.
 func (*ScoreResult) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{12}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ScoreResult) GetMeta() *ResponseMeta {
@@ -810,7 +914,7 @@ type MembersResult struct {
 
 func (x *MembersResult) Reset() {
 	*x = MembersResult{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[13]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -822,7 +926,7 @@ func (x *MembersResult) String() string {
 func (*MembersResult) ProtoMessage() {}
 
 func (x *MembersResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[13]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -835,7 +939,7 @@ func (x *MembersResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MembersResult.ProtoReflect.Descriptor instead.
 func (*MembersResult) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{13}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *MembersResult) GetMeta() *ResponseMeta {
@@ -862,7 +966,7 @@ type FieldsResult struct {
 
 func (x *FieldsResult) Reset() {
 	*x = FieldsResult{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[14]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -874,7 +978,7 @@ func (x *FieldsResult) String() string {
 func (*FieldsResult) ProtoMessage() {}
 
 func (x *FieldsResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[14]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -887,7 +991,7 @@ func (x *FieldsResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FieldsResult.ProtoReflect.Descriptor instead.
 func (*FieldsResult) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{14}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FieldsResult) GetMeta() *ResponseMeta {
@@ -914,7 +1018,7 @@ type ScoredMembersResult struct {
 
 func (x *ScoredMembersResult) Reset() {
 	*x = ScoredMembersResult{}
-	mi := &file_wavespan_v1_collections_proto_msgTypes[15]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -926,7 +1030,7 @@ func (x *ScoredMembersResult) String() string {
 func (*ScoredMembersResult) ProtoMessage() {}
 
 func (x *ScoredMembersResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_collections_proto_msgTypes[15]
+	mi := &file_wavespan_v1_collections_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -939,7 +1043,7 @@ func (x *ScoredMembersResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScoredMembersResult.ProtoReflect.Descriptor instead.
 func (*ScoredMembersResult) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{15}
+	return file_wavespan_v1_collections_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ScoredMembersResult) GetMeta() *ResponseMeta {
@@ -960,7 +1064,14 @@ var File_wavespan_v1_collections_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_collections_proto_rawDesc = "" +
 	"\n" +
-	"\x1dwavespan/v1/collections.proto\x12\vwavespan.v1\x1a\x18wavespan/v1/common.proto\"8\n" +
+	"\x1dwavespan/v1/collections.proto\x12\vwavespan.v1\x1a\x18wavespan/v1/common.proto\"g\n" +
+	"\x13AdmitLearnerRequest\x12\x19\n" +
+	"\bshard_id\x18\x01 \x01(\x04R\ashardId\x12\x1d\n" +
+	"\n" +
+	"replica_id\x18\x02 \x01(\x04R\treplicaId\x12\x16\n" +
+	"\x06target\x18\x03 \x01(\tR\x06target\"E\n" +
+	"\x14AdmitLearnerResponse\x12-\n" +
+	"\x04meta\x18\x01 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"8\n" +
 	"\n" +
 	"FieldValue\x12\x14\n" +
 	"\x05field\x18\x01 \x01(\fR\x05field\x12\x14\n" +
@@ -1037,7 +1148,7 @@ const file_wavespan_v1_collections_proto_rawDesc = "" +
 	"\x06fields\x18\x02 \x03(\v2\x17.wavespan.v1.FieldValueR\x06fields\"y\n" +
 	"\x13ScoredMembersResult\x12-\n" +
 	"\x04meta\x18\x01 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\x123\n" +
-	"\amembers\x18\x02 \x03(\v2\x19.wavespan.v1.ScoredMemberR\amembers2\xbc\a\n" +
+	"\amembers\x18\x02 \x03(\v2\x19.wavespan.v1.ScoredMemberR\amembers2\x91\b\n" +
 	"\x11CollectionService\x12:\n" +
 	"\x04SAdd\x12\x18.wavespan.v1.SAddRequest\x1a\x18.wavespan.v1.CountResult\x12:\n" +
 	"\x04SRem\x12\x18.wavespan.v1.KeysRequest\x1a\x18.wavespan.v1.CountResult\x12@\n" +
@@ -1053,7 +1164,8 @@ const file_wavespan_v1_collections_proto_rawDesc = "" +
 	"\x04ZRem\x12\x18.wavespan.v1.KeysRequest\x1a\x18.wavespan.v1.CountResult\x12>\n" +
 	"\x06ZScore\x12\x1a.wavespan.v1.MemberRequest\x1a\x18.wavespan.v1.ScoreResult\x12;\n" +
 	"\x05ZCard\x12\x18.wavespan.v1.CardRequest\x1a\x18.wavespan.v1.CountResult\x12E\n" +
-	"\x06ZRange\x12\x19.wavespan.v1.RangeRequest\x1a .wavespan.v1.ScoredMembersResultB\xb8\x01\n" +
+	"\x06ZRange\x12\x19.wavespan.v1.RangeRequest\x1a .wavespan.v1.ScoredMembersResult\x12S\n" +
+	"\fAdmitLearner\x12 .wavespan.v1.AdmitLearnerRequest\x1a!.wavespan.v1.AdmitLearnerResponseB\xb8\x01\n" +
 	"\x0fcom.wavespan.v1B\x10CollectionsProtoP\x01ZFgithub.com/yannick/wavespan/sdk/go/internal/gen/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -1068,73 +1180,78 @@ func file_wavespan_v1_collections_proto_rawDescGZIP() []byte {
 	return file_wavespan_v1_collections_proto_rawDescData
 }
 
-var file_wavespan_v1_collections_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_wavespan_v1_collections_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_wavespan_v1_collections_proto_goTypes = []any{
-	(*FieldValue)(nil),          // 0: wavespan.v1.FieldValue
-	(*ScoredMember)(nil),        // 1: wavespan.v1.ScoredMember
-	(*SAddRequest)(nil),         // 2: wavespan.v1.SAddRequest
-	(*KeysRequest)(nil),         // 3: wavespan.v1.KeysRequest
-	(*MemberRequest)(nil),       // 4: wavespan.v1.MemberRequest
-	(*CardRequest)(nil),         // 5: wavespan.v1.CardRequest
-	(*RangeRequest)(nil),        // 6: wavespan.v1.RangeRequest
-	(*HSetRequest)(nil),         // 7: wavespan.v1.HSetRequest
-	(*ZAddRequest)(nil),         // 8: wavespan.v1.ZAddRequest
-	(*CountResult)(nil),         // 9: wavespan.v1.CountResult
-	(*BoolResult)(nil),          // 10: wavespan.v1.BoolResult
-	(*ValueResult)(nil),         // 11: wavespan.v1.ValueResult
-	(*ScoreResult)(nil),         // 12: wavespan.v1.ScoreResult
-	(*MembersResult)(nil),       // 13: wavespan.v1.MembersResult
-	(*FieldsResult)(nil),        // 14: wavespan.v1.FieldsResult
-	(*ScoredMembersResult)(nil), // 15: wavespan.v1.ScoredMembersResult
-	(*ResponseMeta)(nil),        // 16: wavespan.v1.ResponseMeta
+	(*AdmitLearnerRequest)(nil),  // 0: wavespan.v1.AdmitLearnerRequest
+	(*AdmitLearnerResponse)(nil), // 1: wavespan.v1.AdmitLearnerResponse
+	(*FieldValue)(nil),           // 2: wavespan.v1.FieldValue
+	(*ScoredMember)(nil),         // 3: wavespan.v1.ScoredMember
+	(*SAddRequest)(nil),          // 4: wavespan.v1.SAddRequest
+	(*KeysRequest)(nil),          // 5: wavespan.v1.KeysRequest
+	(*MemberRequest)(nil),        // 6: wavespan.v1.MemberRequest
+	(*CardRequest)(nil),          // 7: wavespan.v1.CardRequest
+	(*RangeRequest)(nil),         // 8: wavespan.v1.RangeRequest
+	(*HSetRequest)(nil),          // 9: wavespan.v1.HSetRequest
+	(*ZAddRequest)(nil),          // 10: wavespan.v1.ZAddRequest
+	(*CountResult)(nil),          // 11: wavespan.v1.CountResult
+	(*BoolResult)(nil),           // 12: wavespan.v1.BoolResult
+	(*ValueResult)(nil),          // 13: wavespan.v1.ValueResult
+	(*ScoreResult)(nil),          // 14: wavespan.v1.ScoreResult
+	(*MembersResult)(nil),        // 15: wavespan.v1.MembersResult
+	(*FieldsResult)(nil),         // 16: wavespan.v1.FieldsResult
+	(*ScoredMembersResult)(nil),  // 17: wavespan.v1.ScoredMembersResult
+	(*ResponseMeta)(nil),         // 18: wavespan.v1.ResponseMeta
 }
 var file_wavespan_v1_collections_proto_depIdxs = []int32{
-	0,  // 0: wavespan.v1.HSetRequest.fields:type_name -> wavespan.v1.FieldValue
-	1,  // 1: wavespan.v1.ZAddRequest.members:type_name -> wavespan.v1.ScoredMember
-	16, // 2: wavespan.v1.CountResult.meta:type_name -> wavespan.v1.ResponseMeta
-	16, // 3: wavespan.v1.BoolResult.meta:type_name -> wavespan.v1.ResponseMeta
-	16, // 4: wavespan.v1.ValueResult.meta:type_name -> wavespan.v1.ResponseMeta
-	16, // 5: wavespan.v1.ScoreResult.meta:type_name -> wavespan.v1.ResponseMeta
-	16, // 6: wavespan.v1.MembersResult.meta:type_name -> wavespan.v1.ResponseMeta
-	16, // 7: wavespan.v1.FieldsResult.meta:type_name -> wavespan.v1.ResponseMeta
-	0,  // 8: wavespan.v1.FieldsResult.fields:type_name -> wavespan.v1.FieldValue
-	16, // 9: wavespan.v1.ScoredMembersResult.meta:type_name -> wavespan.v1.ResponseMeta
-	1,  // 10: wavespan.v1.ScoredMembersResult.members:type_name -> wavespan.v1.ScoredMember
-	2,  // 11: wavespan.v1.CollectionService.SAdd:input_type -> wavespan.v1.SAddRequest
-	3,  // 12: wavespan.v1.CollectionService.SRem:input_type -> wavespan.v1.KeysRequest
-	4,  // 13: wavespan.v1.CollectionService.SIsMember:input_type -> wavespan.v1.MemberRequest
-	5,  // 14: wavespan.v1.CollectionService.SCard:input_type -> wavespan.v1.CardRequest
-	6,  // 15: wavespan.v1.CollectionService.SMembers:input_type -> wavespan.v1.RangeRequest
-	7,  // 16: wavespan.v1.CollectionService.HSet:input_type -> wavespan.v1.HSetRequest
-	3,  // 17: wavespan.v1.CollectionService.HDel:input_type -> wavespan.v1.KeysRequest
-	4,  // 18: wavespan.v1.CollectionService.HGet:input_type -> wavespan.v1.MemberRequest
-	5,  // 19: wavespan.v1.CollectionService.HLen:input_type -> wavespan.v1.CardRequest
-	6,  // 20: wavespan.v1.CollectionService.HGetAll:input_type -> wavespan.v1.RangeRequest
-	8,  // 21: wavespan.v1.CollectionService.ZAdd:input_type -> wavespan.v1.ZAddRequest
-	3,  // 22: wavespan.v1.CollectionService.ZRem:input_type -> wavespan.v1.KeysRequest
-	4,  // 23: wavespan.v1.CollectionService.ZScore:input_type -> wavespan.v1.MemberRequest
-	5,  // 24: wavespan.v1.CollectionService.ZCard:input_type -> wavespan.v1.CardRequest
-	6,  // 25: wavespan.v1.CollectionService.ZRange:input_type -> wavespan.v1.RangeRequest
-	9,  // 26: wavespan.v1.CollectionService.SAdd:output_type -> wavespan.v1.CountResult
-	9,  // 27: wavespan.v1.CollectionService.SRem:output_type -> wavespan.v1.CountResult
-	10, // 28: wavespan.v1.CollectionService.SIsMember:output_type -> wavespan.v1.BoolResult
-	9,  // 29: wavespan.v1.CollectionService.SCard:output_type -> wavespan.v1.CountResult
-	13, // 30: wavespan.v1.CollectionService.SMembers:output_type -> wavespan.v1.MembersResult
-	9,  // 31: wavespan.v1.CollectionService.HSet:output_type -> wavespan.v1.CountResult
-	9,  // 32: wavespan.v1.CollectionService.HDel:output_type -> wavespan.v1.CountResult
-	11, // 33: wavespan.v1.CollectionService.HGet:output_type -> wavespan.v1.ValueResult
-	9,  // 34: wavespan.v1.CollectionService.HLen:output_type -> wavespan.v1.CountResult
-	14, // 35: wavespan.v1.CollectionService.HGetAll:output_type -> wavespan.v1.FieldsResult
-	9,  // 36: wavespan.v1.CollectionService.ZAdd:output_type -> wavespan.v1.CountResult
-	9,  // 37: wavespan.v1.CollectionService.ZRem:output_type -> wavespan.v1.CountResult
-	12, // 38: wavespan.v1.CollectionService.ZScore:output_type -> wavespan.v1.ScoreResult
-	9,  // 39: wavespan.v1.CollectionService.ZCard:output_type -> wavespan.v1.CountResult
-	15, // 40: wavespan.v1.CollectionService.ZRange:output_type -> wavespan.v1.ScoredMembersResult
-	26, // [26:41] is the sub-list for method output_type
-	11, // [11:26] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	18, // 0: wavespan.v1.AdmitLearnerResponse.meta:type_name -> wavespan.v1.ResponseMeta
+	2,  // 1: wavespan.v1.HSetRequest.fields:type_name -> wavespan.v1.FieldValue
+	3,  // 2: wavespan.v1.ZAddRequest.members:type_name -> wavespan.v1.ScoredMember
+	18, // 3: wavespan.v1.CountResult.meta:type_name -> wavespan.v1.ResponseMeta
+	18, // 4: wavespan.v1.BoolResult.meta:type_name -> wavespan.v1.ResponseMeta
+	18, // 5: wavespan.v1.ValueResult.meta:type_name -> wavespan.v1.ResponseMeta
+	18, // 6: wavespan.v1.ScoreResult.meta:type_name -> wavespan.v1.ResponseMeta
+	18, // 7: wavespan.v1.MembersResult.meta:type_name -> wavespan.v1.ResponseMeta
+	18, // 8: wavespan.v1.FieldsResult.meta:type_name -> wavespan.v1.ResponseMeta
+	2,  // 9: wavespan.v1.FieldsResult.fields:type_name -> wavespan.v1.FieldValue
+	18, // 10: wavespan.v1.ScoredMembersResult.meta:type_name -> wavespan.v1.ResponseMeta
+	3,  // 11: wavespan.v1.ScoredMembersResult.members:type_name -> wavespan.v1.ScoredMember
+	4,  // 12: wavespan.v1.CollectionService.SAdd:input_type -> wavespan.v1.SAddRequest
+	5,  // 13: wavespan.v1.CollectionService.SRem:input_type -> wavespan.v1.KeysRequest
+	6,  // 14: wavespan.v1.CollectionService.SIsMember:input_type -> wavespan.v1.MemberRequest
+	7,  // 15: wavespan.v1.CollectionService.SCard:input_type -> wavespan.v1.CardRequest
+	8,  // 16: wavespan.v1.CollectionService.SMembers:input_type -> wavespan.v1.RangeRequest
+	9,  // 17: wavespan.v1.CollectionService.HSet:input_type -> wavespan.v1.HSetRequest
+	5,  // 18: wavespan.v1.CollectionService.HDel:input_type -> wavespan.v1.KeysRequest
+	6,  // 19: wavespan.v1.CollectionService.HGet:input_type -> wavespan.v1.MemberRequest
+	7,  // 20: wavespan.v1.CollectionService.HLen:input_type -> wavespan.v1.CardRequest
+	8,  // 21: wavespan.v1.CollectionService.HGetAll:input_type -> wavespan.v1.RangeRequest
+	10, // 22: wavespan.v1.CollectionService.ZAdd:input_type -> wavespan.v1.ZAddRequest
+	5,  // 23: wavespan.v1.CollectionService.ZRem:input_type -> wavespan.v1.KeysRequest
+	6,  // 24: wavespan.v1.CollectionService.ZScore:input_type -> wavespan.v1.MemberRequest
+	7,  // 25: wavespan.v1.CollectionService.ZCard:input_type -> wavespan.v1.CardRequest
+	8,  // 26: wavespan.v1.CollectionService.ZRange:input_type -> wavespan.v1.RangeRequest
+	0,  // 27: wavespan.v1.CollectionService.AdmitLearner:input_type -> wavespan.v1.AdmitLearnerRequest
+	11, // 28: wavespan.v1.CollectionService.SAdd:output_type -> wavespan.v1.CountResult
+	11, // 29: wavespan.v1.CollectionService.SRem:output_type -> wavespan.v1.CountResult
+	12, // 30: wavespan.v1.CollectionService.SIsMember:output_type -> wavespan.v1.BoolResult
+	11, // 31: wavespan.v1.CollectionService.SCard:output_type -> wavespan.v1.CountResult
+	15, // 32: wavespan.v1.CollectionService.SMembers:output_type -> wavespan.v1.MembersResult
+	11, // 33: wavespan.v1.CollectionService.HSet:output_type -> wavespan.v1.CountResult
+	11, // 34: wavespan.v1.CollectionService.HDel:output_type -> wavespan.v1.CountResult
+	13, // 35: wavespan.v1.CollectionService.HGet:output_type -> wavespan.v1.ValueResult
+	11, // 36: wavespan.v1.CollectionService.HLen:output_type -> wavespan.v1.CountResult
+	16, // 37: wavespan.v1.CollectionService.HGetAll:output_type -> wavespan.v1.FieldsResult
+	11, // 38: wavespan.v1.CollectionService.ZAdd:output_type -> wavespan.v1.CountResult
+	11, // 39: wavespan.v1.CollectionService.ZRem:output_type -> wavespan.v1.CountResult
+	14, // 40: wavespan.v1.CollectionService.ZScore:output_type -> wavespan.v1.ScoreResult
+	11, // 41: wavespan.v1.CollectionService.ZCard:output_type -> wavespan.v1.CountResult
+	17, // 42: wavespan.v1.CollectionService.ZRange:output_type -> wavespan.v1.ScoredMembersResult
+	1,  // 43: wavespan.v1.CollectionService.AdmitLearner:output_type -> wavespan.v1.AdmitLearnerResponse
+	28, // [28:44] is the sub-list for method output_type
+	12, // [12:28] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_collections_proto_init() }
@@ -1143,14 +1260,14 @@ func file_wavespan_v1_collections_proto_init() {
 		return
 	}
 	file_wavespan_v1_common_proto_init()
-	file_wavespan_v1_collections_proto_msgTypes[2].OneofWrappers = []any{}
+	file_wavespan_v1_collections_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_collections_proto_rawDesc), len(file_wavespan_v1_collections_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -14,17 +14,31 @@ import (
 	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
+// learnerAdmitTarget is the subset of Manager the AdmitLearner RPC needs (admit a learner to a shard
+// this node hosts).
+type learnerAdmitTarget interface {
+	AddLearner(ctx context.Context, shardID, replicaID uint64, addr string) error
+}
+
 // Service is the public CollectionService Connect handler over the typed Collections engine
 // (design/30 §13). Writes go through the owning shard's leader; reads honour the request's
 // linearizable flag. WRONGTYPE maps to FailedPrecondition.
 type Service struct {
-	cols *Collections
-	self membership.Member
+	cols  *Collections
+	self  membership.Member
+	admit learnerAdmitTarget
 }
 
 // NewService wires the CollectionService Connect handler.
 func NewService(cols *Collections, self membership.Member) *Service {
 	return &Service{cols: cols, self: self}
+}
+
+// WithLearnerAdmit enables the AdmitLearner RPC: this node will admit learners to shards it hosts (the
+// server side of demand-fill, design/30 §9).
+func (s *Service) WithLearnerAdmit(a learnerAdmitTarget) *Service {
+	s.admit = a
+	return s
 }
 
 // Handler returns the mountable Connect handler (path, handler) for the data port.
@@ -195,4 +209,16 @@ func (s *Service) ZRange(ctx context.Context, req *connect.Request[wavespanv1.Ra
 		members[i] = &wavespanv1.ScoredMember{Member: sm.Member, Score: sm.Score}
 	}
 	return connect.NewResponse(&wavespanv1.ScoredMembersResult{Meta: s.meta(), Members: members}), nil
+}
+
+// AdmitLearner admits a peer as a non-voting learner of a shard this node hosts (demand-fill server).
+func (s *Service) AdmitLearner(ctx context.Context, req *connect.Request[wavespanv1.AdmitLearnerRequest]) (*connect.Response[wavespanv1.AdmitLearnerResponse], error) {
+	if s.admit == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("collections: this node hosts no shards"))
+	}
+	m := req.Msg
+	if err := s.admit.AddLearner(ctx, m.GetShardId(), m.GetReplicaId(), m.GetTarget()); err != nil {
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(&wavespanv1.AdmitLearnerResponse{Meta: s.meta()}), nil
 }

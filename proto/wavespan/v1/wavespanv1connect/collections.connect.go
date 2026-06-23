@@ -68,6 +68,9 @@ const (
 	// CollectionServiceZRangeProcedure is the fully-qualified name of the CollectionService's ZRange
 	// RPC.
 	CollectionServiceZRangeProcedure = "/wavespan.v1.CollectionService/ZRange"
+	// CollectionServiceAdmitLearnerProcedure is the fully-qualified name of the CollectionService's
+	// AdmitLearner RPC.
+	CollectionServiceAdmitLearnerProcedure = "/wavespan.v1.CollectionService/AdmitLearner"
 )
 
 // CollectionServiceClient is a client for the wavespan.v1.CollectionService service.
@@ -90,6 +93,10 @@ type CollectionServiceClient interface {
 	ZScore(context.Context, *connect.Request[v1.MemberRequest]) (*connect.Response[v1.ScoreResult], error)
 	ZCard(context.Context, *connect.Request[v1.CardRequest]) (*connect.Response[v1.CountResult], error)
 	ZRange(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.ScoredMembersResult], error)
+	// AdmitLearner asks this node (a member of the shard) to admit replica_id, reachable at target, as a
+	// non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
+	// not host a collection's shard calls this on a peer that does, then starts its local learner.
+	AdmitLearner(context.Context, *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error)
 }
 
 // NewCollectionServiceClient constructs a client for the wavespan.v1.CollectionService service. By
@@ -193,26 +200,33 @@ func NewCollectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(collectionServiceMethods.ByName("ZRange")),
 			connect.WithClientOptions(opts...),
 		),
+		admitLearner: connect.NewClient[v1.AdmitLearnerRequest, v1.AdmitLearnerResponse](
+			httpClient,
+			baseURL+CollectionServiceAdmitLearnerProcedure,
+			connect.WithSchema(collectionServiceMethods.ByName("AdmitLearner")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // collectionServiceClient implements CollectionServiceClient.
 type collectionServiceClient struct {
-	sAdd      *connect.Client[v1.SAddRequest, v1.CountResult]
-	sRem      *connect.Client[v1.KeysRequest, v1.CountResult]
-	sIsMember *connect.Client[v1.MemberRequest, v1.BoolResult]
-	sCard     *connect.Client[v1.CardRequest, v1.CountResult]
-	sMembers  *connect.Client[v1.RangeRequest, v1.MembersResult]
-	hSet      *connect.Client[v1.HSetRequest, v1.CountResult]
-	hDel      *connect.Client[v1.KeysRequest, v1.CountResult]
-	hGet      *connect.Client[v1.MemberRequest, v1.ValueResult]
-	hLen      *connect.Client[v1.CardRequest, v1.CountResult]
-	hGetAll   *connect.Client[v1.RangeRequest, v1.FieldsResult]
-	zAdd      *connect.Client[v1.ZAddRequest, v1.CountResult]
-	zRem      *connect.Client[v1.KeysRequest, v1.CountResult]
-	zScore    *connect.Client[v1.MemberRequest, v1.ScoreResult]
-	zCard     *connect.Client[v1.CardRequest, v1.CountResult]
-	zRange    *connect.Client[v1.RangeRequest, v1.ScoredMembersResult]
+	sAdd         *connect.Client[v1.SAddRequest, v1.CountResult]
+	sRem         *connect.Client[v1.KeysRequest, v1.CountResult]
+	sIsMember    *connect.Client[v1.MemberRequest, v1.BoolResult]
+	sCard        *connect.Client[v1.CardRequest, v1.CountResult]
+	sMembers     *connect.Client[v1.RangeRequest, v1.MembersResult]
+	hSet         *connect.Client[v1.HSetRequest, v1.CountResult]
+	hDel         *connect.Client[v1.KeysRequest, v1.CountResult]
+	hGet         *connect.Client[v1.MemberRequest, v1.ValueResult]
+	hLen         *connect.Client[v1.CardRequest, v1.CountResult]
+	hGetAll      *connect.Client[v1.RangeRequest, v1.FieldsResult]
+	zAdd         *connect.Client[v1.ZAddRequest, v1.CountResult]
+	zRem         *connect.Client[v1.KeysRequest, v1.CountResult]
+	zScore       *connect.Client[v1.MemberRequest, v1.ScoreResult]
+	zCard        *connect.Client[v1.CardRequest, v1.CountResult]
+	zRange       *connect.Client[v1.RangeRequest, v1.ScoredMembersResult]
+	admitLearner *connect.Client[v1.AdmitLearnerRequest, v1.AdmitLearnerResponse]
 }
 
 // SAdd calls wavespan.v1.CollectionService.SAdd.
@@ -290,6 +304,11 @@ func (c *collectionServiceClient) ZRange(ctx context.Context, req *connect.Reque
 	return c.zRange.CallUnary(ctx, req)
 }
 
+// AdmitLearner calls wavespan.v1.CollectionService.AdmitLearner.
+func (c *collectionServiceClient) AdmitLearner(ctx context.Context, req *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error) {
+	return c.admitLearner.CallUnary(ctx, req)
+}
+
 // CollectionServiceHandler is an implementation of the wavespan.v1.CollectionService service.
 type CollectionServiceHandler interface {
 	// Set
@@ -310,6 +329,10 @@ type CollectionServiceHandler interface {
 	ZScore(context.Context, *connect.Request[v1.MemberRequest]) (*connect.Response[v1.ScoreResult], error)
 	ZCard(context.Context, *connect.Request[v1.CardRequest]) (*connect.Response[v1.CountResult], error)
 	ZRange(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.ScoredMembersResult], error)
+	// AdmitLearner asks this node (a member of the shard) to admit replica_id, reachable at target, as a
+	// non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
+	// not host a collection's shard calls this on a peer that does, then starts its local learner.
+	AdmitLearner(context.Context, *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error)
 }
 
 // NewCollectionServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -409,6 +432,12 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 		connect.WithSchema(collectionServiceMethods.ByName("ZRange")),
 		connect.WithHandlerOptions(opts...),
 	)
+	collectionServiceAdmitLearnerHandler := connect.NewUnaryHandler(
+		CollectionServiceAdmitLearnerProcedure,
+		svc.AdmitLearner,
+		connect.WithSchema(collectionServiceMethods.ByName("AdmitLearner")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.CollectionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CollectionServiceSAddProcedure:
@@ -441,6 +470,8 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 			collectionServiceZCardHandler.ServeHTTP(w, r)
 		case CollectionServiceZRangeProcedure:
 			collectionServiceZRangeHandler.ServeHTTP(w, r)
+		case CollectionServiceAdmitLearnerProcedure:
+			collectionServiceAdmitLearnerHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -508,4 +539,8 @@ func (UnimplementedCollectionServiceHandler) ZCard(context.Context, *connect.Req
 
 func (UnimplementedCollectionServiceHandler) ZRange(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.ScoredMembersResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.ZRange is not implemented"))
+}
+
+func (UnimplementedCollectionServiceHandler) AdmitLearner(context.Context, *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.AdmitLearner is not implemented"))
 }
