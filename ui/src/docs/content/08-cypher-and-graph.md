@@ -74,4 +74,45 @@ ORDER BY score DESC
 
 See [Vector Search](doc:vector-search) for the indexing details.
 
+## Reading & writing KV from Cypher
+
+The key-value store is **not** a separate system you reach only over the gRPC [KV API](doc:kv-api) — it is the *same* store, addressed by the same `(namespace, key)` pairs and carrying the same eventual-consistency contract. Cypher exposes it through three built-ins, so a query can join graph structure against KV state, or mutate KV as part of a query.
+
+| Built-in | Form | Yields / returns |
+|----------|------|------------------|
+| `kv.get(namespace, key)` | scalar function — use inline, in `RETURN` or `WHERE` | the value, or `null` if absent / tombstoned / expired |
+| `CALL kv.put(namespace, key, value [, {ttlMs: N}])` | procedure | `version` (the committed HLC version) |
+| `CALL kv.delete(namespace, key)` | procedure | `version` (the tombstone version) |
+
+**`kv.get` — read inline.** It runs through the same read path as the gRPC `Get`: local-first, with a closest-holder fetch on miss. A UTF-8 value comes back as a string; a non-UTF-8 value comes back as `bytes` (lossless round-trip). If a holder is unreachable the read returns `null` *and* flags the query — the trailer's `partial_graph_possible` becomes true — so a `null` is never silently mistaken for "absent".
+
+```cypher
+-- join a graph match against per-node KV state
+MATCH (u:User {id: 'u1'})
+RETURN u.name, kv.get('profile', u.id) AS profile
+
+-- filter graph rows on a KV flag
+MATCH (u:User)
+WHERE kv.get('flags', u.id) = 'banned'
+RETURN u.name
+```
+
+**`kv.put` / `kv.delete` — write.** Both route through the same Coordinator as the gRPC KV API: origin+1 durable, then replication fanout. Each write is **independent** — it commits on its own and does *not* join a surrounding graph mutation's transaction. `kv.put` takes an optional 4th argument `{ttlMs: N}` for a per-key TTL (lazy, best-effort expiry). Argument arity/types are validated strictly — a malformed call is a hard error, never a silent `null`.
+
+```cypher
+-- write and consume the returned version
+CALL kv.put('profile', 'u1', '{"v":2}') YIELD version
+RETURN version
+
+-- write with a 1-hour TTL
+CALL kv.put('session', 'tok-abc', 'active', {ttlMs: 3600000}) YIELD version
+RETURN version
+
+-- tombstone a key
+CALL kv.delete('profile', 'u1') YIELD version
+RETURN version
+```
+
+Because the namespace is the same one the KV API uses, a record written with `kv.put('profile', 'u1', …)` is immediately the record you read back with `Get(namespace='profile', key='u1')`, and vice-versa.
+
 > Try it: the [Cypher Console](doc:overview) tab runs queries against this node and renders the streamed rows, and the [Node Explorer](doc:overview) gives a force-directed view of the graph.
