@@ -5,6 +5,16 @@
 
 # syntax=docker/dockerfile:1
 
+# ① Build the admin console SPA so //go:embed all:dist (internal/ui) embeds real assets, not just the
+# .gitkeep placeholder. `npm run build` emits to internal/ui/dist (vite outDir). Node WORKDIR is
+# /waveSpan/ui so that relative outDir resolves to /waveSpan/internal/ui/dist (matching the COPY below).
+FROM --platform=$BUILDPLATFORM node:20 AS ui
+WORKDIR /waveSpan/ui
+COPY waveSpan/ui/package.json waveSpan/ui/package-lock.json ./
+RUN npm ci
+COPY waveSpan/ui/ ./
+RUN npm run build
+
 FROM --platform=$BUILDPLATFORM golang:1.26 AS build
 ARG TARGETOS
 ARG TARGETARCH
@@ -12,6 +22,8 @@ WORKDIR /src
 # sibling Go modules
 COPY wavesdb/ ./wavesdb/
 COPY waveSpan/ ./waveSpan/
+# Overlay the built console SPA BEFORE go build so //go:embed all:dist sees real assets.
+COPY --from=ui /waveSpan/internal/ui/dist/ ./waveSpan/internal/ui/dist/
 WORKDIR /src/waveSpan
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
