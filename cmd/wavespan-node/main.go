@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"syscall"
@@ -25,6 +26,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/yannick/wavespan/internal/cache"
+	"github.com/yannick/wavespan/internal/collections"
 	"github.com/yannick/wavespan/internal/config"
 	"github.com/yannick/wavespan/internal/conflict"
 	"github.com/yannick/wavespan/internal/cypher"
@@ -501,6 +503,35 @@ func run() error {
 	if globalSrv != nil {
 		dataMux.Handle(globalSrv.Handler())
 	}
+
+	// Replicated collections (design/30): experimental CP consensus tier over a dedicated dragonboat
+	// NodeHost that shares the wavesdb store. Opt-in via WAVESPAN_COLLECTIONS_ENABLED=1 with single-node
+	// bootstrap, until multi-node placement + the cheap-mTLS transport land; failures here never block
+	// node startup.
+	var collectionsMgr *collections.Manager
+	if os.Getenv("WAVESPAN_COLLECTIONS_ENABLED") == "1" {
+		raftAddr := os.Getenv("WAVESPAN_COLLECTIONS_RAFT_ADDR")
+		if raftAddr == "" {
+			raftAddr = fmt.Sprintf("127.0.0.1:%d", cfg.Ports.Data+1000)
+		}
+		if mgr, err := collections.NewManager(filepath.Join(cfg.Storage.Path, "collections-raft"), raftAddr, store); err != nil {
+			logger.Error("collections: NodeHost init failed; tier disabled", "err", err)
+		} else {
+			members := map[uint64]string{1: raftAddr}
+			bctx, bcancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctrl, berr := collections.Bootstrap(bctx, mgr, 1, members, members)
+			bcancel()
+			if berr != nil {
+				logger.Error("collections: bootstrap failed; tier disabled", "err", berr)
+				mgr.Stop()
+			} else {
+				collectionsMgr = mgr
+				dataMux.Handle(collections.NewService(ctrl.Collections(), self).Handler())
+				logger.Info("collections: replicated-collections tier enabled", "raftAddr", raftAddr)
+			}
+		}
+	}
+
 	// Authorization (M12): enforce the role/surface matrix at the HTTP layer. In insecureDevMode the
 	// identity middleware grants admin (dev/compose); in production the role comes from the verified
 	// mTLS client certificate.
@@ -673,6 +704,9 @@ func run() error {
 		_ = gossipSrv.Shutdown(shutdownCtx)
 		_ = dataSrv.Shutdown(shutdownCtx)
 		_ = adminSrv.Shutdown(shutdownCtx)
+		if collectionsMgr != nil {
+			collectionsMgr.Stop() // before the deferred store.Close
+		}
 		logger.Info("clean shutdown complete")
 		return nil
 	}
