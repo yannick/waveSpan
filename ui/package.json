@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:docs": "vite build --config vite.docs.config.ts && mv ../docs-site/docs.html ../docs-site/index.html",
+    "preview:docs": "vite preview --config vite.docs.config.ts",
     "typecheck": "tsc --noEmit",
     "gen": "buf generate"
   },
