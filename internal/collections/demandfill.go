@@ -129,6 +129,13 @@ func (m *Manager) StartLearner(shardID, replicaID uint64) error {
 	return m.startReplica(shardID, replicaID, nil, true /*join*/, factory, true, true /*nonVoting*/)
 }
 
+// StartMetaLearner starts a local non-voting replica of the meta shard (range directory SM) that joins
+// and streams — used by a spot node to obtain the directory before it can route collections.
+func (m *Manager) StartMetaLearner(shardID, replicaID uint64) error {
+	factory := func(sid, _ uint64) sm.IOnDiskStateMachine { return newMetaSM(m.store, sid) }
+	return m.startReplica(shardID, replicaID, nil, true /*join*/, factory, false /*isData*/, true /*nonVoting*/)
+}
+
 // RemoveLearner asks the shard (via its leader) to drop replicaID from membership (eviction). Call on
 // a node that hosts the shard.
 func (m *Manager) RemoveLearner(ctx context.Context, shardID, replicaID uint64) error {

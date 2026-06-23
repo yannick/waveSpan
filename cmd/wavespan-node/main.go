@@ -557,8 +557,25 @@ func run() error {
 		case err != nil:
 			logger.Error("collections: NodeHost init failed; tier disabled", "err", err)
 		case !voterEligible:
-			logger.Warn("collections: this node is not in the voter set; spot-node serving is not yet wired, tier idle here", "raftAddr", raftAddr)
-			mgr.Stop()
+			// Spot/edge node: mount the service now and join the meta shard in the background (retrying
+			// until the stable core is reachable), so the node serves collections via demand-fill once it
+			// has the directory — without blocking startup.
+			collectionsMgr = mgr
+			spotRID := collections.SpotReplicaID(cfg.MemberID)
+			admitter := collections.NewRPCAdmitter(httpClient, peersFn)
+			dir := collections.NewRangeDirectory(mgr, collections.MetaShardID)
+			cols := collections.New(mgr, dir).WithDemandFill(collections.NewDemandFiller(mgr, spotRID, raftAddr, admitter))
+			collectionsSvc = collections.NewService(cols, self)
+			dataMux.Handle(collectionsSvc.Handler())
+			cypherSvc.WithCollections(collections.NewCypherCollections(cols))
+			go func() {
+				if err := collections.EnsureSpotMembership(ctx, mgr, spotRID, raftAddr, admitter, dir); err != nil {
+					logger.Error("collections: spot membership not established", "err", err)
+					return
+				}
+				logger.Info("collections: spot node joined; serving via demand-fill", "replicaID", spotRID)
+			}()
+			logger.Info("collections: spot node starting (joining meta shard in background)", "raftAddr", raftAddr)
 		default:
 			bctx, bcancel := context.WithTimeout(context.Background(), 40*time.Second)
 			ctrl, berr := collections.BootstrapWithPlacement(bctx, mgr, collections.Placement{SelfReplicaID: selfReplicaID, VoterEligible: true, Voters: voters})

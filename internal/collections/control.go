@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"hash/fnv"
 	"time"
 )
 
@@ -67,6 +68,65 @@ func BootstrapWithPlacement(ctx context.Context, mgr *Manager, p Placement) (*Co
 		return nil, nil
 	}
 	return Bootstrap(ctx, mgr, p.SelfReplicaID, p.Voters, p.Voters)
+}
+
+// SpotReplicaID derives a stable, high, per-node replica id from a node identity (e.g. its member id),
+// kept well above the small stable-core voter ids so a spot node never collides with the core and
+// rejoins as the same replica across restarts.
+func SpotReplicaID(nodeID string) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(nodeID))
+	return (uint64(1) << 40) | (h.Sum64() & ((uint64(1) << 40) - 1))
+}
+
+// JoinAsSpot brings up a non-voting spot/edge node that holds no shards initially: it demand-fills the
+// meta shard to obtain the range directory, then serves collections by demand-filling their data
+// shards on read (design/30 §9). selfReplicaID must be stable + unique (see SpotReplicaID); admitter
+// asks a stable-core peer to admit this node.
+func JoinAsSpot(ctx context.Context, mgr *Manager, selfReplicaID uint64, selfTarget string, admitter LearnerAdmitter) (*Control, error) {
+	dir := NewRangeDirectory(mgr, MetaShardID)
+	if err := EnsureSpotMembership(ctx, mgr, selfReplicaID, selfTarget, admitter, dir); err != nil {
+		return nil, err
+	}
+	cols := New(mgr, dir).WithDemandFill(NewDemandFiller(mgr, selfReplicaID, selfTarget, admitter))
+	return &Control{mgr: mgr, dir: dir, cols: cols}, nil
+}
+
+// EnsureSpotMembership joins the meta shard as a learner and blocks until dir is populated, so a spot
+// node obtains the range directory. The admit step is retried until a stable-core peer is reachable —
+// run this in the background after mounting the service so node startup is not blocked on the core.
+func EnsureSpotMembership(ctx context.Context, mgr *Manager, selfReplicaID uint64, selfTarget string, admitter LearnerAdmitter, dir *RangeDirectory) error {
+	// 1. ask a peer to admit us to the meta shard, retrying until one accepts.
+	for {
+		if err := admitter.AdmitLearner(ctx, MetaShardID, selfReplicaID, selfTarget); err == nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	// 2. start the local meta learner.
+	if err := mgr.StartMetaLearner(MetaShardID, selfReplicaID); err != nil {
+		return err
+	}
+	// 3. wait until the meta learner serves the directory locally.
+	for {
+		if err := dir.Refresh(ctx); err == nil {
+			dir.mu.RLock()
+			has := len(dir.ranges) > 0
+			dir.mu.RUnlock()
+			if has {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
 
 // Collections returns the typed datatype API routed through the range directory.
