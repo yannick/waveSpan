@@ -55,9 +55,10 @@ type Client struct {
 	httpc   connect.HTTPClient
 	owned   *http.Client // non-nil when the SDK created the client (so Close can idle it)
 
-	kv     wavespanv1connect.KvServiceClient
-	vector wavespanv1connect.VectorServiceClient
-	cypher wavespanv1connect.CypherClient
+	kv          wavespanv1connect.KvServiceClient
+	vector      wavespanv1connect.VectorServiceClient
+	cypher      wavespanv1connect.CypherClient
+	collections wavespanv1connect.CollectionServiceClient
 }
 
 // Dial constructs a [Client] from Options. It does not perform any network I/O — the first RPC
@@ -91,12 +92,13 @@ func Dial(opts Options) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL: baseURL,
-		httpc:   httpc,
-		owned:   owned,
-		kv:      wavespanv1connect.NewKvServiceClient(httpc, baseURL, clientOpts...),
-		vector:  wavespanv1connect.NewVectorServiceClient(httpc, baseURL, clientOpts...),
-		cypher:  wavespanv1connect.NewCypherClient(httpc, baseURL, clientOpts...),
+		baseURL:     baseURL,
+		httpc:       httpc,
+		owned:       owned,
+		kv:          wavespanv1connect.NewKvServiceClient(httpc, baseURL, clientOpts...),
+		vector:      wavespanv1connect.NewVectorServiceClient(httpc, baseURL, clientOpts...),
+		cypher:      wavespanv1connect.NewCypherClient(httpc, baseURL, clientOpts...),
+		collections: wavespanv1connect.NewCollectionServiceClient(httpc, baseURL, clientOpts...),
 	}, nil
 }
 
