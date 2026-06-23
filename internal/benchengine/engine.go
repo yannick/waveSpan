@@ -291,27 +291,28 @@ func (r *Run) broadcast(s Sample) {
 	}
 }
 
-// Pause blocks new ops (running -> paused).
+// Pause blocks new ops (running -> paused). The gate's physical Lock() is taken while holding
+// r.mu so the logical state and the gate's lock state can never diverge under a concurrent
+// Resume/finish (which would otherwise Unlock an un-Locked gate and fatally crash the process).
 func (r *Run) Pause() {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.state != StateRunning {
-		r.mu.Unlock()
 		return
 	}
 	r.state = StatePaused
-	r.mu.Unlock()
 	r.gate.pause()
 }
 
-// Resume continues ops (paused -> running).
+// Resume continues ops (paused -> running). The gate's Unlock() is performed under r.mu so it can
+// only ever run when a prior Pause took the gate's Lock (see Pause).
 func (r *Run) Resume() {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.state != StatePaused {
-		r.mu.Unlock()
 		return
 	}
 	r.state = StateRunning
-	r.mu.Unlock()
 	r.gate.resume()
 }
 
@@ -320,15 +321,19 @@ func (r *Run) Stop() { r.finish(StateStopped) }
 
 func (r *Run) finish(target State) {
 	r.stopOnce.Do(func() {
-		// Release the pause gate if paused so workers can observe ctx cancellation.
+		// Set the terminal state, cancel ctx, and release the pause gate (if paused) all under
+		// r.mu so the gate's Unlock can never race a concurrent Pause's Lock. wg.Wait() stays
+		// OUTSIDE the lock: workers only ever RLock/RUnlock the gate and never take r.mu, so
+		// holding r.mu across the gate op cannot deadlock — but waiting on workers under r.mu is
+		// avoided regardless.
 		r.mu.Lock()
 		wasPaused := r.state == StatePaused
 		r.state = target
-		r.mu.Unlock()
 		r.cancel()
 		if wasPaused {
 			r.gate.resume()
 		}
+		r.mu.Unlock()
 		r.wg.Wait()
 		close(r.doneCh)
 	})

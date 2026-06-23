@@ -2,6 +2,7 @@ package benchengine
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -45,5 +46,42 @@ func TestEngineLifecycleWithFakeOp(t *testing.T) {
 	r.Stop()
 	if r.State() != StateDone && r.State() != StateStopped {
 		t.Fatalf("state=%v", r.State())
+	}
+}
+
+// TestConcurrentControl hammers Pause/Resume/Stop/State from several goroutines at once. It exists
+// to catch the pause-gate divergence bug where a Resume could Unlock a gate that was never Locked
+// (fatal "sync: Unlock of unlocked RWMutex", which kills the process and cannot be recovered).
+// Must pass under -race and must not crash.
+func TestConcurrentControl(t *testing.T) {
+	r := newRunForTest(func(ctx context.Context) error { return nil }, 4 /*workers*/)
+	r.Start()
+
+	const (
+		goroutines = 4
+		iterations = 80
+	)
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				switch i % 3 {
+				case 0:
+					r.Pause()
+				case 1:
+					r.Resume()
+				default:
+					_ = r.State()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	r.Stop()
+	if s := r.State(); s != StateStopped && s != StateDone {
+		t.Fatalf("state after stop=%v", s)
 	}
 }
