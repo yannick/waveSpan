@@ -44,3 +44,12 @@ var sharedH2CClient = &http.Client{
 // internal cluster clients and the benchmark so concurrent requests share connections instead of
 // serializing on HTTP/1.1.
 func H2CClient() *http.Client { return sharedH2CClient }
+
+// sharedH2CClientNoTimeout shares the pooled h2c transport but imposes NO hard request Timeout, so a
+// long-running call (e.g. a whole-namespace BulkRemove fan-out that proposes per collection) is
+// bounded only by its context deadline rather than the 30s cap on the shared client.
+var sharedH2CClientNoTimeout = &http.Client{Transport: sharedH2CClient.Transport}
+
+// H2CClientNoTimeout returns an h2c client with no hard request timeout, for long calls bounded by
+// their context deadline. It shares the connection pool with H2CClient.
+func H2CClientNoTimeout() *http.Client { return sharedH2CClientNoTimeout }

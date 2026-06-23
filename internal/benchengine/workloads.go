@@ -116,6 +116,8 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 		ns := strParam(spec.Params, "namespace", "bench-collections")
 		c := bench.CollectionsClient(cfg.DataAddr)
 		op = func(ctx context.Context) error {
+			ctx, cancel := withDeadline(ctx, collOpTimeout) // collection writes need a deadline (Raft propose)
+			defer cancel()
 			coll := []byte(fmt.Sprintf("col/%d", rand.IntN(collections)))
 			member := []byte(fmt.Sprintf("m/%d", rand.IntN(members)))
 			if rand.Float64() < writeRatio {
@@ -144,6 +146,8 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 		val := []byte("v")
 		c := bench.CollectionsClient(cfg.DataAddr)
 		op = func(ctx context.Context) error {
+			ctx, cancel := withDeadline(ctx, collOpTimeout) // collection writes need a deadline (Raft propose)
+			defer cancel()
 			coll := []byte(fmt.Sprintf("col/%d", rand.IntN(collections)))
 			field := []byte(fmt.Sprintf("m/%d", rand.IntN(fields)))
 			if rand.Float64() < writeRatio {
@@ -169,6 +173,8 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 		ns := strParam(spec.Params, "namespace", "bench-collections")
 		c := bench.CollectionsClient(cfg.DataAddr)
 		op = func(ctx context.Context) error {
+			ctx, cancel := withDeadline(ctx, collOpTimeout) // collection writes need a deadline (Raft propose)
+			defer cancel()
 			coll := []byte(fmt.Sprintf("col/%d", rand.IntN(collections)))
 			member := []byte(fmt.Sprintf("m/%d", rand.IntN(members)))
 			if rand.Float64() < writeRatio {
@@ -192,6 +198,8 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 		members := [][]byte{member}
 		c := bench.CollectionsClient(cfg.DataAddr)
 		op = func(ctx context.Context) error {
+			ctx, cancel := withDeadline(ctx, collOpTimeout) // batch remove + re-add: all need a deadline (Raft propose)
+			defer cancel()
 			keys := make([][]byte, batch)
 			for i := range keys {
 				keys[i] = []byte(fmt.Sprintf("col/%d", rand.IntN(collections)))

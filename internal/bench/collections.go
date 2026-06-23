@@ -14,6 +14,13 @@ func CollectionsClient(addr string) wavespanv1connect.CollectionServiceClient {
 	return wavespanv1connect.NewCollectionServiceClient(rpcopts.H2CClient(), "http://"+addr)
 }
 
+// CollectionsClientLong is like CollectionsClient but with no hard request timeout, for the
+// whole-namespace BulkRemove fan-out (which proposes per collection and can run far longer than the
+// shared 30s-capped client allows). The call is bounded by its context deadline instead.
+func CollectionsClientLong(addr string) wavespanv1connect.CollectionServiceClient {
+	return wavespanv1connect.NewCollectionServiceClient(rpcopts.H2CClientNoTimeout(), "http://"+addr)
+}
+
 // --- set ---
 
 // OpSAdd adds members to a set.

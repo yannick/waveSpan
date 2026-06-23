@@ -47,7 +47,11 @@ func bulkRemoveOnce(ctx context.Context, removeOp func(ctx context.Context) (cou
 // in ns — and reports timing. WARNING: this is destructive across the ENTIRE namespace; pass a
 // dedicated/isolated ns (Sweep uses per-N sub-namespaces) so it never wipes another workload's sets.
 func RunFullNamespaceRemove(ctx context.Context, dataAddr, ns string, member []byte) (BulkRemoveResult, error) {
-	c := bench.CollectionsClient(dataAddr)
+	// The whole-namespace fan-out is one Connect call that proposes per collection through Raft, so it
+	// needs a (generous) deadline; without one every propose fails with "deadline not set".
+	ctx, cancel := withDeadline(ctx, bulkRemoveTimeout)
+	defer cancel()
+	c := bench.CollectionsClientLong(dataAddr) // no 30s client cap; the context deadline bounds the fan-out
 	return bulkRemoveOnce(ctx, func(ctx context.Context) (int, uint64, error) {
 		return bench.OpBulkRemove(ctx, c, ns, nil, [][]byte{member})
 	})

@@ -96,6 +96,8 @@ func SeedSets(ctx context.Context, dataAddr, ns string, n, filler, conc int, mem
 		fillerBytes = [][]byte{fb}
 	}
 	addSet := func(ctx context.Context, i int) error {
+		ctx, cancel := withDeadline(ctx, collOpTimeout) // SAdd commits through Raft, which needs a deadline
+		defer cancel()
 		coll := []byte(fmt.Sprintf("set/%d", i))
 		members := append([][]byte{member}, fillerBytes...)
 		return bench.OpSAdd(ctx, c, ns, coll, members...)
@@ -107,7 +109,10 @@ func SeedSets(ctx context.Context, dataAddr, ns string, n, filler, conc int, mem
 func ReAddMember(ctx context.Context, dataAddr, ns string, colls [][]byte, member []byte) error {
 	c := bench.CollectionsClient(dataAddr)
 	for _, coll := range colls {
-		if err := bench.OpSAdd(ctx, c, ns, coll, member); err != nil {
+		opCtx, cancel := withDeadline(ctx, collOpTimeout) // SAdd commits through Raft, which needs a deadline
+		err := bench.OpSAdd(opCtx, c, ns, coll, member)
+		cancel()
+		if err != nil {
 			return err
 		}
 	}
