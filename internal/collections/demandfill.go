@@ -2,9 +2,108 @@ package collections
 
 import (
 	"context"
+	"errors"
+	"sync"
+	"time"
 
+	dragonboat "github.com/lni/dragonboat/v4"
 	sm "github.com/lni/dragonboat/v4/statemachine"
 )
+
+// ErrNotHosted is returned by a read when this node does not host the shard (dragonboat's
+// ErrShardNotFound); it is the demand-fill trigger.
+var ErrNotHosted = dragonboat.ErrShardNotFound
+
+// LearnerAdmitter asks a current member of a shard to admit this node as a non-voting learner. In
+// production it is an RPC to a peer (its CollectionService/admin); in tests it can call the peer's
+// Manager.AddLearner directly. The seam keeps the demand-fill orchestration transport-agnostic.
+type LearnerAdmitter interface {
+	AdmitLearner(ctx context.Context, shardID, learnerReplicaID uint64, learnerTarget string) error
+}
+
+// DemandFiller turns a not-hosted read into a learner join (design/30 §9): it asks a member to admit
+// this node, starts the local non-voting replica, and waits until it can serve. Joins are deduplicated
+// per shard and idempotent (a shard already hosted is a no-op).
+type DemandFiller struct {
+	mgr           *Manager
+	selfReplicaID uint64
+	selfTarget    string
+	admitter      LearnerAdmitter
+
+	mu      sync.Mutex
+	filling map[uint64]chan struct{} // shardID -> done channel for an in-flight fill
+}
+
+// NewDemandFiller builds a filler that joins shards as selfReplicaID reachable at selfTarget, asking
+// admitter to admit it to each shard.
+func NewDemandFiller(mgr *Manager, selfReplicaID uint64, selfTarget string, admitter LearnerAdmitter) *DemandFiller {
+	return &DemandFiller{mgr: mgr, selfReplicaID: selfReplicaID, selfTarget: selfTarget, admitter: admitter, filling: map[uint64]chan struct{}{}}
+}
+
+// hosted reports whether this node already hosts the shard (a probe read succeeds).
+func (d *DemandFiller) hosted(ctx context.Context, shardID uint64) bool {
+	_, err := d.mgr.Read(ctx, shardID, cardQuery{}, false)
+	return !errors.Is(err, ErrNotHosted)
+}
+
+// Fill ensures this node hosts shardID by joining it as a learner. Concurrent calls for the same shard
+// collapse onto one join.
+func (d *DemandFiller) Fill(ctx context.Context, shardID uint64) error {
+	if d.hosted(ctx, shardID) {
+		return nil
+	}
+	d.mu.Lock()
+	if ch, ok := d.filling[shardID]; ok {
+		d.mu.Unlock()
+		select { // someone else is filling — wait for them
+		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return nil
+	}
+	ch := make(chan struct{})
+	d.filling[shardID] = ch
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		delete(d.filling, shardID)
+		d.mu.Unlock()
+		close(ch)
+	}()
+
+	if d.hosted(ctx, shardID) { // re-check under the in-flight guard
+		return nil
+	}
+	if err := d.admitter.AdmitLearner(ctx, shardID, d.selfReplicaID, d.selfTarget); err != nil {
+		return err
+	}
+	if err := d.mgr.StartLearner(shardID, d.selfReplicaID); err != nil {
+		return err
+	}
+	return d.waitHosted(ctx, shardID)
+}
+
+// waitHosted blocks until the local learner replica is up enough to answer reads (it then catches up
+// asynchronously; reads are bounded-stale until then).
+func (d *DemandFiller) waitHosted(ctx context.Context, shardID uint64) error {
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if d.hosted(ctx, shardID) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return errors.New("wavespan: demand-fill learner did not come up in time")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(150 * time.Millisecond):
+		}
+	}
+}
+
+// TransferLeadership asks the shard to move leadership to targetReplicaID — used when gracefully
 
 // Learner demand-fill (design/30 §9, M-C): a node asked for a collection whose owning shard it does
 // not host can join that shard as a non-voting learner, stream its state, then serve bounded-stale

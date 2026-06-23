@@ -3,6 +3,7 @@ package collections
 import (
 	"bytes"
 	"context"
+	"errors"
 	"time"
 )
 
@@ -10,13 +11,21 @@ import (
 // tables, and sorted sets. It routes each op to its owning shard via the Directory and drives the
 // RaftShard engine. Mutations that target a collection of a different datatype return ErrWrongType.
 type Collections struct {
-	shard RaftShard
-	dir   Directory
+	shard  RaftShard
+	dir    Directory
+	filler *DemandFiller // optional: join shards as a learner on a not-hosted read (design/30 §9)
 }
 
 // New builds the datatype API over a RaftShard engine and a shard Directory.
 func New(shard RaftShard, dir Directory) *Collections {
 	return &Collections{shard: shard, dir: dir}
+}
+
+// WithDemandFill enables auto demand-fill: a read for a collection whose shard this node does not host
+// triggers a learner join (via f) and a local retry, so the node becomes a dynamically-filling cache.
+func (c *Collections) WithDemandFill(f *DemandFiller) *Collections {
+	c.filler = f
+	return c
 }
 
 func (c *Collections) propose(ctx context.Context, ns, coll []byte, cmd command) (uint64, error) {
@@ -31,7 +40,15 @@ func (c *Collections) propose(ctx context.Context, ns, coll []byte, cmd command)
 }
 
 func (c *Collections) read(ctx context.Context, ns, coll []byte, q interface{}, lin bool) (interface{}, error) {
-	return c.shard.Read(ctx, c.dir.ShardFor(ns, coll), q, lin)
+	shard := c.dir.ShardFor(ns, coll)
+	v, err := c.shard.Read(ctx, shard, q, lin)
+	if err != nil && c.filler != nil && errors.Is(err, ErrNotHosted) {
+		if ferr := c.filler.Fill(ctx, shard); ferr != nil {
+			return nil, err // surface the original not-hosted error when the fill fails
+		}
+		return c.shard.Read(ctx, shard, q, lin) // retry locally now that we host the shard
+	}
+	return v, err
 }
 
 // --- Set ---
