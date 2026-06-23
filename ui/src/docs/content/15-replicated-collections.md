@@ -38,8 +38,11 @@ arbitrary bytes.
 | Type | Holds | Key operations |
 |------|-------|----------------|
 | **Set** | unique members | `SAdd`, `SRem`, `SIsMember`, `SCard`, `SMembers` |
-| **Hash** | field → value map | `HSet`, `HDel`, `HGet`, `HLen`, `HGetAll` |
+| **Hash** | field → value map | `HSet`, `HDel`, `HGet`, `HLen`, `HGetAll`, `HIncrBy`, `HIncrByFloat` |
 | **Sorted set** | members ordered by score | `ZAdd`, `ZRem`, `ZScore`, `ZCard`, `ZRange` |
+
+Cross-collection: `BulkRemove` deletes a list of members from many collections (or all in a namespace)
+in one call.
 
 Cardinality is **exact** — maintained by the single writer, not estimated. Set members support a
 per-element **TTL** (`SAddTTL`): the absolute expiry is stamped before the write is proposed, and the
@@ -88,6 +91,60 @@ top, _ := col.ZRange(ctx, "scores", []byte("game-7"), 10, false) // ascending sc
 
 Writes are linearizable; reads take a `linearizable bool` (pass `false` for the fast bounded-stale
 path). `WRONGTYPE` surfaces as a Connect `FailedPrecondition` error.
+
+## Atomic counters
+
+`HIncrBy` (integer) and `HIncrByFloat` (float) atomically add a delta to a numeric hash field and
+return the **new value**. The whole read-add-write happens inside one Raft entry, so concurrent
+increments are **exact — no lost updates**, unlike a read-then-write in application code. The value is
+stored as a decimal string, so `HGet` returns it verbatim; incrementing a non-numeric field fails with
+`InvalidArgument`.
+
+```go
+n, _ := col.HIncrBy(ctx, "metrics", []byte("page:home"), []byte("views"), 1)   // -> new int64
+r, _ := col.HIncrByFloat(ctx, "metrics", []byte("page:home"), []byte("rate"), 0.5) // -> new float64
+```
+
+## Bulk member removal
+
+`BulkRemove` deletes a list of members from **many collections at once** — a named list, or (when the
+list is empty) **every collection in the namespace**. It is type-agnostic: each target collection's
+actual type is honored (set → `SRem`, hash → `HDel`, sorted set → `ZRem`). Useful for fan-out cleanup
+such as "remove this user from every set and hash in the namespace".
+
+```go
+// remove "user-42" from a named list of collections
+res, _ := col.BulkRemove(ctx, "app", [][]byte{[]byte("admins"), []byte("online")}, [][]byte{[]byte("user-42")})
+
+// remove "user-42" from EVERY collection in the namespace (empty collection list)
+res, _ = col.BulkRemove(ctx, "app", nil, [][]byte{[]byte("user-42")})
+for _, e := range res { /* e.Collection, e.Removed, e.Error */ }
+```
+
+It is **best-effort across shards**: each collection's change is atomic on its shard, the overall
+fan-out is eventually-consistent (collections can live on different Raft groups), and a per-collection
+result is returned so a partial failure is visible rather than hidden.
+
+## Idempotency
+
+Because node-side leader routing (below) can retry a write, and counters are not naturally
+idempotent, a write may carry an **idempotency key**. The owning shard caches the result of a keyed
+write and returns it unchanged on a retry, so the write applies **exactly once** — a re-sent
+`HIncrBy` returns the original new value instead of incrementing twice.
+
+```go
+col.WithIdempotencyKey("req-7f3a").HIncrBy(ctx, "metrics", []byte("page:home"), []byte("views"), 1)
+```
+
+Use a fresh key per logical write. The cache is a bounded, replicated FIFO ring, so it covers the
+retry window without growing unbounded.
+
+## Calling any node
+
+Writes must commit on the owning shard's **leader**, but a client may call **any node**: a node that
+isn't the leader transparently **forwards** the write to the one that is (it caches the leader, so the
+steady state is a single extra hop). The SDK therefore needs no leader discovery — point it at any
+endpoint. Reads are served locally (bounded-stale) or via a read-index (linearizable) on any replica.
 
 ## From Cypher
 

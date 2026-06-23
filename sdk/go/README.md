@@ -119,10 +119,21 @@ col.HSet(ctx, "profile", []byte("u1"), wavespan.FieldValue{Field: []byte("name")
 
 col.ZAdd(ctx, "scores", []byte("game-7"), wavespan.ScoredMember{Member: []byte("ada"), Score: 99})
 top, _ := col.ZRange(ctx, "scores", []byte("game-7"), 10, false) // ascending score order
+
+// Atomic counters (exact under concurrency — no lost updates):
+n, _ := col.HIncrBy(ctx, "metrics", []byte("page:home"), []byte("views"), 1)        // new int64
+r, _ := col.HIncrByFloat(ctx, "metrics", []byte("page:home"), []byte("rate"), 0.5)  // new float64
+
+// Bulk member removal across many collections (named list, or all when nil):
+col.BulkRemove(ctx, "app", nil, [][]byte{[]byte("user-42")}) // remove user-42 from every collection
+
+// Exactly-once write (idempotency key — important for non-idempotent ops like counters):
+col.WithIdempotencyKey("req-7f3a").HIncrBy(ctx, "metrics", []byte("page:home"), []byte("views"), 1)
 ```
 
 A mutation against a collection of the wrong datatype returns a `FailedPrecondition` error
-(`WRONGTYPE`).
+(`WRONGTYPE`); incrementing a non-numeric field returns `InvalidArgument`. You can point the SDK at
+**any** node — a non-leader transparently forwards writes to the owning shard's leader.
 
 ## Honest consistency metadata
 
