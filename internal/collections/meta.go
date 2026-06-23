@@ -145,6 +145,9 @@ func routeKey(ns, coll []byte) []byte {
 	return appendChunk(appendChunk(nil, ns), coll)
 }
 
+// RouteKey is the exported form of routeKey, for computing split boundaries.
+func RouteKey(ns, coll []byte) []byte { return routeKey(ns, coll) }
+
 // RangeDirectory caches the meta shard's range directory and routes collections to data shards
 // (design/30 §7.3). It refreshes from the meta shard; routing is an in-memory interval lookup.
 type RangeDirectory struct {

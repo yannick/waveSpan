@@ -158,6 +158,13 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		s: s, exists: map[string]bool{}, zscore: map[string]*float64{},
 		cardDelta: map[string]int64{}, htype: map[string]collType{},
 	}
+	// Frozen ranges are read once per batch; a freeze committed in an earlier batch (Control.Split
+	// proposes it before migrating) rejects subrange mutations here. Same-batch writes still commit but
+	// are captured by the post-freeze migrateScan, so none are lost.
+	frozen, err := s.loadFrozen()
+	if err != nil {
+		return nil, err
+	}
 	for i := range entries {
 		cmd := entries[i].Cmd
 		if len(cmd) > 0 && (opKind(cmd[0]) == opIngest || opKind(cmd[0]) == opPurge) {
@@ -168,9 +175,20 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 			entries[i].Result = sm.Result{Value: uint64(changed)}
 			continue
 		}
+		if len(cmd) > 0 && (opKind(cmd[0]) == opFreeze || opKind(cmd[0]) == opUnfreeze) {
+			if err := u.applyFreeze(cmd); err != nil {
+				return nil, err
+			}
+			entries[i].Result = sm.Result{Value: 1}
+			continue
+		}
 		c, err := decodeCommand(cmd)
 		if err != nil {
 			return nil, err
+		}
+		if len(frozen) > 0 && mutates(c.Op) && frozenCovers(frozen, routeKey(c.NS, c.Coll)) {
+			entries[i].Result = sm.Result{Value: 0, Data: frozenMark} // splitting: client retries onto the new shard
+			continue
 		}
 		if c.Op != opExpire { // opExpire is type-agnostic: it only deletes existing elements
 			ok, err := u.ensureType(c.NS, c.Coll, typeForOp(c.Op))

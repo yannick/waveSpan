@@ -29,14 +29,30 @@ func (c *Collections) WithDemandFill(f *DemandFiller) *Collections {
 }
 
 func (c *Collections) propose(ctx context.Context, ns, coll []byte, cmd command) (uint64, error) {
-	res, err := c.shard.Propose(ctx, c.dir.ShardFor(ns, coll), encodeCommand(cmd))
-	if err != nil {
-		return 0, err
+	enc := encodeCommand(cmd)
+	for {
+		res, err := c.shard.Propose(ctx, c.dir.ShardFor(ns, coll), enc)
+		if err != nil {
+			return 0, err
+		}
+		if bytes.Equal(res.Data, wrongType) {
+			return 0, ErrWrongType
+		}
+		if bytes.Equal(res.Data, frozenMark) {
+			// The owning subrange is migrating (split). Refresh routing and retry until the directory cuts
+			// over to the new shard, so the write is never lost — only briefly delayed (design/30 §6.1).
+			if r, ok := c.dir.(*RangeDirectory); ok {
+				_ = r.Refresh(ctx)
+			}
+			select {
+			case <-ctx.Done():
+				return 0, ErrFrozen
+			case <-time.After(50 * time.Millisecond):
+			}
+			continue
+		}
+		return res.Value, nil
 	}
-	if bytes.Equal(res.Data, wrongType) {
-		return 0, ErrWrongType
-	}
-	return res.Value, nil
 }
 
 func (c *Collections) read(ctx context.Context, ns, coll []byte, q interface{}, lin bool) (interface{}, error) {

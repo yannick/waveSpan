@@ -220,10 +220,19 @@ engine where one group can be divided; dragonboat does not offer that. So splitt
 4. **purge** the migrated subrange from the source shard.
 
 Clients with a stale directory get `WRONG_RANGE` and refresh. The cost is real data movement (size of
-the migrated subrange) and a brief window between cutover and purge where the source still holds stale
-copies (unread, since the directory already points at the new shard). v1 assumes the splitting
-subrange is **quiescent** during migration; a freeze/cutover for concurrent writes (§6.2) is the
-follow-up. This is acceptable for a centrally-written tier where splits are rare.
+the migrated subrange).
+
+**Safe under concurrent writes (freeze).** Before the migrate-scan, the source shard **freezes** the
+subrange: a committed `Freeze` log entry makes the shard reject mutations to `[split_key, end)` with a
+transient `FROZEN` result, on which the client refreshes its directory and retries. Because the
+migrate-scan is a linearizable read issued *after* the freeze commits, it captures every write
+committed before the freeze (which are migrated) while every later write is rejected — so **no
+acknowledged write is lost**, only briefly delayed onto the new shard after cutover. The freeze is
+**not lifted**: the source no longer owns the subrange, so it must keep rejecting it (a stale-routed
+write that committed there after the purge would be orphaned and lost); a stale client gets `FROZEN`,
+refreshes, and redirects. A later merge that re-absorbs the range clears that freeze (§6.2). This was
+the headline correctness bug a Jepsen-style split-under-load test caught — split previously dropped
+acknowledged writes silently.
 
 ### 6.2 Merge
 

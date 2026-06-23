@@ -163,7 +163,14 @@ func (c *Control) Split(ctx context.Context, splitKey []byte, replicaID uint64, 
 		return 0, err
 	}
 
-	// 2. read the subrange [splitKey, old.End) from the old shard.
+	// 2. freeze the subrange on the old shard so no write is committed there during the migration; the
+	// migrateScan below reads after the freeze commits, capturing every pre-freeze write while later
+	// writes are rejected (clients retry onto the new shard after cutover) — no acked write is lost.
+	if _, err := c.mgr.Propose(ctx, old.ShardID, encodeFreeze(splitKey, old.End)); err != nil {
+		return 0, err
+	}
+
+	// 3. read the (now stable) subrange [splitKey, old.End) from the old shard.
 	v, err := c.mgr.Read(ctx, old.ShardID, migrateScanQuery{StartRoute: splitKey, EndRoute: old.End}, true)
 	if err != nil {
 		return 0, err
@@ -183,7 +190,10 @@ func (c *Control) Split(ctx context.Context, splitKey []byte, replicaID uint64, 
 		return 0, err
 	}
 
-	// 5. purge the migrated subrange from the old shard, then refresh the directory.
+	// 5. purge the migrated subrange from the old shard, then refresh the directory. The freeze is NOT
+	// lifted: the old shard no longer owns [splitKey, old.End), so it must keep rejecting writes there —
+	// a client with a stale directory then gets frozenMark, refreshes, and redirects to the new shard
+	// (lifting it would let a stale-routed, post-purge write commit on the old shard and be lost).
 	if _, err := c.mgr.Propose(ctx, old.ShardID, encodePurge(splitKey, old.End)); err != nil {
 		return 0, err
 	}
@@ -225,6 +235,11 @@ func (c *Control) Merge(ctx context.Context, boundary []byte) error {
 	}
 	kvs, _ := v.([]rawKV)
 	if err := c.ingestInto(ctx, left.ShardID, kvs); err != nil {
+		return err
+	}
+	// The left shard now owns the absorbed range; clear any stale freeze it kept from a prior split
+	// that shed this range, so writes to it are accepted rather than redirected.
+	if _, err := c.mgr.Propose(ctx, left.ShardID, encodeUnfreeze(right.Start, right.End)); err != nil {
 		return err
 	}
 
