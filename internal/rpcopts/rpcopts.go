@@ -11,9 +11,14 @@ import "connectrpc.com/connect"
 // responses still compress, since they cross the threshold.
 const CompressMinBytes = 1024
 
-// Handler returns the shared Connect handler options.
+// Handler returns the shared Connect handler options. When InstallMetrics has been called, every
+// handler also carries the server-side RPC metrics interceptor (QPS / reads / writes).
 func Handler() []connect.HandlerOption {
-	return []connect.HandlerOption{connect.WithCompressMinBytes(CompressMinBytes)}
+	opts := []connect.HandlerOption{connect.WithCompressMinBytes(CompressMinBytes)}
+	if rpcRequests != nil {
+		opts = append(opts, connect.WithInterceptors(metricsInterceptor{}))
+	}
+	return opts
 }
 
 // Client returns the shared Connect client options.
