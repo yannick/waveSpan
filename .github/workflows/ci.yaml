@@ -40,12 +40,24 @@ jobs:
           go-version: "1.26"
           cache-dependency-path: waveSpan/go.sum
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: waveSpan/ui/package-lock.json
+
       - name: Install buf + codegen plugins
         run: |
           go install github.com/bufbuild/buf/cmd/buf@latest
           go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
           go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      # buf.gen.yaml also runs ui/node_modules/.bin/protoc-gen-es (browser stubs), so the UI deps
+      # must be installed before `buf generate` runs in the proto gate.
+      - name: Install UI deps (provides protoc-gen-es)
+        working-directory: waveSpan/ui
+        run: npm ci
 
       - name: Proto gate (regenerate, fail on drift)
         working-directory: waveSpan
