@@ -26,6 +26,17 @@ collections when many nodes must agree on the same set/map/leaderboard. The two 
 > - `WAVESPAN_COLLECTIONS_VOTERS` — comma-separated Raft addresses of the **stable core** (voters);
 >   `replicaID = index + 1`. Each listed node bootstraps the meta + data shards with this voter set.
 >   Leave it unset on a single node; set it to form a multi-node stable core.
+>
+> **Consensus tunables** (each falls back to its default when unset):
+> - `WAVESPAN_COLLECTIONS_RTT_MS` — base Raft RTT unit in ms (default `50`); election and heartbeat
+>   timeouts are multiples of it.
+> - `WAVESPAN_COLLECTIONS_ELECTION_RTT` — election timeout in RTT units (default `10` → 500 ms). Lower
+>   it for faster failover at the cost of more election churn.
+> - `WAVESPAN_COLLECTIONS_HEARTBEAT_RTT` — leader heartbeat in RTT units (default `1`).
+> - `WAVESPAN_COLLECTIONS_SNAPSHOT_ENTRIES` — log entries between snapshots (default `1000`); smaller
+>   means faster learner catch-up but more snapshot I/O.
+> - `WAVESPAN_COLLECTIONS_COMPACTION_OVERHEAD` — entries retained after a snapshot (default `500`).
+> - `WAVESPAN_COLLECTIONS_SWEEP_MS` — TTL sweep interval on shard leaders in ms (default `500`).
 >   Empty ⇒ single-node. A node **not** in the list is a **spot node**: it holds no shards, joins the
 >   meta shard as a learner in the background to obtain the directory, then serves collections by
 >   demand-filling each one's data shard on first read.

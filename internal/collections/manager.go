@@ -24,6 +24,7 @@ type Manager struct {
 	mu     sync.Mutex
 	shards map[uint64]shardReg // shardID -> registration
 
+	tun        Tunables
 	sweepEvery time.Duration
 	stopCh     chan struct{}
 	doneCh     chan struct{}
@@ -42,6 +43,48 @@ var _ RaftShard = (*Manager)(nil)
 type Options struct {
 	TransportFactory config.TransportFactory
 	RegistryFactory  config.NodeRegistryFactory
+	Tunables         Tunables // consensus knobs; zero fields fall back to defaults
+}
+
+// Tunables are the consensus-tier knobs (design/30 §12, §10). A zero field uses its default.
+type Tunables struct {
+	RTTMillisecond     uint64        // base Raft RTT unit in ms; election/heartbeat are multiples of it
+	ElectionRTT        uint64        // election timeout = ElectionRTT × RTT (lower = faster failover)
+	HeartbeatRTT       uint64        // leader heartbeat = HeartbeatRTT × RTT
+	SnapshotEntries    uint64        // entries between snapshots (smaller = faster catch-up, more I/O)
+	CompactionOverhead uint64        // log entries retained after a snapshot
+	SweepEvery         time.Duration // TTL sweep interval on shard leaders
+}
+
+// DefaultTunables returns the built-in consensus defaults.
+func DefaultTunables() Tunables {
+	return Tunables{
+		RTTMillisecond: 50, ElectionRTT: 10, HeartbeatRTT: 1,
+		SnapshotEntries: 1000, CompactionOverhead: 500, SweepEvery: 500 * time.Millisecond,
+	}
+}
+
+func (t Tunables) withDefaults() Tunables {
+	d := DefaultTunables()
+	if t.RTTMillisecond == 0 {
+		t.RTTMillisecond = d.RTTMillisecond
+	}
+	if t.ElectionRTT == 0 {
+		t.ElectionRTT = d.ElectionRTT
+	}
+	if t.HeartbeatRTT == 0 {
+		t.HeartbeatRTT = d.HeartbeatRTT
+	}
+	if t.SnapshotEntries == 0 {
+		t.SnapshotEntries = d.SnapshotEntries
+	}
+	if t.CompactionOverhead == 0 {
+		t.CompactionOverhead = d.CompactionOverhead
+	}
+	if t.SweepEvery == 0 {
+		t.SweepEvery = d.SweepEvery
+	}
+	return t
 }
 
 // NewManager opens a NodeHost rooted at nodeHostDir, bound to raftAddr, applying shard state to store,
@@ -53,9 +96,10 @@ func NewManager(nodeHostDir, raftAddr string, store storage.LocalStore) (*Manage
 // NewManagerWithOptions is NewManager with a custom transport / node registry (e.g. the cheap-mTLS
 // transport + SWIM registry, design/30 §12).
 func NewManagerWithOptions(nodeHostDir, raftAddr string, store storage.LocalStore, opts Options) (*Manager, error) {
+	tun := opts.Tunables.withDefaults()
 	nhc := config.NodeHostConfig{
 		NodeHostDir:    nodeHostDir,
-		RTTMillisecond: 50,
+		RTTMillisecond: tun.RTTMillisecond,
 		RaftAddress:    raftAddr,
 	}
 	nhc.Expert.TransportFactory = opts.TransportFactory
@@ -66,27 +110,31 @@ func NewManagerWithOptions(nodeHostDir, raftAddr string, store storage.LocalStor
 	}
 	m := &Manager{
 		nh: nh, store: store, shards: map[uint64]shardReg{},
-		sweepEvery: 500 * time.Millisecond,
+		tun:        tun,
+		sweepEvery: tun.SweepEvery,
 		stopCh:     make(chan struct{}), doneCh: make(chan struct{}),
 	}
 	go m.sweepLoop()
 	return m, nil
 }
 
-func shardConfig(shardID, replicaID uint64) config.Config {
+// Tunables returns the consensus knobs this Manager is running with.
+func (m *Manager) Tunables() Tunables { return m.tun }
+
+func (m *Manager) shardConfig(shardID, replicaID uint64) config.Config {
 	return config.Config{
 		ShardID:            shardID,
 		ReplicaID:          replicaID,
-		ElectionRTT:        10,
-		HeartbeatRTT:       1,
+		ElectionRTT:        m.tun.ElectionRTT,
+		HeartbeatRTT:       m.tun.HeartbeatRTT,
 		CheckQuorum:        true,
-		SnapshotEntries:    1000,
-		CompactionOverhead: 500,
+		SnapshotEntries:    m.tun.SnapshotEntries,
+		CompactionOverhead: m.tun.CompactionOverhead,
 	}
 }
 
 func (m *Manager) startReplica(shardID, replicaID uint64, members map[uint64]string, join bool, factory sm.CreateOnDiskStateMachineFunc, isData, nonVoting bool) error {
-	cfg := shardConfig(shardID, replicaID)
+	cfg := m.shardConfig(shardID, replicaID)
 	cfg.IsNonVoting = nonVoting
 	if err := m.nh.StartOnDiskReplica(members, join, factory, cfg); err != nil {
 		return err

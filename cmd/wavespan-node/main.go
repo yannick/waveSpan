@@ -552,7 +552,21 @@ func run() error {
 			return out
 		}
 		raftTLSClient, _ := tlsCfg.ClientTLS()
-		raftOpts := collections.Options{TransportFactory: &collections.TransportFactory{ServerTLS: serverMTLS, ClientTLS: raftTLSClient}}
+		// Consensus tunables (design/30): zero = engine default. Env-overridable for ops tuning.
+		tun := collections.Tunables{
+			RTTMillisecond:     envU64("WAVESPAN_COLLECTIONS_RTT_MS"),
+			ElectionRTT:        envU64("WAVESPAN_COLLECTIONS_ELECTION_RTT"),
+			HeartbeatRTT:       envU64("WAVESPAN_COLLECTIONS_HEARTBEAT_RTT"),
+			SnapshotEntries:    envU64("WAVESPAN_COLLECTIONS_SNAPSHOT_ENTRIES"),
+			CompactionOverhead: envU64("WAVESPAN_COLLECTIONS_COMPACTION_OVERHEAD"),
+		}
+		if ms := envU64("WAVESPAN_COLLECTIONS_SWEEP_MS"); ms > 0 {
+			tun.SweepEvery = time.Duration(ms) * time.Millisecond
+		}
+		raftOpts := collections.Options{
+			TransportFactory: &collections.TransportFactory{ServerTLS: serverMTLS, ClientTLS: raftTLSClient},
+			Tunables:         tun,
+		}
 		mgr, err := collections.NewManagerWithOptions(filepath.Join(cfg.Storage.Path, "collections-raft"), raftAddr, store, raftOpts)
 		switch {
 		case err != nil:
@@ -1406,4 +1420,18 @@ func newVectorMetrics(reg *prometheus.Registry) *vectorMetrics {
 	}
 	reg.MustRegister(m.localVectors, m.heldBuckets, m.bucketSkew, m.qver, m.scatterNodes)
 	return m
+}
+
+// envU64 parses an unsigned-integer environment variable, returning 0 (meaning "use the engine
+// default") when it is unset or invalid. Used for the consensus tunables.
+func envU64(key string) uint64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.ParseUint(v, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
 }
