@@ -50,6 +50,12 @@ const (
 	// ObservabilityServiceGraphExploreProcedure is the fully-qualified name of the
 	// ObservabilityService's GraphExplore RPC.
 	ObservabilityServiceGraphExploreProcedure = "/wavespan.v1.ObservabilityService/GraphExplore"
+	// ObservabilityServiceGraphSubgraphProcedure is the fully-qualified name of the
+	// ObservabilityService's GraphSubgraph RPC.
+	ObservabilityServiceGraphSubgraphProcedure = "/wavespan.v1.ObservabilityService/GraphSubgraph"
+	// ObservabilityServiceLoadSampleDatasetProcedure is the fully-qualified name of the
+	// ObservabilityService's LoadSampleDataset RPC.
+	ObservabilityServiceLoadSampleDatasetProcedure = "/wavespan.v1.ObservabilityService/LoadSampleDataset"
 	// ObservabilityServiceAdminPutProcedure is the fully-qualified name of the ObservabilityService's
 	// AdminPut RPC.
 	ObservabilityServiceAdminPutProcedure = "/wavespan.v1.ObservabilityService/AdminPut"
@@ -76,6 +82,12 @@ type ObservabilityServiceClient interface {
 	InspectGlobal(context.Context, *connect.Request[v1.InspectGlobalRequest]) (*connect.ServerStreamForClient[v1.InspectRow], error)
 	GetClusterView(context.Context, *connect.Request[v1.GetClusterViewRequest]) (*connect.Response[v1.GetClusterViewResponse], error)
 	GraphExplore(context.Context, *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error)
+	// GraphSubgraph resolves the sub-graph induced by a set of node ids (+ optional neighbor hops),
+	// so Cypher query results (which return node ids as strings) can be rendered in the explorer.
+	GraphSubgraph(context.Context, *connect.Request[v1.GraphSubgraphRequest]) (*connect.Response[v1.GraphExploreResponse], error)
+	// LoadSampleDataset loads a small open-licensed demo graph for exploration. Admin-only and gated
+	// by WAVESPAN_DISABLE_SAMPLE_DATASET (returns ok=false with an error when disabled).
+	LoadSampleDataset(context.Context, *connect.Request[v1.LoadSampleDatasetRequest]) (*connect.Response[v1.LoadSampleDatasetResponse], error)
 	// AdminPut writes a KV record for testing from the node UI, coordinated by a chosen cluster
 	// member (target_member_id) so the operator can pick which node originates the write.
 	AdminPut(context.Context, *connect.Request[v1.AdminPutRequest]) (*connect.Response[v1.AdminPutResponse], error)
@@ -132,6 +144,18 @@ func NewObservabilityServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(observabilityServiceMethods.ByName("GraphExplore")),
 			connect.WithClientOptions(opts...),
 		),
+		graphSubgraph: connect.NewClient[v1.GraphSubgraphRequest, v1.GraphExploreResponse](
+			httpClient,
+			baseURL+ObservabilityServiceGraphSubgraphProcedure,
+			connect.WithSchema(observabilityServiceMethods.ByName("GraphSubgraph")),
+			connect.WithClientOptions(opts...),
+		),
+		loadSampleDataset: connect.NewClient[v1.LoadSampleDatasetRequest, v1.LoadSampleDatasetResponse](
+			httpClient,
+			baseURL+ObservabilityServiceLoadSampleDatasetProcedure,
+			connect.WithSchema(observabilityServiceMethods.ByName("LoadSampleDataset")),
+			connect.WithClientOptions(opts...),
+		),
 		adminPut: connect.NewClient[v1.AdminPutRequest, v1.AdminPutResponse](
 			httpClient,
 			baseURL+ObservabilityServiceAdminPutProcedure,
@@ -161,15 +185,17 @@ func NewObservabilityServiceClient(httpClient connect.HTTPClient, baseURL string
 
 // observabilityServiceClient implements ObservabilityServiceClient.
 type observabilityServiceClient struct {
-	streamGossip    *connect.Client[v1.StreamGossipRequest, v1.GossipEvent]
-	inspectLocal    *connect.Client[v1.InspectLocalRequest, v1.InspectRow]
-	inspectGlobal   *connect.Client[v1.InspectGlobalRequest, v1.InspectRow]
-	getClusterView  *connect.Client[v1.GetClusterViewRequest, v1.GetClusterViewResponse]
-	graphExplore    *connect.Client[v1.GraphExploreRequest, v1.GraphExploreResponse]
-	adminPut        *connect.Client[v1.AdminPutRequest, v1.AdminPutResponse]
-	adminDelete     *connect.Client[v1.AdminDeleteRequest, v1.AdminDeleteResponse]
-	getNodeConfig   *connect.Client[v1.GetNodeConfigRequest, v1.NodeConfig]
-	adminSetTunable *connect.Client[v1.AdminSetTunableRequest, v1.AdminSetTunableResponse]
+	streamGossip      *connect.Client[v1.StreamGossipRequest, v1.GossipEvent]
+	inspectLocal      *connect.Client[v1.InspectLocalRequest, v1.InspectRow]
+	inspectGlobal     *connect.Client[v1.InspectGlobalRequest, v1.InspectRow]
+	getClusterView    *connect.Client[v1.GetClusterViewRequest, v1.GetClusterViewResponse]
+	graphExplore      *connect.Client[v1.GraphExploreRequest, v1.GraphExploreResponse]
+	graphSubgraph     *connect.Client[v1.GraphSubgraphRequest, v1.GraphExploreResponse]
+	loadSampleDataset *connect.Client[v1.LoadSampleDatasetRequest, v1.LoadSampleDatasetResponse]
+	adminPut          *connect.Client[v1.AdminPutRequest, v1.AdminPutResponse]
+	adminDelete       *connect.Client[v1.AdminDeleteRequest, v1.AdminDeleteResponse]
+	getNodeConfig     *connect.Client[v1.GetNodeConfigRequest, v1.NodeConfig]
+	adminSetTunable   *connect.Client[v1.AdminSetTunableRequest, v1.AdminSetTunableResponse]
 }
 
 // StreamGossip calls wavespan.v1.ObservabilityService.StreamGossip.
@@ -195,6 +221,16 @@ func (c *observabilityServiceClient) GetClusterView(ctx context.Context, req *co
 // GraphExplore calls wavespan.v1.ObservabilityService.GraphExplore.
 func (c *observabilityServiceClient) GraphExplore(ctx context.Context, req *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error) {
 	return c.graphExplore.CallUnary(ctx, req)
+}
+
+// GraphSubgraph calls wavespan.v1.ObservabilityService.GraphSubgraph.
+func (c *observabilityServiceClient) GraphSubgraph(ctx context.Context, req *connect.Request[v1.GraphSubgraphRequest]) (*connect.Response[v1.GraphExploreResponse], error) {
+	return c.graphSubgraph.CallUnary(ctx, req)
+}
+
+// LoadSampleDataset calls wavespan.v1.ObservabilityService.LoadSampleDataset.
+func (c *observabilityServiceClient) LoadSampleDataset(ctx context.Context, req *connect.Request[v1.LoadSampleDatasetRequest]) (*connect.Response[v1.LoadSampleDatasetResponse], error) {
+	return c.loadSampleDataset.CallUnary(ctx, req)
 }
 
 // AdminPut calls wavespan.v1.ObservabilityService.AdminPut.
@@ -224,6 +260,12 @@ type ObservabilityServiceHandler interface {
 	InspectGlobal(context.Context, *connect.Request[v1.InspectGlobalRequest], *connect.ServerStream[v1.InspectRow]) error
 	GetClusterView(context.Context, *connect.Request[v1.GetClusterViewRequest]) (*connect.Response[v1.GetClusterViewResponse], error)
 	GraphExplore(context.Context, *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error)
+	// GraphSubgraph resolves the sub-graph induced by a set of node ids (+ optional neighbor hops),
+	// so Cypher query results (which return node ids as strings) can be rendered in the explorer.
+	GraphSubgraph(context.Context, *connect.Request[v1.GraphSubgraphRequest]) (*connect.Response[v1.GraphExploreResponse], error)
+	// LoadSampleDataset loads a small open-licensed demo graph for exploration. Admin-only and gated
+	// by WAVESPAN_DISABLE_SAMPLE_DATASET (returns ok=false with an error when disabled).
+	LoadSampleDataset(context.Context, *connect.Request[v1.LoadSampleDatasetRequest]) (*connect.Response[v1.LoadSampleDatasetResponse], error)
 	// AdminPut writes a KV record for testing from the node UI, coordinated by a chosen cluster
 	// member (target_member_id) so the operator can pick which node originates the write.
 	AdminPut(context.Context, *connect.Request[v1.AdminPutRequest]) (*connect.Response[v1.AdminPutResponse], error)
@@ -276,6 +318,18 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 		connect.WithSchema(observabilityServiceMethods.ByName("GraphExplore")),
 		connect.WithHandlerOptions(opts...),
 	)
+	observabilityServiceGraphSubgraphHandler := connect.NewUnaryHandler(
+		ObservabilityServiceGraphSubgraphProcedure,
+		svc.GraphSubgraph,
+		connect.WithSchema(observabilityServiceMethods.ByName("GraphSubgraph")),
+		connect.WithHandlerOptions(opts...),
+	)
+	observabilityServiceLoadSampleDatasetHandler := connect.NewUnaryHandler(
+		ObservabilityServiceLoadSampleDatasetProcedure,
+		svc.LoadSampleDataset,
+		connect.WithSchema(observabilityServiceMethods.ByName("LoadSampleDataset")),
+		connect.WithHandlerOptions(opts...),
+	)
 	observabilityServiceAdminPutHandler := connect.NewUnaryHandler(
 		ObservabilityServiceAdminPutProcedure,
 		svc.AdminPut,
@@ -312,6 +366,10 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 			observabilityServiceGetClusterViewHandler.ServeHTTP(w, r)
 		case ObservabilityServiceGraphExploreProcedure:
 			observabilityServiceGraphExploreHandler.ServeHTTP(w, r)
+		case ObservabilityServiceGraphSubgraphProcedure:
+			observabilityServiceGraphSubgraphHandler.ServeHTTP(w, r)
+		case ObservabilityServiceLoadSampleDatasetProcedure:
+			observabilityServiceLoadSampleDatasetHandler.ServeHTTP(w, r)
 		case ObservabilityServiceAdminPutProcedure:
 			observabilityServiceAdminPutHandler.ServeHTTP(w, r)
 		case ObservabilityServiceAdminDeleteProcedure:
@@ -347,6 +405,14 @@ func (UnimplementedObservabilityServiceHandler) GetClusterView(context.Context, 
 
 func (UnimplementedObservabilityServiceHandler) GraphExplore(context.Context, *connect.Request[v1.GraphExploreRequest]) (*connect.Response[v1.GraphExploreResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.GraphExplore is not implemented"))
+}
+
+func (UnimplementedObservabilityServiceHandler) GraphSubgraph(context.Context, *connect.Request[v1.GraphSubgraphRequest]) (*connect.Response[v1.GraphExploreResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.GraphSubgraph is not implemented"))
+}
+
+func (UnimplementedObservabilityServiceHandler) LoadSampleDataset(context.Context, *connect.Request[v1.LoadSampleDatasetRequest]) (*connect.Response[v1.LoadSampleDatasetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.LoadSampleDataset is not implemented"))
 }
 
 func (UnimplementedObservabilityServiceHandler) AdminPut(context.Context, *connect.Request[v1.AdminPutRequest]) (*connect.Response[v1.AdminPutResponse], error) {

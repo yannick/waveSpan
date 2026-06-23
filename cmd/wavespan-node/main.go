@@ -516,8 +516,9 @@ func run() error {
 	svc.SetGossipObserver(gossipTap)
 	obsSvc := observability.NewObsService(gossipRing, svc, self, rstore).
 		WithUnderReplicated(func() uint64 { return uint64(holders.UnderReplicatedEstimate(targetHolders, isAlive)) }).
-		WithGraph(graphStore).       // enables the visual node explorer (GraphExplore)
-		WithClusterScan(replicator). // cluster-wide Data Browser: fan InspectLocal out to all members
+		WithGraph(graphStore).                                                  // enables the visual node explorer (GraphExplore / GraphSubgraph)
+		WithSampleDataset(!cfg.Features.DisableSampleDataset, newGraphVersion). // UI "load demo graph" action
+		WithClusterScan(replicator).                                            // cluster-wide Data Browser: fan InspectLocal out to all members
 		WithKvWriter(func(ctx context.Context, target membership.Member, req *wavespanv1.PutRequest) (*wavespanv1.PutResult, error) {
 			// Forward the UI's test write to the chosen coordinator's data port over the shared client.
 			resp, err := wavespanv1connect.NewKvServiceClient(httpClient, "http://"+target.DataAddr).Put(ctx, connect.NewRequest(req))

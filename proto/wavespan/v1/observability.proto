@@ -217,6 +217,34 @@ message GraphExploreResponse {
   bool truncated = 3; // more nodes exist than the limit returned
 }
 
+// GraphSubgraph induces the sub-graph spanned by an explicit set of node ids (plus optional
+// neighbor expansion). It backs "render Cypher results in the explorer": a Cypher RETURN yields node
+// ids as strings, the UI collects them, and this resolves the full nodes + the edges among them.
+// Ids that don't resolve to a live node are ignored.
+message GraphSubgraphRequest {
+  string graph_id = 1;
+  repeated string node_ids = 2;
+  uint32 neighbor_depth = 3; // 0 = exactly the given nodes; N = also pull N hops of neighbors
+  bool include_value = 4;    // reveal property values (admin only)
+}
+
+// LoadSampleDatasetRequest loads a small, open-licensed demo graph into graph_id for exploration.
+// Gated by WAVESPAN_DISABLE_SAMPLE_DATASET (default: available). Idempotent — re-running overwrites
+// the same node/edge ids.
+message LoadSampleDatasetRequest {
+  string graph_id = 1; // empty => "g" (the UI default graph)
+}
+
+message LoadSampleDatasetResponse {
+  bool ok = 1;
+  string error = 2;          // populated (with ok=false) when the loader is disabled or fails
+  uint32 nodes_created = 3;
+  uint32 edges_created = 4;
+  string dataset_name = 5;   // e.g. "Movies"
+  string license = 6;        // the dataset's open licence
+  string attribution = 7;    // provenance / attribution line
+}
+
 // ObservabilityService powers the embedded node UI and wavespanctl introspection (design/26).
 // Mounted on the admin port behind admin auth; values are redacted by default.
 service ObservabilityService {
@@ -225,6 +253,12 @@ service ObservabilityService {
   rpc InspectGlobal(InspectGlobalRequest) returns (stream InspectRow);
   rpc GetClusterView(GetClusterViewRequest) returns (GetClusterViewResponse);
   rpc GraphExplore(GraphExploreRequest) returns (GraphExploreResponse);
+  // GraphSubgraph resolves the sub-graph induced by a set of node ids (+ optional neighbor hops),
+  // so Cypher query results (which return node ids as strings) can be rendered in the explorer.
+  rpc GraphSubgraph(GraphSubgraphRequest) returns (GraphExploreResponse);
+  // LoadSampleDataset loads a small open-licensed demo graph for exploration. Admin-only and gated
+  // by WAVESPAN_DISABLE_SAMPLE_DATASET (returns ok=false with an error when disabled).
+  rpc LoadSampleDataset(LoadSampleDatasetRequest) returns (LoadSampleDatasetResponse);
   // AdminPut writes a KV record for testing from the node UI, coordinated by a chosen cluster
   // member (target_member_id) so the operator can pick which node originates the write.
   rpc AdminPut(AdminPutRequest) returns (AdminPutResponse);

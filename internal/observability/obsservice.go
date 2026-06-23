@@ -54,6 +54,12 @@ type ObsService struct {
 	// chosen member's data port, mirroring kvWriter.
 	kvDeleter KvDeleter
 
+	// Sample dataset loader (LoadSampleDataset). sampleEnabled mirrors the
+	// WAVESPAN_DISABLE_SAMPLE_DATASET gate (true => available); newGraphVersion stamps the loaded
+	// node/edge records. A nil newGraphVersion (or nil graph) disables the loader entirely.
+	sampleEnabled   bool
+	newGraphVersion func() *wavespanv1.Version
+
 	// Runtime config: the live tunables registry (this node's effective config), the override
 	// manager (applies + gossips runtime changes), and a forwarder to read a peer's config. All nil
 	// disables GetNodeConfig/AdminSetTunable.
@@ -105,6 +111,14 @@ func (s *ObsService) WithKvWriter(w KvWriter) *ObsService {
 // WithKvDeleter enables AdminDelete: the Data Browser delete action, forwarded to a chosen coordinator.
 func (s *ObsService) WithKvDeleter(d KvDeleter) *ObsService {
 	s.kvDeleter = d
+	return s
+}
+
+// WithSampleDataset enables LoadSampleDataset (the node-UI "load demo graph" action). enabled mirrors
+// the WAVESPAN_DISABLE_SAMPLE_DATASET gate; newVersion stamps the inserted node/edge records.
+func (s *ObsService) WithSampleDataset(enabled bool, newVersion func() *wavespanv1.Version) *ObsService {
+	s.sampleEnabled = enabled
+	s.newGraphVersion = newVersion
 	return s
 }
 
