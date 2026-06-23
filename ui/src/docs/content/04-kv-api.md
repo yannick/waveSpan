@@ -109,4 +109,6 @@ Supply an `idempotency_key` on `Put`/`Delete` to make retries safe. WaveSpan ded
 
 These exact records are also reachable from Cypher — the graph layer and the KV API share one store and one namespace scheme. Use `kv.get` / `kv.put` / `kv.delete` to read or mutate KV inline in a query (e.g. join a `MATCH` against a profile blob, or filter rows on a flag). See [Cypher & Graph](doc:cypher-and-graph) for the built-ins and examples.
 
+> The KV API is an AP cache (local-node writes, tunable durability). For data that many nodes must agree on — shared sets, maps, or leaderboards written from a central point — use the strongly-consistent [Replicated Collections](doc:replicated-collections) tier instead.
+
 > Try it: the [KV Writer](doc:overview) tab writes a record through a chosen coordinator node, and the [Data Browser](doc:overview) shows it propagating across the cluster.

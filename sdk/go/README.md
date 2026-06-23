@@ -101,6 +101,29 @@ for row, err := range q.Rows() {
 fmt.Println(q.Meta().GetCompleteness())
 ```
 
+### Collections (sets / hashes / sorted sets)
+
+The strongly-consistent collections tier (sets, hash tables, sorted sets) is reached via
+`c.Collections()`. Writes are linearizable; reads take a `linearizable bool` (pass `false` for the
+fast bounded-stale path). Requires the node to run with `WAVESPAN_COLLECTIONS_ENABLED=1`.
+
+```go
+col := c.Collections()
+
+col.SAdd(ctx, "flags", []byte("enabled"), []byte("feature-x"))
+ok, _ := col.SIsMember(ctx, "flags", []byte("enabled"), []byte("feature-x"), false)
+
+col.SAddTTL(ctx, "sessions", []byte("active"), 30*time.Minute, []byte("user-42")) // per-member TTL
+
+col.HSet(ctx, "profile", []byte("u1"), wavespan.FieldValue{Field: []byte("name"), Value: []byte("Ada")})
+
+col.ZAdd(ctx, "scores", []byte("game-7"), wavespan.ScoredMember{Member: []byte("ada"), Score: 99})
+top, _ := col.ZRange(ctx, "scores", []byte("game-7"), 10, false) // ascending score order
+```
+
+A mutation against a collection of the wrong datatype returns a `FailedPrecondition` error
+(`WRONGTYPE`).
+
 ## Honest consistency metadata
 
 WaveSpan is eventually consistent, and the SDK never hides it: every read carries a `ResponseMeta`
