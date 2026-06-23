@@ -154,7 +154,16 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		cardDelta: map[string]int64{}, htype: map[string]collType{},
 	}
 	for i := range entries {
-		c, err := decodeCommand(entries[i].Cmd)
+		cmd := entries[i].Cmd
+		if len(cmd) > 0 && (opKind(cmd[0]) == opIngest || opKind(cmd[0]) == opPurge) {
+			changed, err := u.applyMigrate(cmd) // raw subrange copy/purge (design/30 §6)
+			if err != nil {
+				return nil, err
+			}
+			entries[i].Result = sm.Result{Value: uint64(changed)}
+			continue
+		}
+		c, err := decodeCommand(cmd)
 		if err != nil {
 			return nil, err
 		}
@@ -371,6 +380,8 @@ func (s *shardSM) Lookup(query interface{}) (interface{}, error) {
 		return out, it.Err()
 	case ttlDueQuery:
 		return s.scanDue(snap, q.NowMs, q.Limit)
+	case migrateScanQuery:
+		return scanRange(snap, s.prefix, q.StartRoute, q.EndRoute, q.Limit)
 	default:
 		return nil, errors.New("collections: unknown lookup query")
 	}

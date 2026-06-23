@@ -104,6 +104,12 @@ func (m *Manager) Read(ctx context.Context, shardID uint64, query interface{}, l
 	return m.nh.StaleRead(shardID, query)
 }
 
+// hasLeader reports whether the shard currently has an elected leader (ready for proposes/reads).
+func (m *Manager) hasLeader(shardID uint64) bool {
+	_, _, ok, err := m.nh.GetLeaderID(shardID)
+	return err == nil && ok
+}
+
 // Stop halts the sweeper then closes the NodeHost (does not close the shared store).
 func (m *Manager) Stop() {
 	close(m.stopCh)

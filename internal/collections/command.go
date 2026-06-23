@@ -37,6 +37,8 @@ const (
 	opZAdd   opKind = 5 // sorted-set add (member+score)
 	opZRem   opKind = 6 // sorted-set remove
 	opExpire opKind = 7 // leader-proposed TTL deletion (design/30 §10)
+	opIngest opKind = 8 // migrate: write raw kv pairs into this shard (design/30 §6)
+	opPurge  opKind = 9 // migrate: delete a routeKey subrange from this shard
 )
 
 // collType is the fixed datatype of a collection, recorded in its header.

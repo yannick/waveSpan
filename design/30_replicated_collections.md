@@ -199,19 +199,31 @@ The range is the unit of Raft replication and must stay bounded (log size, snaps
 leader throughput). The PD (§7) splits large/hot ranges and merges cold adjacent ones to cap group
 count.
 
-### 6.1 Split (in place, no data movement)
+### 6.1 Split (migrate-on-split)
 
 Trigger: a range exceeds a size or write-rate threshold (the group leader reports load to the meta
 group; the PD decides). The split key is chosen at a **collection boundary** when possible; only a
 single collection that alone exceeds a range is split at an interior element boundary.
 
-The split is a **Raft-committed operation in the parent group**: a `RangeSplit{split_key}` entry. On
-apply, every replica atomically (a) truncates the parent's span to `[start, split_key)` and (b)
-**creates a new group** for `[split_key, end)` whose **replica set is the same nodes** — they already
-hold that subrange's data locally, so the new group starts over existing local data with **no data
-movement** (CockroachDB-style). The new group elects a leader (initially often the parent's leader
-node). The meta directory is updated after commit: parent bounds shrink, new range added. Clients with
-a stale directory get `WRONG_RANGE` and refresh.
+**Implementation reality (ADR 0008): dragonboat shards are independent Raft groups with no split
+primitive, so a split is *migrate-on-split*, not in-place.** An in-place split (truncate the parent,
+spin up a new group over the *same* local data, no movement — the CockroachDB model) needs a Raft
+engine where one group can be divided; dragonboat does not offer that. So splitting `[start,end)` at
+`split_key` is:
+
+1. allocate a new shard id (`max(existing)+1`) and **start the new (empty) shard**;
+2. **migrate** the subrange `[split_key, end)` — read the source shard's keys whose routing key falls
+   in that range (covering both the datatype state and the TTL index) and **ingest** them into the new
+   shard (batched, log-committed);
+3. **cut the directory over** — shrink the source range to `[start, split_key)` and add
+   `[split_key, end) -> newShard`;
+4. **purge** the migrated subrange from the source shard.
+
+Clients with a stale directory get `WRONG_RANGE` and refresh. The cost is real data movement (size of
+the migrated subrange) and a brief window between cutover and purge where the source still holds stale
+copies (unread, since the directory already points at the new shard). v1 assumes the splitting
+subrange is **quiescent** during migration; a freeze/cutover for concurrent writes (§6.2) is the
+follow-up. This is acceptable for a centrally-written tier where splits are rare.
 
 ### 6.2 Merge
 

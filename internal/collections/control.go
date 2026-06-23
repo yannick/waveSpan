@@ -1,9 +1,13 @@
 package collections
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"time"
 )
+
+const ingestBatch = 256 // rawKV pairs per opIngest proposal during a split migration
 
 // Reserved shard ids for the consensus tier. The meta shard holds the range directory; data shards
 // are assigned from firstDataShard upward by the placement driver.
@@ -46,6 +50,87 @@ func Bootstrap(ctx context.Context, mgr *Manager, replicaID uint64, metaMembers,
 
 // Collections returns the typed datatype API routed through the range directory.
 func (c *Control) Collections() *Collections { return c.cols }
+
+// Split divides the range covering splitKey into [oldStart, splitKey) on the existing shard and
+// [splitKey, oldEnd) on a new shard, migrating the subrange's data (design/30 §6, ADR 0008): because
+// dragonboat shards are independent, this starts a new shard, copies the subrange in, cuts the
+// directory over, and purges the subrange from the old shard. Returns the new shard id.
+//
+// v1 assumes the splitting subrange is quiescent during the migration (no concurrent writes to it);
+// a freeze/cutover is a follow-up (design/30 §6.2).
+func (c *Control) Split(ctx context.Context, splitKey []byte, replicaID uint64, newMembers map[uint64]string) (uint64, error) {
+	if len(splitKey) == 0 {
+		return 0, errors.New("collections: empty split key")
+	}
+	if err := c.dir.Refresh(ctx); err != nil {
+		return 0, err
+	}
+	old, ok := c.dir.rangeContaining(splitKey)
+	if !ok {
+		return 0, errors.New("collections: no range contains the split key")
+	}
+	if bytes.Equal(old.Start, splitKey) {
+		return 0, errors.New("collections: split key equals the range start (no-op)")
+	}
+	newShard := c.dir.maxShardID() + 1
+
+	// 1. start the new (empty) shard and wait for its leader.
+	if err := c.mgr.StartShard(newShard, replicaID, newMembers, false); err != nil {
+		return 0, err
+	}
+	if err := waitLeader(ctx, c.mgr, newShard); err != nil {
+		return 0, err
+	}
+
+	// 2. read the subrange [splitKey, old.End) from the old shard.
+	v, err := c.mgr.Read(ctx, old.ShardID, migrateScanQuery{StartRoute: splitKey, EndRoute: old.End}, true)
+	if err != nil {
+		return 0, err
+	}
+	kvs, _ := v.([]rawKV)
+
+	// 3. ingest the subrange into the new shard (batched).
+	for off := 0; off < len(kvs); off += ingestBatch {
+		end := off + ingestBatch
+		if end > len(kvs) {
+			end = len(kvs)
+		}
+		if _, err := c.mgr.Propose(ctx, newShard, encodeIngest(kvs[off:end])); err != nil {
+			return 0, err
+		}
+	}
+
+	// 4. cut the directory over: shrink the old range, add the new range.
+	if _, err := c.mgr.Propose(ctx, MetaShardID, encodeMetaCommand(metaCommand{Op: opMetaPut, Start: old.Start, End: splitKey, ShardID: old.ShardID})); err != nil {
+		return 0, err
+	}
+	if _, err := c.mgr.Propose(ctx, MetaShardID, encodeMetaCommand(metaCommand{Op: opMetaPut, Start: splitKey, End: old.End, ShardID: newShard})); err != nil {
+		return 0, err
+	}
+
+	// 5. purge the migrated subrange from the old shard, then refresh the directory.
+	if _, err := c.mgr.Propose(ctx, old.ShardID, encodePurge(splitKey, old.End)); err != nil {
+		return 0, err
+	}
+	return newShard, c.dir.Refresh(ctx)
+}
+
+func waitLeader(ctx context.Context, mgr *Manager, shardID uint64) error {
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if mgr.hasLeader(shardID) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return context.DeadlineExceeded
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
 
 // Directory returns the cached range directory (for refresh / inspection).
 func (c *Control) Directory() *RangeDirectory { return c.dir }

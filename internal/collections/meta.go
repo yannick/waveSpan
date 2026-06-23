@@ -1,7 +1,6 @@
 package collections
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -176,10 +175,34 @@ func (d *RangeDirectory) ShardFor(ns, coll []byte) uint64 {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	for _, r := range d.ranges {
-		if (len(r.Start) == 0 || bytes.Compare(key, r.Start) >= 0) &&
-			(len(r.End) == 0 || bytes.Compare(key, r.End) < 0) {
+		if inRoute(key, r.Start, r.End) {
 			return r.ShardID
 		}
 	}
 	return 0
+}
+
+// rangeContaining returns the range whose [start,end) covers a routing key.
+func (d *RangeDirectory) rangeContaining(key []byte) (rangeEntry, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	for _, r := range d.ranges {
+		if inRoute(key, r.Start, r.End) {
+			return r, true
+		}
+	}
+	return rangeEntry{}, false
+}
+
+// maxShardID is the largest data shard id in the directory (for allocating the next one).
+func (d *RangeDirectory) maxShardID() uint64 {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var mx uint64
+	for _, r := range d.ranges {
+		if r.ShardID > mx {
+			mx = r.ShardID
+		}
+	}
+	return mx
 }

@@ -61,6 +61,10 @@ Negative:
 - until the `wavesdb` LogDB lands, the Raft log is in Pebble and applied state is in `wavesdb` — **two
   embedded engines transiently**, contrary to the unified-storage target;
 - we adopt dragonboat's `NodeHost` concurrency/execution model.
+- **range split is migrate-based, not in-place.** dragonboat shards are independent groups with no
+  split primitive, so splitting a range means start-new-shard + copy the subrange + directory cutover +
+  purge (design/30 §6.1) — real data movement, unlike the in-place split a custom etcd/raft multi-Raft
+  manager could do. Acceptable for a centrally-written tier where splits are rare.
 
 ## Alternatives considered
 
