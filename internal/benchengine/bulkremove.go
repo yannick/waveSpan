@@ -57,8 +57,8 @@ func RunFullNamespaceRemove(ctx context.Context, dataAddr, ns string, member []b
 	})
 }
 
-// Sweep, for each N in sizes: (re)seeds N sets into a per-N sub-namespace, runs a full-namespace
-// remove against exactly those sets, and appends a timing point.
+// Sweep runs, for each N in sizes, a (re)seed of N sets into a per-N sub-namespace plus a
+// full-namespace remove against exactly those sets, appending a timing point per N.
 func Sweep(ctx context.Context, dataAddr, baseNS string, member []byte, sizes []int, filler, conc int, progress func(msg string)) ([]SweepPoint, error) {
 	if progress == nil {
 		progress = func(string) {}

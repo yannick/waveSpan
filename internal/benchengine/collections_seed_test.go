@@ -17,7 +17,7 @@ func TestSeedWithCallsAddSetExactlyN(t *testing.T) {
 			calls.Add(1)
 			return nil
 		},
-		func(done, total int) {
+		func(_, total int) {
 			progressCalled.Store(true)
 			lastTotal.Store(int64(total))
 		},
