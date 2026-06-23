@@ -3,7 +3,6 @@ package collections
 import (
 	"encoding/binary"
 	"errors"
-	"io"
 	"math"
 
 	sm "github.com/lni/dragonboat/v4/statemachine"
@@ -27,13 +26,10 @@ import (
 //	<collScope>|scopeElem|<sortScore>|<member> -> zset score-ordered index (empty)
 //	<collScope>|scopeZPtr|<member>       -> zset member->score (float64 BE bits)
 type shardSM struct {
-	store   storage.LocalStore
-	shardID uint64
-	prefix  []byte
+	baseSM
 }
 
 const (
-	subMeta byte = 0x00
 	subData byte = 0x01
 
 	scopeCard byte = 0x00
@@ -43,14 +39,9 @@ const (
 )
 
 func newShardSM(store storage.LocalStore, shardID uint64) *shardSM {
-	p := make([]byte, 8)
-	binary.BigEndian.PutUint64(p, shardID)
-	return &shardSM{store: store, shardID: shardID, prefix: p}
+	return &shardSM{baseSM: newBaseSM(store, shardID)}
 }
 
-func (s *shardSM) appliedKey() []byte {
-	return append(append(append([]byte{}, s.prefix...), subMeta), []byte("applied")...)
-}
 func (s *shardSM) dataSpace() []byte { return append(append([]byte{}, s.prefix...), subData) }
 func (s *shardSM) collScope(ns, coll []byte) []byte {
 	out := s.dataSpace()
@@ -98,17 +89,6 @@ type FieldValue struct{ Field, Value []byte }
 type ScoredMember struct {
 	Member []byte
 	Score  float64
-}
-
-func (s *shardSM) Open(stopc <-chan struct{}) (uint64, error) {
-	v, found, err := s.store.Get(storage.CFReplData, s.appliedKey())
-	if err != nil || !found {
-		return 0, err
-	}
-	if len(v) != 8 {
-		return 0, errors.New("collections: corrupt applied-index value")
-	}
-	return binary.BigEndian.Uint64(v), nil
 }
 
 // updateCtx carries the in-batch overlays so multiple entries in one Update see each other's effects.
@@ -430,110 +410,6 @@ func (s *shardSM) readCard(cardKey []byte) (uint64, error) {
 		return 0, errors.New("collections: corrupt card value")
 	}
 	return binary.BigEndian.Uint64(v), nil
-}
-
-func (s *shardSM) Sync() error { return s.store.Flush(storage.CFReplData) }
-
-type snapState struct {
-	snap    storage.Snapshot
-	applied uint64
-}
-
-func (s *shardSM) PrepareSnapshot() (interface{}, error) {
-	snap, err := s.store.Snapshot()
-	if err != nil {
-		return nil, err
-	}
-	applied := uint64(0)
-	if v, found, gerr := snap.Get(storage.CFReplData, s.appliedKey()); gerr != nil {
-		_ = snap.Close()
-		return nil, gerr
-	} else if found && len(v) == 8 {
-		applied = binary.BigEndian.Uint64(v)
-	}
-	return &snapState{snap: snap, applied: applied}, nil
-}
-
-func (s *shardSM) SaveSnapshot(ctx interface{}, w io.Writer, stopc <-chan struct{}) error {
-	st := ctx.(*snapState)
-	defer func() { _ = st.snap.Close() }()
-	if err := writeChunk(w, u64(st.applied)); err != nil {
-		return err
-	}
-	sp := s.dataSpace()
-	it, err := st.snap.Scan(storage.CFReplData, sp, prefixEnd(sp), 0)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = it.Close() }()
-	for it.Valid() {
-		select {
-		case <-stopc:
-			return sm.ErrSnapshotStopped
-		default:
-		}
-		if err := writeChunk(w, it.Key()[len(sp):]); err != nil {
-			return err
-		}
-		if err := writeChunk(w, it.Value()); err != nil {
-			return err
-		}
-		it.Next()
-	}
-	return it.Err()
-}
-
-// RecoverFromSnapshot installs a snapshot stream (applied index + data). TODO(M-B): clear the shard's
-// data space first so recovery replaces rather than merges for an already-populated replica.
-func (s *shardSM) RecoverFromSnapshot(r io.Reader, stopc <-chan struct{}) error {
-	idxBytes, err := readChunk(r)
-	if err != nil {
-		return err
-	}
-	sp := s.dataSpace()
-	ops := []storage.StoreOp{}
-	flush := func() error {
-		if len(ops) == 0 {
-			return nil
-		}
-		err := s.store.Batch(ops)
-		ops = ops[:0]
-		return err
-	}
-	for {
-		select {
-		case <-stopc:
-			return sm.ErrSnapshotStopped
-		default:
-		}
-		suffix, rerr := readChunk(r)
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil {
-			return rerr
-		}
-		val, verr := readChunk(r)
-		if verr != nil {
-			return verr
-		}
-		ops = append(ops, storage.StoreOp{CF: storage.CFReplData, Key: append(append([]byte{}, sp...), suffix...), Value: val})
-		if len(ops) >= 1024 {
-			if ferr := flush(); ferr != nil {
-				return ferr
-			}
-		}
-	}
-	ops = append(ops, storage.StoreOp{CF: storage.CFReplData, Key: s.appliedKey(), Value: idxBytes})
-	return flush()
-}
-
-func (s *shardSM) Close() error { return nil }
-
-func u64(n uint64) []byte {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, n)
-	return b
 }
 
 func bitsOf(f float64) []byte {

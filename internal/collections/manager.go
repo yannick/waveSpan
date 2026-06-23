@@ -13,21 +13,25 @@ import (
 )
 
 // Manager is the dragonboat implementation of RaftShard: a NodeHost hosting replicated-collection
-// shards over a shared wavesdb store (design/30 §12.5, Appendix B). It also runs the TTL sweeper:
-// for each local shard where this node leads, it scans the expiry index and proposes opExpire
-// deletions (log-driven expiry, design/30 §10). M-A/M-D use dragonboat's built-in transport + default
-// Pebble LogDB; the cheap-mTLS transport, SWIM node registry, and wavesdb-backed LogDB (Appendix
-// B.4-B.6) are later milestones.
+// shards (and the meta shard) over a shared wavesdb store (design/30 §12.5, Appendix B). It runs the
+// TTL sweeper for data shards it leads (log-driven expiry, design/30 §10). M-A/M-D use dragonboat's
+// built-in transport + default Pebble LogDB; the cheap-mTLS transport, SWIM node registry, and
+// wavesdb-backed LogDB (Appendix B.4-B.6) are later milestones.
 type Manager struct {
 	nh    *dragonboat.NodeHost
 	store storage.LocalStore
 
 	mu     sync.Mutex
-	shards map[uint64]uint64 // shardID -> this node's replicaID
+	shards map[uint64]shardReg // shardID -> registration
 
 	sweepEvery time.Duration
 	stopCh     chan struct{}
 	doneCh     chan struct{}
+}
+
+type shardReg struct {
+	replicaID uint64
+	isData    bool // data shards carry datatypes + TTL; the meta shard does not
 }
 
 var _ RaftShard = (*Manager)(nil)
@@ -43,7 +47,7 @@ func NewManager(nodeHostDir, raftAddr string, store storage.LocalStore) (*Manage
 		return nil, err
 	}
 	m := &Manager{
-		nh: nh, store: store, shards: map[uint64]uint64{},
+		nh: nh, store: store, shards: map[uint64]shardReg{},
 		sweepEvery: 500 * time.Millisecond,
 		stopCh:     make(chan struct{}), doneCh: make(chan struct{}),
 	}
@@ -51,8 +55,8 @@ func NewManager(nodeHostDir, raftAddr string, store storage.LocalStore) (*Manage
 	return m, nil
 }
 
-func (m *Manager) StartShard(shardID, replicaID uint64, initialMembers map[uint64]string, join bool) error {
-	cfg := config.Config{
+func shardConfig(shardID, replicaID uint64) config.Config {
+	return config.Config{
 		ShardID:            shardID,
 		ReplicaID:          replicaID,
 		ElectionRTT:        10,
@@ -61,14 +65,28 @@ func (m *Manager) StartShard(shardID, replicaID uint64, initialMembers map[uint6
 		SnapshotEntries:    1000,
 		CompactionOverhead: 500,
 	}
-	factory := func(sid, rid uint64) sm.IOnDiskStateMachine { return newShardSM(m.store, sid) }
-	if err := m.nh.StartOnDiskReplica(initialMembers, join, factory, cfg); err != nil {
+}
+
+func (m *Manager) startReplica(shardID, replicaID uint64, members map[uint64]string, join bool, factory sm.CreateOnDiskStateMachineFunc, isData bool) error {
+	if err := m.nh.StartOnDiskReplica(members, join, factory, shardConfig(shardID, replicaID)); err != nil {
 		return err
 	}
 	m.mu.Lock()
-	m.shards[shardID] = replicaID
+	m.shards[shardID] = shardReg{replicaID: replicaID, isData: isData}
 	m.mu.Unlock()
 	return nil
+}
+
+// StartShard starts (or restarts) a data shard (datatype state machine).
+func (m *Manager) StartShard(shardID, replicaID uint64, initialMembers map[uint64]string, join bool) error {
+	factory := func(sid, rid uint64) sm.IOnDiskStateMachine { return newShardSM(m.store, sid) }
+	return m.startReplica(shardID, replicaID, initialMembers, join, factory, true)
+}
+
+// StartMetaShard starts (or restarts) the meta shard (range directory state machine, design/30 §7).
+func (m *Manager) StartMetaShard(shardID, replicaID uint64, initialMembers map[uint64]string, join bool) error {
+	factory := func(sid, rid uint64) sm.IOnDiskStateMachine { return newMetaSM(m.store, sid) }
+	return m.startReplica(shardID, replicaID, initialMembers, join, factory, false)
 }
 
 func (m *Manager) Propose(ctx context.Context, shardID uint64, cmd []byte) (ProposeResult, error) {
@@ -107,12 +125,14 @@ func (m *Manager) sweepLoop() {
 	}
 }
 
-// sweepOnce proposes expirations for due elements of every local shard this node leads.
+// sweepOnce proposes expirations for due elements of every local data shard this node leads.
 func (m *Manager) sweepOnce() {
 	m.mu.Lock()
 	local := make(map[uint64]uint64, len(m.shards))
 	for s, r := range m.shards {
-		local[s] = r
+		if r.isData {
+			local[s] = r.replicaID
+		}
 	}
 	m.mu.Unlock()
 
