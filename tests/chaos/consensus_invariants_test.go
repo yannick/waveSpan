@@ -241,6 +241,142 @@ func TestConsensusCardinalityInvariant(t *testing.T) {
 	t.Logf("OK: SCard == element count held continuously on the leader and on all 5 replicas under faults")
 }
 
+// TestConsensusZSetConsistency hammers a sorted set with concurrent ZADD (changing scores) + ZREM
+// under faults. A score update must delete the old score-ordered index entry; if it orphans one, the
+// member appears twice in ZRange while the counter (distinct members) stays put — so CardCheck's
+// Stored != Counted. It also asserts ZRange stays sorted with no duplicate members.
+func TestConsensusZSetConsistency(t *testing.T) {
+	parts := newPartitions()
+	nodes, start := buildCluster(t, 5, parts.gate)
+	for _, n := range nodes {
+		start(n)
+	}
+	defer func() {
+		for _, n := range nodes {
+			if n.mgr != nil {
+				n.mgr.Stop()
+			}
+		}
+	}()
+	awaitLeader(t, nodes)
+	lt := newLiveTracker()
+	ns, coll := []byte("zcard"), []byte("zset")
+	const members = 20
+
+	stop := make(chan struct{})
+	nemDone := make(chan struct{})
+	go runNemesis(nodes, parts, start, lt, stop, nemDone)
+
+	var wg sync.WaitGroup
+	for w := 0; w < 8; w++ {
+		wg.Add(1)
+		go func(seed int) {
+			defer wg.Done()
+			rng := rand.New(rand.NewSource(int64(seed) + 100))
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				m := []byte(fmt.Sprintf("m%d", rng.Intn(members)))
+				zadd := rng.Intn(3) != 0 // mostly adds/updates, some removes
+				score := float64(rng.Intn(1000))
+				proposeVia(nodes, lt, func(c *collections.Collections) error {
+					ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
+					defer cancel()
+					var err error
+					if zadd {
+						_, err = c.ZAdd(ctx, ns, coll, collections.ScoredMember{Member: m, Score: score})
+					} else {
+						_, err = c.ZRem(ctx, ns, coll, m)
+					}
+					return err
+				})
+			}
+		}(w)
+	}
+
+	var viol struct {
+		sync.Mutex
+		msgs []string
+	}
+	report := func(s string) { viol.Lock(); viol.msgs = append(viol.msgs, s); viol.Unlock() }
+
+	// Continuous, atomic-per-read checks on the leader: counter == index entries, and ZRange is a
+	// sorted set of DISTINCT members (one score-index entry per member).
+	ckStop := make(chan struct{})
+	ckDone := make(chan struct{})
+	go func() {
+		defer close(ckDone)
+		for {
+			select {
+			case <-ckStop:
+				return
+			default:
+			}
+			if idx := leaderIndex(nodes); idx >= 0 && lt.live(uint64(idx+1)) {
+				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+				cc, ccErr := nodes[idx].cols.CardCheck(ctx, ns, coll, true)
+				rows, rErr := nodes[idx].cols.ZRange(ctx, ns, coll, 0, true)
+				cancel()
+				if ccErr == nil && cc.Stored != cc.Counted {
+					report(fmt.Sprintf("ZCard=%d but score-index entries=%d (orphaned/duplicate member)", cc.Stored, cc.Counted))
+				}
+				if rErr == nil {
+					seen := map[string]bool{}
+					var prev float64
+					for i, r := range rows {
+						if seen[string(r.Member)] {
+							report(fmt.Sprintf("duplicate member %q in ZRange", r.Member))
+						}
+						seen[string(r.Member)] = true
+						if i > 0 && r.Score < prev {
+							report("ZRange not sorted by score")
+						}
+						prev = r.Score
+					}
+				}
+			}
+			time.Sleep(40 * time.Millisecond)
+		}
+	}()
+
+	time.Sleep(30 * time.Second)
+	close(stop)
+	wg.Wait()
+	<-nemDone
+	close(ckStop)
+	<-ckDone
+
+	parts.heal()
+	for _, n := range nodes {
+		if !lt.live(n.replicaID) {
+			start(n)
+			lt.set(n.replicaID, false)
+		}
+	}
+	awaitLeader(t, nodes)
+	time.Sleep(5 * time.Second)
+	for _, n := range nodes {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		cc, err := n.cols.CardCheck(ctx, ns, coll, false)
+		cancel()
+		if err != nil {
+			t.Fatalf("final CardCheck r%d: %v", n.replicaID, err)
+		}
+		if cc.Stored != cc.Counted {
+			t.Fatalf("replica r%d zset drift: ZCard=%d index entries=%d", n.replicaID, cc.Stored, cc.Counted)
+		}
+	}
+	viol.Lock()
+	defer viol.Unlock()
+	if len(viol.msgs) > 0 {
+		t.Fatalf("zset invariant violated %d time(s); first: %s", len(viol.msgs), viol.msgs[0])
+	}
+	t.Logf("OK: zset stayed consistent (counter == distinct members, sorted, no orphaned score keys) under faults")
+}
+
 // TestConsensusMonotonicReads runs an add-only workload under faults and asserts set-full monotonicity:
 // once an element is observed present it is never later read absent — on a linearizable read and on
 // each individual replica. A disappearance is a lost write / divergence / bad snapshot.
