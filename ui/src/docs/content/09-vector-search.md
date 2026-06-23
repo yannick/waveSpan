@@ -2,85 +2,162 @@
 title: Vector Search
 section: Reference
 order: 9
-summary: The vector-as-key API (Put/Get/Delete/Search), distributed HNSW with per-node indexes + scatter-gather, exact vs approximate search, and the delta index.
+summary: The vector-as-key API, distributed HNSW with replication + scatter-gather, coarse-bucket routing (LSH/IVF), affinity placement, consistency, and tuning.
 ---
 
 # Vector Search
 
-WaveSpan embeds a vector engine (`internal/vector`) so embeddings live next to your graph and KV data. You can query them through the Cypher surface **or** the dedicated vector-as-key API where the embedding *is* the key and an arbitrary proto is the payload.
+WaveSpan embeds a vector engine (`internal/vector`) so embeddings live next to your graph and KV
+data. You can query them through the Cypher surface **or** the dedicated **vector-as-key API** where
+the embedding *is* the key and an arbitrary proto is the payload — a distributed, approximate
+k-nearest-neighbour store with the same eventual-consistency contract as the rest of WaveSpan.
 
-## Vector-as-key API
+## At a glance
 
-`VectorService` exposes a small KV-shaped surface (the embedding is `repeated float`; the payload is opaque bytes):
+- **Vector as key, proto as value.** `VectorPut(collection, vector, payload)` stores an embedding with
+  an opaque payload; `VectorGet` / `VectorDelete` address it by the exact embedding; `VectorSearch`
+  returns the nearest neighbours.
+- **Distributed & durable.** Vectors replicate (origin+1) and every holder maintains its own HNSW
+  index, rebuilt from the store on restart.
+- **Routed by buckets.** A coarse quantizer assigns each vector a bucket; a query reaches only the
+  nodes holding its nearest buckets, not the whole cluster.
+- **Affinity placement.** A bucket's vectors concentrate on a deterministic node-set (rendezvous
+  hashing), so routing is maximally selective.
+
+---
+
+## The API
+
+`VectorService` (data port) exposes the vector-as-key surface. Every vector field is `repeated float`
+(self-describing, validated against the collection's `dimensions`); the byte key form is internal.
+Only the **payload** is opaque bytes.
 
 | RPC | Meaning |
 |-----|---------|
-| `VectorPut(collection, vector, payload)` | Store an embedding (key) + payload (value). Replicated to holders. |
-| `VectorGet(collection, vector)` | Exact lookup of the payload for a stored embedding (local or closest holder). |
-| `VectorDelete(collection, vector)` | Tombstone the record; every holder's index is purged. |
-| `VectorSearch(collection, query, k, …)` | Cluster-wide **k-nearest-neighbour** search. |
+| `VectorPut(collection, vector, payload)` | Store an embedding (key) + payload (value). Replicated. |
+| `VectorGet(collection, vector)` | Exact payload lookup for a stored embedding. |
+| `VectorDelete(collection, vector)` | Tombstone; every holder's index is purged. |
+| `VectorSearch(collection, query, k, nprobe, …)` | Cluster-wide kNN. |
 
 ```jsonc
-// VectorSearch — the query vector goes in `query`
-{ "collection": "docs", "query": [0.12, -0.04, …], "k": 10, "includePayload": true }
-// → neighbors: [{ vector, payload, distance, score, vectorId }, …], completeness
+// VectorSearch — the query vector goes in `query`; len(query) must equal the collection dimension.
+{
+  "collection": "docs",
+  "query": [0.12, -0.04, 0.31, …],
+  "k": 10,
+  "nprobe": 16,          // buckets to probe (recall vs fan-out); 0 = scatter to all holders
+  "includePayload": true
+}
+// → { neighbors: [ { vector, payload, distance, score, vectorId }, … ],
+//     completeness: COMPLETE | PARTIAL }
 ```
 
-The identity of a vector is derived from the embedding itself (a hash of its bytes), so identical embeddings dedupe and an exact `VectorGet`/`VectorDelete` addresses the same record.
+The **identity** of a vector is a hash of its embedding (`vechash`), so identical embeddings dedupe
+and `VectorGet`/`VectorDelete` address the same record. Search results are de-duplicated by id when a
+vector is held on several nodes.
+
+You can also search via Cypher procedures (`vector.search`, `vector.searchExact`, `vector.searchApprox`)
+which compose with graph queries.
+
+---
 
 ## Distributed architecture
 
-- **Per-node HNSW.** Every holder maintains a live ANN index over just the vectors it holds. A write replicates through the origin+1 coordinator; each holder's index is fed from the record-apply path, and is **rebuilt from the store on reboot**.
-- **Scatter-gather search.** `VectorSearch` fans `SearchLocal` out to holders, each returns its local top-k fragment, and the coordinator merges the global top-k (dedup by vector id) and attaches payloads. It declares `Completeness` — `PARTIAL` if a holder was unreachable.
-- **Bucket routing.** Each vector is assigned a coarse **bucket** by a per-collection quantizer (LSH today; IVF available). A search with `nprobe > 0` quantizes the query, finds its nearest buckets, and scatters **only to the nodes holding those buckets** — not the whole cluster. `nprobe` trades recall for fan-out; `nprobe = 0` scatters to all holders.
-- **Affinity placement.** A bucket's vectors are placed on a deterministic node-set chosen by rendezvous (HRW) hashing of the bucket id, so all vectors in a bucket concentrate on the same few nodes and routing reaches exactly them. Membership changes move only ~1/N of buckets. Holders are found both from the gossiped held-bucket directory and the locally-computed ring (gossip-independent).
-- **Eventual consistency.** A freshly-written vector is searchable within the merge interval; deletes converge across holders via intra-cluster anti-entropy.
+### Per-node HNSW + lifecycle
+Every holder maintains a live ANN index (HNSW, pure Go — no cgo) over just the vectors it holds:
 
-> Roadmap (design 29): IVF training + versioning (a shared, replicated centroid artifact so all nodes agree on buckets) for better-balanced routing on skewed data.
+1. **Write → replicate.** `VectorPut` routes through the origin+1 coordinator, so the vector replicates
+   to its holders and (if enabled) taps cross-cluster.
+2. **Apply → index.** A single record-apply observer feeds the vector store + HNSW on **every** holder,
+   from every path (origin, replica, anti-entropy, bootstrap, cross-cluster), applying only the LWW
+   winner. Replicated deletes purge the index too.
+3. **Boot → rebuild.** On startup each index is rebuilt from the authoritative raw vectors, so a
+   restart never loses searchability.
+4. **Delta → merge.** New writes land in a small delta for immediate visibility; a background merger
+   folds the delta into the main HNSW segment on the `vector.mergeInterval` tunable.
 
-## Storage model
+### Scatter-gather search
+`VectorSearch` runs a local fragment on the coordinator, scatters `SearchLocal` to the relevant
+holders, merges the global top-k (dedup by id), and attaches each neighbour's embedding + payload.
+It declares **`Completeness`** — `PARTIAL` if a holder was unreachable.
 
-In v1, raw vectors are stored **inline in `wavesdb`** (object-storage offload is a future enhancement):
+---
+
+## Bucket routing
+
+The trick that avoids querying every node: a coarse **bucket** stamped on each vector, and knowledge
+of which node holds which buckets.
+
+### Quantizers
+Each collection has a quantizer that maps a vector to a small bucket id (`Bucket`) and, for a query,
+the buckets to probe (`Probe`):
+
+| Quantizer | How | When |
+|-----------|-----|------|
+| **LSH** (default) | sign pattern against random hyperplanes; multi-probe flips the lowest-margin bits | zero training, angular/cosine, cold-start |
+| **IVF** | nearest of k k-means centroids; probe = nprobe nearest centroids | balanced buckets, any metric, after training |
+
+The LSH planes are seeded from the collection name, so **every node derives identical buckets** — no
+coordination needed. `nprobe` is the recall dial: more probed buckets → more holders queried → higher
+recall.
+
+### Held-bucket directory
+Each node tracks the set of buckets it holds per collection and **gossips it** (an explicit,
+removable set — recomputed periodically from the store so emptied/migrated buckets are
+de-advertised). A query consults this directory to find the holders of its probed buckets.
+
+### Affinity placement
+A bucket's vectors are placed on a deterministic node-set chosen by **rendezvous (HRW) hashing** of the
+bucket id. Consequences:
+
+- All vectors in a bucket concentrate on the **same few nodes**, so routing reaches exactly them.
+- Holders are **computable locally** from the ring (gossip-independent) — covering nodes that just
+  joined and haven't advertised yet — *and* confirmed by the gossiped directory.
+- A membership change moves only **~1/N of buckets** (HRW), so rebalancing is cheap.
+
+Putting it together, a search:
 
 ```text
-/vector/{collection}/raw/{vector_id}        # the raw float vector
-/vector/{collection}/meta/{vector_id}        # dimensions, metadata
-/vector/{collection}/ann/{index}/{segment}/… # ANN index segments
-/vector/{collection}/delta/{index}/{seq}      # pending index mutations
+buckets = quantizer.Probe(query, nprobe)
+holders = (gossiped held-bucket holders)  ∪  (HRW ring of each bucket)
+scatter SearchLocal(query, …) → holders  →  merge top-k  →  attach payloads
 ```
 
-Because vectors are ordinary keyspace records, they replicate and cache with the same per-namespace policy as everything else.
+---
 
-## Exact vs approximate
+## Consistency & recall
 
-| Mode | Procedure | Behaviour |
-|------|-----------|-----------|
-| Exact | `vector.searchExact` | Scans candidates and computes true distances. Accurate, slower. |
-| Approximate | `vector.searchApprox` | Uses the ANN index (HNSW, pure Go, no cgo). Fast, approximate recall. |
-| Auto | `vector.search` | Picks based on index availability and collection size. |
+- **Eventual**, like the rest of WaveSpan. A freshly-written vector is searchable within the merge
+  interval and replicates async; deletes converge across holders via intra-cluster anti-entropy.
+- **Recall is bounded by `nprobe` coverage, not by reranking.** A true nearest neighbour in an
+  un-probed bucket (e.g. just across a quantization boundary) is never retrieved — `rerank` only
+  exact-rescores the candidates already pulled from probed buckets. Raise `nprobe` for higher recall
+  at the cost of more fan-out; `nprobe = 0` scatters to all holders (exact over the candidate union).
+- `Completeness` on the response is honest: `PARTIAL` when a holder was unreachable.
 
-```cypher
-CALL vector.search('docs', $embedding, 8)
-YIELD id, score
-RETURN id, score
-```
+---
 
-## The ANN index
+## Tuning
 
-Approximate search is backed by an **HNSW** index implemented in pure Go (no cgo, keeping the static-binary build). The index is organized into **segments** that are built and compacted asynchronously.
+| Tunable | Default | Effect |
+|---------|---------|--------|
+| `vector.mergeInterval` | `5s` | how often the delta folds into the HNSW segment (freshness vs rebuild cost) |
+| `nprobe` (per query) | — | buckets probed → recall vs fan-out |
+| `ef_search` (per query) | `64` | HNSW beam width → recall vs CPU within a node |
+| `rerank` (per query) | off | exact-rescore ANN candidates from probed buckets |
 
-## The delta index — staying fresh
+Operational notes:
+- Keep big embedding collections off `replicationFactor: "all"` — that copies every vector to every
+  node (the worst case for the per-node HNSW's memory).
+- Per-node HNSW is in-memory; affinity placement bounds each node to its share of buckets.
 
-Vectors change. Rather than rebuild the whole index on every write, WaveSpan tracks mutations in a **delta index**:
+---
 
-1. Each vector write appends to `/vector/{collection}/delta/{index}/{seq}` via the mutation log.
-2. A background builder folds deltas into ANN segments incrementally.
-3. Queries consult both the built segments **and** the unmerged delta, so recently-written vectors are searchable before a full rebuild.
+## Roadmap
 
-This means index freshness is **eventual**, consistent with the rest of the system. The `vector.*` procedures report freshness metadata so a query can tell how current the index is.
+- **IVF training + versioning** — train centroids from a sample and replicate them as a shared,
+  versioned artifact (so all nodes agree on buckets), with background re-bucketing on retrain. The IVF
+  quantizer exists; the shared-artifact pipeline is the remaining work.
+- **Closest-replica routing** and per-bucket load metrics for skew.
 
-## Performance notes
-
-- Keep collections scoped — a `replicationFactor` of `"all"` on a large vector namespace replicates every vector to every node, which is rarely what you want for big embedding sets.
-- Exact search cost scales with candidate count; prefer ANN for large collections and reserve exact search for small or high-precision cases.
-- Index freshness lag is observable via metrics (see [Operations & Observability](doc:operations-observability)).
+See design docs 08 (vector engine) and 29 (vector KV search) for the full specification.
