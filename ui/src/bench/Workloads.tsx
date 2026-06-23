@@ -40,7 +40,7 @@ interface WorkloadsProps {
 // than the server's generic param list) so each row gets a sensible label + numeric input; unknown
 // kinds fall back to whatever params the server advertises.
 const PARAM_HINTS: Record<string, string[]> = {
-  kv: ["concurrency", "keys", "readRatio"],
+  kv: ["concurrency", "keys", "readRatio", "valueSize"],
   multiget: ["concurrency", "batch", "keys"],
   cypher: ["concurrency", "graph"],
 };

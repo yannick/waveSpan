@@ -65,13 +65,21 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 		}
 		readRatio := floatParam(spec.Params, "readRatio", 0.5)
 		ns := strParam(spec.Params, "namespace", "default")
+		valueSize := intParam(spec.Params, "valueSize", 256)
+		if valueSize < 1 {
+			valueSize = 1
+		}
+		val := make([]byte, valueSize)
+		for i := range val {
+			val[i] = 'v'
+		}
 		c := bench.KVClient(cfg.DataAddr)
 		op = func(ctx context.Context) error {
 			key := fmt.Sprintf("bench/%d", rand.IntN(keys))
 			if rand.Float64() < readRatio {
 				return bench.OpKVRead(ctx, c, ns, key)
 			}
-			return bench.OpKVWrite(ctx, c, ns, key, []byte("v"))
+			return bench.OpKVWrite(ctx, c, ns, key, val)
 		}
 		return op, "kv", nil
 
