@@ -225,6 +225,11 @@ func (r *Run) worker(c *collector) {
 		start := time.Now()
 		err := c.op(r.ctx)
 		d := time.Since(start)
+		// The run window ended (or was stopped) mid-request: the op fails with context.Canceled, which
+		// is the harness shutting itself down, not a real error. Drain it instead of counting it.
+		if err != nil && r.ctx.Err() != nil {
+			return
+		}
 		c.mu.Lock()
 		if err != nil {
 			c.errs++
