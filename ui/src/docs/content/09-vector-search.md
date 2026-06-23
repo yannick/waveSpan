@@ -32,10 +32,11 @@ The identity of a vector is derived from the embedding itself (a hash of its byt
 
 - **Per-node HNSW.** Every holder maintains a live ANN index over just the vectors it holds. A write replicates through the origin+1 coordinator; each holder's index is fed from the record-apply path, and is **rebuilt from the store on reboot**.
 - **Scatter-gather search.** `VectorSearch` fans `SearchLocal` out to holders, each returns its local top-k fragment, and the coordinator merges the global top-k (dedup by vector id) and attaches payloads. It declares `Completeness` — `PARTIAL` if a holder was unreachable.
-- **Bucket routing.** Each vector is assigned a coarse **bucket** by a per-collection quantizer (LSH today; IVF available). Nodes gossip which buckets they hold, so a search with `nprobe > 0` quantizes the query, finds its nearest buckets, and scatters **only to the nodes holding those buckets** — not the whole cluster. `nprobe` trades recall for fan-out; `nprobe = 0` scatters to all holders.
+- **Bucket routing.** Each vector is assigned a coarse **bucket** by a per-collection quantizer (LSH today; IVF available). A search with `nprobe > 0` quantizes the query, finds its nearest buckets, and scatters **only to the nodes holding those buckets** — not the whole cluster. `nprobe` trades recall for fan-out; `nprobe = 0` scatters to all holders.
+- **Affinity placement.** A bucket's vectors are placed on a deterministic node-set chosen by rendezvous (HRW) hashing of the bucket id, so all vectors in a bucket concentrate on the same few nodes and routing reaches exactly them. Membership changes move only ~1/N of buckets. Holders are found both from the gossiped held-bucket directory and the locally-computed ring (gossip-independent).
 - **Eventual consistency.** A freshly-written vector is searchable within the merge interval; deletes converge across holders via intra-cluster anti-entropy.
 
-> Roadmap (design 29): bucket-**affinity placement** — consistent-hash a bucket onto a small node-set so a bucket concentrates on few nodes and routing fan-out is minimal, plus IVF training/versioning.
+> Roadmap (design 29): IVF training + versioning (a shared, replicated centroid artifact so all nodes agree on buckets) for better-balanced routing on skewed data.
 
 ## Storage model
 
