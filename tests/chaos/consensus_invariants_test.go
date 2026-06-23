@@ -70,8 +70,9 @@ func (l *liveTracker) set(rid uint64, down bool) {
 	l.mu.Unlock()
 }
 
-// runNemesis cycles leader-kill, follower-kill+restart, and minority partition until stop is closed.
-func runNemesis(nodes []*node, parts *partitions, start func(*node), lt *liveTracker, stop <-chan struct{}, done chan<- struct{}) {
+// runNemesis cycles leader-kill, follower-kill+restart, and (when includePartition) minority partition
+// until stop is closed.
+func runNemesis(nodes []*node, parts *partitions, start func(*node), lt *liveTracker, includePartition bool, stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	kill := func(rid uint64, pause time.Duration) {
 		if rid == 0 {
@@ -87,11 +88,13 @@ func runNemesis(nodes []*node, parts *partitions, start func(*node), lt *liveTra
 	faults := []func(){
 		func() { kill(pickFollower(nodes), 2*time.Second) },
 		func() { kill(leaderOf(nodes), 3*time.Second) },
-		func() {
+	}
+	if includePartition {
+		faults = append(faults, func() {
 			parts.isolate(nodes[0].addr, nodes[1].addr)
 			time.Sleep(4 * time.Second)
 			parts.heal()
-		},
+		})
 	}
 	for i := 0; ; i++ {
 		select {
@@ -144,7 +147,7 @@ func TestConsensusCardinalityInvariant(t *testing.T) {
 
 	stop := make(chan struct{})
 	nemDone := make(chan struct{})
-	go runNemesis(nodes, parts, start, lt, stop, nemDone)
+	go runNemesis(nodes, parts, start, lt, true, stop, nemDone)
 
 	// 8 writers, concurrent SADD/SREM on overlapping keys (high contention on the counter).
 	var wg sync.WaitGroup
@@ -265,7 +268,7 @@ func TestConsensusZSetConsistency(t *testing.T) {
 
 	stop := make(chan struct{})
 	nemDone := make(chan struct{})
-	go runNemesis(nodes, parts, start, lt, stop, nemDone)
+	go runNemesis(nodes, parts, start, lt, true, stop, nemDone)
 
 	var wg sync.WaitGroup
 	for w := 0; w < 8; w++ {
@@ -377,6 +380,156 @@ func TestConsensusZSetConsistency(t *testing.T) {
 	t.Logf("OK: zset stayed consistent (counter == distinct members, sorted, no orphaned score keys) under faults")
 }
 
+// TestConsensusTTLUnderFaults checks log-driven TTL under leader churn: TTL members must all expire
+// (the leader sweeper proposes opExpire; a new leader after failover must take over the sweep), while
+// permanent members survive, and the cardinality counter stays exact across the expiries. A double- or
+// missed-expire would drift CardCheck or leave stale members.
+func TestConsensusTTLUnderFaults(t *testing.T) {
+	parts := newPartitions()
+	nodes, start := buildCluster(t, 5, parts.gate)
+	for _, n := range nodes {
+		start(n)
+	}
+	defer func() {
+		for _, n := range nodes {
+			if n.mgr != nil {
+				n.mgr.Stop()
+			}
+		}
+	}()
+	awaitLeader(t, nodes)
+	lt := newLiveTracker()
+	ns, coll := []byte("ttl"), []byte("set")
+
+	stop := make(chan struct{})
+	nemDone := make(chan struct{})
+	// Failover via leadership TRANSFER (not kill): the TTL sweep is leader-driven, so the property under
+	// test is that it follows the leader across failovers and stays counter-consistent. Transfer keeps
+	// every node online, isolating the sweep-follows-leader concern from node-restart catch-up.
+	go func() {
+		defer close(nemDone)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if tgt := pickFollower(nodes); tgt != 0 {
+				_ = nodes[leaderIndex(nodes)].mgr.TransferLeadership(shardID, tgt)
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}()
+
+	var permMu sync.Mutex
+	perm := map[string]bool{}
+	const writers = 4
+	var wg sync.WaitGroup
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for seq := 0; seq < 40; seq++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				permM := []byte(fmt.Sprintf("perm-%d-%d", w, seq))
+				ttlM := []byte(fmt.Sprintf("ttl-%d-%d", w, seq))
+				// permanent add
+				if proposeVia(nodes, lt, func(c *collections.Collections) error {
+					ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
+					defer cancel()
+					_, err := c.SAdd(ctx, ns, coll, permM)
+					return err
+				}) {
+					permMu.Lock()
+					perm[string(permM)] = true
+					permMu.Unlock()
+				}
+				// short-TTL add (expires ~1s after commit)
+				proposeVia(nodes, lt, func(c *collections.Collections) error {
+					ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
+					defer cancel()
+					_, err := c.SAddTTL(ctx, ns, coll, 1000, ttlM)
+					return err
+				})
+			}
+		}(w)
+	}
+	wg.Wait()
+	close(stop)
+	<-nemDone
+
+	parts.heal()
+	for _, n := range nodes {
+		if !lt.live(n.replicaID) {
+			start(n)
+			lt.set(n.replicaID, false)
+		}
+	}
+	awaitLeader(t, nodes)
+
+	permMu.Lock()
+	want := len(perm)
+	permMu.Unlock()
+
+	// The TTL sweep is leader-driven and therefore *eventual* — it advances only on a stable leader, so
+	// under fault churn it lags; now that we've healed, give it a stable window to drain. The invariants
+	// that must hold: (1) every replica converges to an identical set, (2) no TTL member survives, (3)
+	// only the acked permanent members remain, (4) each replica's counter equals its element count.
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		ok := true
+		var first []string
+		allConsistent := true
+		for i, n := range nodes {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			rows, rerr := n.cols.SMembers(ctx, ns, coll, 0, false)
+			cc, cerr := n.cols.CardCheck(ctx, ns, coll, false)
+			cancel()
+			if rerr != nil || cerr != nil {
+				ok = false
+				break
+			}
+			if cc.Stored != cc.Counted {
+				t.Fatalf("replica r%d counter drift: SCard=%d elements=%d", n.replicaID, cc.Stored, cc.Counted)
+			}
+			got := make([]string, len(rows))
+			for j, m := range rows {
+				got[j] = string(m)
+				if len(m) >= 4 && string(m[:4]) == "ttl-" {
+					ok = false // TTL not yet fully swept
+				}
+			}
+			sort.Strings(got)
+			if i == 0 {
+				first = got
+			} else if len(got) != len(first) {
+				ok = false // not converged across replicas
+			} else {
+				for k := range got {
+					if got[k] != first[k] {
+						allConsistent = false
+					}
+				}
+			}
+		}
+		if !allConsistent {
+			t.Fatal("replicas diverged: bounded-stale reads disagree on membership after heal")
+		}
+		if ok && len(first) == want {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("TTL did not drain / converge within window: set size %d want %d permanent", len(first), want)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Logf("OK: all TTL members swept, %d permanent survived, counter exact on all replicas under faults", want)
+}
+
 // TestConsensusMonotonicReads runs an add-only workload under faults and asserts set-full monotonicity:
 // once an element is observed present it is never later read absent — on a linearizable read and on
 // each individual replica. A disappearance is a lost write / divergence / bad snapshot.
@@ -399,7 +552,7 @@ func TestConsensusMonotonicReads(t *testing.T) {
 
 	stop := make(chan struct{})
 	nemDone := make(chan struct{})
-	go runNemesis(nodes, parts, start, lt, stop, nemDone)
+	go runNemesis(nodes, parts, start, lt, true, stop, nemDone)
 
 	var ackedMu sync.Mutex
 	acked := map[string]bool{}
