@@ -28,6 +28,12 @@ type ExpandIncoming struct {
 	From, To, RelVar, Type string
 }
 
+// ExpandBoth expands an undirected relationship (`-[]-`): neighbours via both outgoing and incoming
+// adjacency.
+type ExpandBoth struct {
+	From, To, RelVar, Type string
+}
+
 // Unwind expands a list expression into one row per element bound to Alias.
 type Unwind struct {
 	Expr  parser.Expr
@@ -70,6 +76,7 @@ func (*AllNodesScan) opName() string   { return "AllNodesScan" }
 func (*PropertyFilter) opName() string { return "PropertyFilter" }
 func (*ExpandOutgoing) opName() string { return "ExpandOutgoing" }
 func (*ExpandIncoming) opName() string { return "ExpandIncoming" }
+func (*ExpandBoth) opName() string     { return "ExpandBoth" }
 func (*Unwind) opName() string         { return "Unwind" }
 func (*Project) opName() string        { return "Project" }
 func (*Sort) opName() string           { return "Sort" }
@@ -129,9 +136,12 @@ func planMatch(m *parser.MatchClause) []LogicalOp {
 			if len(rel.Types) > 0 {
 				typ = rel.Types[0]
 			}
-			if rel.Direction == parser.DirIn {
+			switch rel.Direction {
+			case parser.DirIn:
 				ops = append(ops, &ExpandIncoming{From: from, To: to, RelVar: rel.Variable, Type: typ})
-			} else {
+			case parser.DirBoth:
+				ops = append(ops, &ExpandBoth{From: from, To: to, RelVar: rel.Variable, Type: typ})
+			default:
 				ops = append(ops, &ExpandOutgoing{From: from, To: to, RelVar: rel.Variable, Type: typ})
 			}
 			if pf := inlinePropFilter(part.Nodes[i]); pf != nil {

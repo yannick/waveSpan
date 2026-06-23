@@ -175,6 +175,8 @@ func (e *Executor) apply(op LogicalOp, rows []bindingRow) ([]bindingRow, error) 
 		return e.expand(rows, o.From, o.To, o.RelVar, o.Type, true)
 	case *ExpandIncoming:
 		return e.expand(rows, o.From, o.To, o.RelVar, o.Type, false)
+	case *ExpandBoth:
+		return e.expandBoth(rows, o.From, o.To, o.RelVar, o.Type)
 	case *Unwind:
 		return e.unwind(rows, o)
 	case *Project:
@@ -289,6 +291,49 @@ func (e *Executor) expand(rows []bindingRow, from, to, relVar, typ string, outgo
 			}
 			e.touch(otherID)
 			out = append(out, nr)
+		}
+	}
+	return out, nil
+}
+
+// expandBoth expands an undirected relationship: a node's neighbours via both outgoing and incoming
+// adjacency (one row per edge, in each direction). Mirrors expand() but unions the two directions.
+func (e *Executor) expandBoth(rows []bindingRow, from, to, relVar, typ string) ([]bindingRow, error) {
+	if err := e.Limits.checkDepth(1); err != nil { // one undirected hop
+		return nil, err
+	}
+	var out []bindingRow
+	for _, r := range rows {
+		node, ok := r[from].(*wavespanv1.NodeRecord)
+		if !ok {
+			continue
+		}
+		outE, err := e.Store.ScanOutgoing(e.GraphID, node.GetNodeId(), typ)
+		if err != nil {
+			return nil, err
+		}
+		inE, err := e.Store.ScanIncoming(e.GraphID, node.GetNodeId(), typ)
+		if err != nil {
+			return nil, err
+		}
+		bind := func(edge *wavespanv1.EdgeRecord, otherID string) {
+			other, found, _ := e.Store.GetNode(e.GraphID, otherID)
+			if !found {
+				return
+			}
+			nr := cloneRow(r)
+			nr[to] = other
+			if relVar != "" {
+				nr[relVar] = edge
+			}
+			e.touch(otherID)
+			out = append(out, nr)
+		}
+		for _, edge := range outE {
+			bind(edge, edge.GetEndNode())
+		}
+		for _, edge := range inE {
+			bind(edge, edge.GetStartNode())
 		}
 	}
 	return out, nil

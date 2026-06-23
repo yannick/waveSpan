@@ -81,6 +81,23 @@ func TestExecuteMatchReturn(t *testing.T) {
 	}
 }
 
+func TestExecuteUndirectedExpand(t *testing.T) {
+	e := newExec(t)
+	seedSocial(t, e)
+
+	// carol has only INCOMING follows (from alice + bob); an undirected pattern must still find them
+	// (regression: DirBoth previously fell through to outgoing-only and returned nothing).
+	res := run(t, e, "MATCH (c:User {id:'c'})-[:FOLLOWS]-(m) RETURN m.name")
+	if got := colVals(res, "m.name"); !streq(got, []string{"alice", "bob"}) {
+		t.Fatalf("undirected from sink carol = %v, want [alice bob]", got)
+	}
+	// bob has one outgoing (carol) and one incoming (alice); undirected returns both.
+	res = run(t, e, "MATCH (b:User {id:'b'})-[:FOLLOWS]-(m) RETURN m.name")
+	if got := colVals(res, "m.name"); !streq(got, []string{"alice", "carol"}) {
+		t.Fatalf("undirected from bob = %v, want [alice carol]", got)
+	}
+}
+
 func TestExecuteCreateSetDelete(t *testing.T) {
 	e := newExec(t)
 	run(t, e, "CREATE (a:User {id:'1', name:'alice'})")
