@@ -72,6 +72,21 @@ function labelHex(labels: string[]): string {
   return resolveVar(categoricalColor(labels[0] ?? ""));
 }
 
+// The 3D scene uses a fixed dark, warm "viewport" backdrop (independent of the page's light/dark
+// theme) so the graph reads as a real 3D space and the nodes pop against it. Node hues are bright
+// Linea accents tuned for contrast on that backdrop; a stable per-label hash keeps each label's
+// colour consistent (Person vs Movie etc.).
+const SCENE_BG = "#16130d"; // warm near-black ink
+const SCENE_LABEL = "#f3eee2"; // cream labels
+const SCENE_LINK = "#8c8474"; // warm muted links
+const NODE_PALETTE = ["#5cb0af", "#ef7350", "#b6b95f", "#ecbb3f", "#7aa6cd", "#b094d6", "#e46b54"];
+
+function sceneNodeColor(label: string): string {
+  let h = 0;
+  for (let i = 0; i < label.length; i++) h = (h * 31 + label.charCodeAt(i)) >>> 0;
+  return NODE_PALETTE[h % NODE_PALETTE.length];
+}
+
 function nodeDisplay(n: GraphNode): string {
   return valToStr(n.properties["title"]) || valToStr(n.properties["name"]) || n.nodeId;
 }
@@ -122,32 +137,29 @@ export function NodeExplorer() {
   useEffect(() => {
     const el = mountRef.current;
     if (!el) return;
-    const ink = resolveVar("var(--ws-color-ink)");
-    const muted = resolveVar("var(--ws-color-ink-muted)");
-    const bg = resolveVar("var(--ws-color-paper)");
 
     const g = new ForceGraph3D(el)
-      .backgroundColor(bg)
+      .backgroundColor(SCENE_BG)
       .showNavInfo(false)
       .nodeRelSize(5)
       .nodeColor((n) => (n as GNode).color)
       .nodeVal((n) => (n as GNode).degree)
-      .nodeOpacity(0.92)
+      .nodeOpacity(0.95)
       .nodeResolution(16)
       .nodeLabel((n) => (n as GNode).display)
       .nodeThreeObjectExtend(true)
       .nodeThreeObject((n) => {
         const gn = n as GNode;
         const s = new SpriteText(gn.display);
-        s.color = ink;
+        s.color = SCENE_LABEL;
         s.textHeight = 4;
         s.fontWeight = "600";
         s.padding = 1;
         s.position.set(0, 7 + Math.cbrt(gn.degree) * 2, 0);
         return s;
       })
-      .linkColor(() => muted)
-      .linkOpacity(0.35)
+      .linkColor(() => SCENE_LINK)
+      .linkOpacity(0.5)
       .linkWidth(0.8)
       .linkLabel((l) => (l as GLink).type)
       .linkDirectionalArrowLength(3.5)
@@ -160,8 +172,9 @@ export function NodeExplorer() {
         setSelected(gn);
       });
 
-    // Fog matched to the background gives real depth — far nodes recede instead of cluttering.
-    g.scene().fog = new Fog(new Color(bg).getHex(), 90, 360);
+    // Gentle fog matched to the backdrop adds depth — distant nodes recede into the dark. The far
+    // plane is generous (2000) so a normally-scaled graph is never fully fogged away.
+    g.scene().fog = new Fog(new Color(SCENE_BG).getHex(), 400, 2000);
     g.width(el.clientWidth).height(CANVAS_H);
     graphRef.current = g;
 
@@ -191,7 +204,7 @@ export function NodeExplorer() {
       labels: n.labels,
       properties: n.properties,
       display: nodeDisplay(n),
-      color: labelHex(n.labels),
+      color: sceneNodeColor(n.labels[0] ?? ""),
       degree: 1 + (deg.get(n.nodeId) ?? 0),
     }));
     const gLinks: GLink[] = edges
@@ -358,7 +371,7 @@ export function NodeExplorer() {
               border: "var(--ws-stroke-regular) solid var(--ws-color-border-strong)",
               borderRadius: "var(--ws-radius-md)",
               overflow: "hidden",
-              background: "var(--ws-color-paper)",
+              background: SCENE_BG,
             }}
           />
           {nodes.length === 0 && (
@@ -374,10 +387,11 @@ export function NodeExplorer() {
                 pointerEvents: "none",
                 textAlign: "center",
                 padding: "var(--ws-space-lg)",
+                color: SCENE_LABEL,
               }}
             >
-              <div className="ws-title-sm">No graph data yet</div>
-              <div className="ws-caption">
+              <div className="ws-title-sm" style={{ color: SCENE_LABEL }}>No graph data yet</div>
+              <div className="ws-caption" style={{ color: SCENE_LABEL, opacity: 0.8 }}>
                 Load the sample dataset to explore a small movie graph, or run a Cypher query.
               </div>
             </div>
