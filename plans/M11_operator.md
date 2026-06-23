@@ -31,7 +31,7 @@ Key constraints:
 ## File Structure
 
 ```
-operator/go.mod                                          # separate module (github.com/cwire/wavespan/operator)
+operator/go.mod                                          # separate module (github.com/yannick/wavespan/operator)
 operator/PROJECT                                         # Kubebuilder project marker
 operator/api/v1alpha1/wavespancluster_types.go          # WaveSpanCluster spec/status
 operator/api/v1alpha1/replicationpolicy_types.go        # ReplicationPolicy (local/cache/ttl/conflict/global, compliance boundary)

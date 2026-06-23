@@ -4,7 +4,7 @@
 // stays pure-Go/no-CGO (design/17).
 package nemesis
 
-import "github.com/cwire/wavespan/tests/harness/runner"
+import "github.com/yannick/wavespan/tests/harness/runner"
 
 // Nemesis starts a fault and fully heals it on Stop, recording both edges on the history.
 type Nemesis interface {

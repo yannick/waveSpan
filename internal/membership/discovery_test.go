@@ -3,7 +3,7 @@ package membership
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/config"
+	"github.com/yannick/wavespan/internal/config"
 )
 
 func TestDockerDiscoveryParsesSeedsAndDropsSelf(t *testing.T) {

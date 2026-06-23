@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/config"
-	"github.com/cwire/wavespan/internal/rpcopts"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
-	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"github.com/yannick/wavespan/internal/config"
+	"github.com/yannick/wavespan/internal/rpcopts"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // Reconciler runs anti-entropy against each peer: it compares per-range content hashes, fetches and

@@ -6,7 +6,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	dbv1alpha1 "github.com/cwire/wavespan/operator/api/v1alpha1"
+	dbv1alpha1 "github.com/yannick/wavespan/operator/api/v1alpha1"
 )
 
 // ConfigMapName derives the ConfigMap name for a cluster.

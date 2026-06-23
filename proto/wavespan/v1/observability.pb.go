@@ -3036,7 +3036,7 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\tGetConfig\x12\x1d.wavespan.v1.GetConfigRequest\x1a\x17.wavespan.v1.NodeConfig\x12M\n" +
 	"\n" +
 	"SetTunable\x12\x1e.wavespan.v1.SetTunableRequest\x1a\x1f.wavespan.v1.SetTunableResponseB\xaa\x01\n" +
-	"\x0fcom.wavespan.v1B\x12ObservabilityProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
+	"\x0fcom.wavespan.v1B\x12ObservabilityProtoP\x01Z6github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
 	file_wavespan_v1_observability_proto_rawDescOnce sync.Once

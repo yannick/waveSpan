@@ -3,7 +3,7 @@ package webhook
 import (
 	"testing"
 
-	dbv1alpha1 "github.com/cwire/wavespan/operator/api/v1alpha1"
+	dbv1alpha1 "github.com/yannick/wavespan/operator/api/v1alpha1"
 )
 
 func validPolicy() *dbv1alpha1.ReplicationPolicySpec {

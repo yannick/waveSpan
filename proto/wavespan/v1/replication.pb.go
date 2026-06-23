@@ -1456,7 +1456,7 @@ const file_wavespan_v1_replication_proto_rawDesc = "" +
 	"\fRangeSummary\x12 .wavespan.v1.RangeSummaryRequest\x1a!.wavespan.v1.RangeSummaryResponse\x12K\n" +
 	"\n" +
 	"FetchRange\x12\x1e.wavespan.v1.FetchRangeRequest\x1a\x1b.wavespan.v1.GlobalMutation0\x01B\xa8\x01\n" +
-	"\x0fcom.wavespan.v1B\x10ReplicationProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
+	"\x0fcom.wavespan.v1B\x10ReplicationProtoP\x01Z6github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
 	file_wavespan_v1_replication_proto_rawDescOnce sync.Once

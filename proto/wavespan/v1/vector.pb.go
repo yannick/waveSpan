@@ -1395,7 +1395,7 @@ const file_wavespan_v1_vector_proto_rawDesc = "" +
 	"\fVectorDelete\x12\x1c.wavespan.v1.VectorDeleteReq\x1a\x1c.wavespan.v1.VectorDeleteRes\x12J\n" +
 	"\fVectorSearch\x12\x1c.wavespan.v1.VectorSearchReq\x1a\x1c.wavespan.v1.VectorSearchRes\x12M\n" +
 	"\rSampleVectors\x12\x1d.wavespan.v1.SampleVectorsReq\x1a\x1d.wavespan.v1.SampleVectorsResB\xa3\x01\n" +
-	"\x0fcom.wavespan.v1B\vVectorProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
+	"\x0fcom.wavespan.v1B\vVectorProtoP\x01Z6github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
 	file_wavespan_v1_vector_proto_rawDescOnce sync.Once

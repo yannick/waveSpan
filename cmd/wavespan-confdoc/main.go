@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cwire/wavespan/internal/tunables"
+	"github.com/yannick/wavespan/internal/tunables"
 )
 
 func main() {

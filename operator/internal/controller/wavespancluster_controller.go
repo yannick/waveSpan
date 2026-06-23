@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	dbv1alpha1 "github.com/cwire/wavespan/operator/api/v1alpha1"
+	dbv1alpha1 "github.com/yannick/wavespan/operator/api/v1alpha1"
 )
 
 // WaveSpanClusterReconciler reconciles a WaveSpanCluster into its Kubernetes resources (design/09).

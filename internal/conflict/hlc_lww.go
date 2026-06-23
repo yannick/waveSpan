@@ -1,8 +1,8 @@
 package conflict
 
 import (
-	"github.com/cwire/wavespan/internal/version"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/version"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // HLCLastWriteWins picks the single record with the highest version under the deterministic

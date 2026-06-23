@@ -6,7 +6,7 @@
 
 **Architecture:** Graph nodes/edges are encoded as records in dedicated WavesDB column families with adjacency and index keys (doc 07 key layout). A Cypher parser produces an AST for the v1 subset; a planner builds logical then physical plans and routes scan/expand fragments to the pods owning the relevant `hash(graph_id+node_id)` ranges, bounded by `maxRemoteFragments=128`. Graph mutations are a single `wavesdb.Txn` across graph CFs on the coordinator pod (atomic locally, eventually consistent cross-pod). Every response carries `QueryMeta` including `partial_graph_possible`.
 
-**Tech Stack:** Go, `github.com/cwire/wavespan`, hand-written recursive-descent Cypher parser, `proto/wavespan/v1/cypher.proto`, fixture-based query tests.
+**Tech Stack:** Go, `github.com/yannick/wavespan`, hand-written recursive-descent Cypher parser, `proto/wavespan/v1/cypher.proto`, fixture-based query tests.
 
 **Depends on:** M01 (record envelope, WavesDB CFs), M02–M04 (membership, placement, holder directory, routed scans), M07 (graph records replicate through the global mutation stream — reuse, not required to run). TS-070/071/072/073.
 

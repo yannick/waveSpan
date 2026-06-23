@@ -19,11 +19,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/tests/harness/checker"
-	"github.com/cwire/wavespan/tests/harness/client"
-	"github.com/cwire/wavespan/tests/harness/nemesis"
-	"github.com/cwire/wavespan/tests/harness/runner"
-	"github.com/cwire/wavespan/tests/harness/workloads"
+	"github.com/yannick/wavespan/tests/harness/checker"
+	"github.com/yannick/wavespan/tests/harness/client"
+	"github.com/yannick/wavespan/tests/harness/nemesis"
+	"github.com/yannick/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/tests/harness/workloads"
 )
 
 func checkers() []runner.Checker {

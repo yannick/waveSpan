@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cwire/wavespan/internal/cache"
-	"github.com/cwire/wavespan/internal/membership"
-	"github.com/cwire/wavespan/internal/recordstore"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/cache"
+	"github.com/yannick/wavespan/internal/membership"
+	"github.com/yannick/wavespan/internal/recordstore"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // fetcher resolves and fetches a record from the closest holder on a local miss (M5).

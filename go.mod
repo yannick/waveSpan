@@ -1,4 +1,4 @@
-module github.com/cwire/wavespan
+module github.com/yannick/wavespan
 
 go 1.26.4
 

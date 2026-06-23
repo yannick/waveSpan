@@ -6,7 +6,7 @@ package membership
 import (
 	"fmt"
 
-	"github.com/cwire/wavespan/internal/config"
+	"github.com/yannick/wavespan/internal/config"
 )
 
 // Member is a participant's identity and addressing (design/04 "Member identity"). memberId is

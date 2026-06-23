@@ -3,7 +3,7 @@ package planner
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/cypher/parser"
+	"github.com/yannick/wavespan/internal/cypher/parser"
 )
 
 func planOf(t *testing.T, q string) []LogicalOp {

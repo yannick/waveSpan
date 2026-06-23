@@ -3,7 +3,7 @@
 // and commits them through the graph store's atomic Batch API.
 package sampledata
 
-import wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+import wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 
 // Node is a fixture node: a stable id, one or more labels, and property values.
 type Node struct {

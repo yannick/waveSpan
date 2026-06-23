@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/cwire/wavespan/internal/cypher/parser"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/cypher/parser"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func vInt(i int64) *wavespanv1.Value {

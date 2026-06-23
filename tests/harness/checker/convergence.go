@@ -3,7 +3,7 @@ package checker
 import (
 	"fmt"
 
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // Convergence (doc-16 property 2) asserts that AFTER all faults heal and writes stop, every live

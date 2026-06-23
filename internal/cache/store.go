@@ -3,8 +3,8 @@ package cache
 import (
 	"sync"
 
-	"github.com/cwire/wavespan/internal/recordstore"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/recordstore"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // Store holds dynamic cache replicas (design/05 "Replica types"). A cache replica is persisted in

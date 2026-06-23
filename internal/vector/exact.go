@@ -1,6 +1,6 @@
 package vector
 
-import wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+import wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 
 // Filter optionally restricts which candidate vectors are scored (graph/property filters applied
 // before scoring, design/08 step 1). A nil filter scores all candidates.

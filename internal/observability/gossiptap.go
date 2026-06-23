@@ -3,7 +3,7 @@ package observability
 import (
 	"time"
 
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // GossipTap builds redacted GossipRecords from gossip-agent events and feeds them into the ring

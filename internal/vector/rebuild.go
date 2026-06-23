@@ -1,6 +1,6 @@
 package vector
 
-import "github.com/cwire/wavespan/internal/vector/ann"
+import "github.com/yannick/wavespan/internal/vector/ann"
 
 // RebuildLiveIndex reconstructs a live index from the authoritative raw vector records of a
 // collection (design/08 "Index rebuild"). The ANN index is fully derived: ScanCollection already

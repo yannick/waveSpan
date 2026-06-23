@@ -9,7 +9,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // authoritativeCFs are the column families backed up. cache_meta and repl_log are excluded

@@ -6,7 +6,7 @@ package conflict
 import (
 	"sync"
 
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // ResultKind is the kind of a resolution outcome (mirrors design/06's ResolveResult enum).

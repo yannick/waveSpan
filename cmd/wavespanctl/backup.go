@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cwire/wavespan/internal/backup"
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/backup"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // backupCmd runs a node-local backup of a wavesdb storage directory to a file. It operates directly

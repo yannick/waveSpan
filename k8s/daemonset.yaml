@@ -60,7 +60,7 @@ spec:
               mountPath: /data
       containers:
         - name: wavespan-node
-          image: ghcr.io/cwire/wavespan-node:v0.1.0   # pinned via kustomization.yaml images:
+          image: ghcr.io/yannick/wavespan-node:v0.1.0   # pinned via kustomization.yaml images:
           args: ["--config", "/etc/wavespan/config.yaml"]
           env:
             # Per-pod identity from the Downward API (overrides the shared config file).

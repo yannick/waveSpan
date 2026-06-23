@@ -10,7 +10,7 @@ on:
 # The data node depends on the sibling `wavesdb` module via `replace wavesdb => ../wavesdb`,
 # so CI checks out both repos as siblings. Set WAVESDB_REPO to the wavesdb remote.
 env:
-  WAVESDB_REPO: cwire/wavesdb
+  WAVESDB_REPO: yannick/wavesdb
 
 jobs:
   build-test:

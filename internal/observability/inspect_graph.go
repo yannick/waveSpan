@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/graph"
-	"github.com/cwire/wavespan/internal/security"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/graph"
+	"github.com/yannick/wavespan/internal/security"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 const graphExploreCap = 500

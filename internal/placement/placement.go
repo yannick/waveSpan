@@ -7,8 +7,8 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
-	"github.com/cwire/wavespan/internal/membership"
+	"github.com/yannick/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/membership"
 )
 
 // GeoPolicy controls cross-geo replica placement (design/00 "Geo policy modes").

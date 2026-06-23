@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cwire/wavespan/internal/version"
+	"github.com/yannick/wavespan/internal/version"
 )
 
 // Violation is a checker finding (mirrors testing-waves dumpFailure forensics).

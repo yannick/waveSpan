@@ -3,11 +3,11 @@ package planner
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/graph"
-	"github.com/cwire/wavespan/internal/storage"
-	"github.com/cwire/wavespan/internal/vector"
-	"github.com/cwire/wavespan/internal/vector/ann"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/graph"
+	"github.com/yannick/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/vector"
+	"github.com/yannick/wavespan/internal/vector/ann"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func newApproxExec(t *testing.T) (*Executor, *vector.Store, *vector.LiveIndex) {

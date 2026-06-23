@@ -22,5 +22,5 @@ configMapGenerator:
 
 # Pin the image in one place (Flux image automation can bump newTag here).
 images:
-  - name: ghcr.io/cwire/wavespan-node
+  - name: ghcr.io/yannick/wavespan-node
     newTag: v0.1.0

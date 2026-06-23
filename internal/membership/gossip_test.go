@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/latencygraph"
 )
 
 // fakeClock is a controllable monotonic clock for deterministic timeout tests.

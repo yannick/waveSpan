@@ -26,7 +26,7 @@ format"). They are defined here, in `internal/version`, against the canonical
 
 ```
 waveSpan/
-  go.mod                                  module github.com/cwire/wavespan; replace wavesdb => ../wavesdb
+  go.mod                                  module github.com/yannick/wavespan; replace wavesdb => ../wavesdb
   go.sum
   Makefile                                build / test / proto / lint / docker targets
   .golangci.yml                           lint config
@@ -57,7 +57,7 @@ Generated (not hand-written): `proto/wavespan/v1/common.pb.go`,
 
 ## Steps
 
-1. **Module + replace directive.** `go mod init github.com/cwire/wavespan`; add
+1. **Module + replace directive.** `go mod init github.com/yannick/wavespan`; add
    `replace wavesdb => ../wavesdb` and `require wavesdb v0.0.0` so the module graph resolves
    `../wavesdb`. Run `go mod tidy` against a trivial import to confirm the replace resolves.
 

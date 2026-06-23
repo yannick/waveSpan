@@ -32,7 +32,7 @@ a replica count and would not automatically track the node group.
 1. **Node group** (`daemonset.yaml`): set the `nodeSelector` to your group's label and the
    `tolerations` to its taint. Cloud equivalents are noted inline (EKS/GKE/AKS).
 2. **Image** (`kustomization.yaml` `images:`): point `newTag` at your published
-   `ghcr.io/cwire/wavespan-node` tag.
+   `ghcr.io/yannick/wavespan-node` tag.
 3. **TLS**: `config.yaml` runs mTLS (`insecureDevMode: false`) with certs from `wavespan-tls`
    (issued by cert-manager via `certificate.yaml`, needs a ClusterIssuer `wavespan-ca`). For a quick
    insecure trial, set `insecureDevMode: true`, drop `certificate.yaml` from the kustomization, and

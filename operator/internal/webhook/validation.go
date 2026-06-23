@@ -6,7 +6,7 @@ package webhook
 import (
 	"fmt"
 
-	dbv1alpha1 "github.com/cwire/wavespan/operator/api/v1alpha1"
+	dbv1alpha1 "github.com/yannick/wavespan/operator/api/v1alpha1"
 )
 
 // ValidateReplicationPolicy returns all violations of the design/12 rules for a ReplicationPolicy.

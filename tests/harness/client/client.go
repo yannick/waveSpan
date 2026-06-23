@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/version"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
-	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/internal/version"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // Client drives the KvService on each member and appends ops to a shared history.

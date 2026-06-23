@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/membership"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/membership"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // AdminPut writes a KV record for testing from the node UI, coordinated by a chosen cluster member

@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/cwire/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 func readBytes(r *bufio.Reader) ([]byte, error) {

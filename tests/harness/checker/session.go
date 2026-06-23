@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/cwire/wavespan/internal/version"
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/internal/version"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // SessionMonotonicity asserts read-your-writes / monotonic-reads WITHIN a session (design/00,

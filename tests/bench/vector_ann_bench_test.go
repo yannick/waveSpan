@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/vector"
-	"github.com/cwire/wavespan/internal/vector/ann"
+	"github.com/yannick/wavespan/internal/vector"
+	"github.com/yannick/wavespan/internal/vector/ann"
 )
 
 func randVecs(n, dim int, seed int64) [][]float32 {

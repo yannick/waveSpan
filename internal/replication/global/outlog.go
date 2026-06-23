@@ -8,8 +8,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/cwire/wavespan/internal/storage"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/storage"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/cwire/wavespan/internal/vector/ann"
+	"github.com/yannick/wavespan/internal/vector/ann"
 )
 
 func randVec(rng *rand.Rand, dim int) []float32 {

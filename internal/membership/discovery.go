@@ -3,7 +3,7 @@ package membership
 import (
 	"strings"
 
-	"github.com/cwire/wavespan/internal/config"
+	"github.com/yannick/wavespan/internal/config"
 )
 
 // Discovery yields the seed addresses a node contacts to join the cluster. The data node never

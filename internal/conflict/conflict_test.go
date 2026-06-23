@@ -3,8 +3,8 @@ package conflict
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/version"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/version"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func rec(phys uint64, cluster, member string, seq uint64, value string, tombstone bool) *wavespanv1.StoredRecord {

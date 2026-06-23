@@ -4,8 +4,8 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/cwire/wavespan/internal/vector/quantizer"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/vector/quantizer"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // The trained IVF centroid set for a collection is stored as a single KV record under a reserved

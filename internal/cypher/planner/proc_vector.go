@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cwire/wavespan/internal/vector"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/vector"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func init() {

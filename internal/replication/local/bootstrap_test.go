@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cwire/wavespan/internal/membership"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/membership"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // TestBootstrapperStreamsEverywhereRecords: a fresh node pulls all records of an "everywhere"

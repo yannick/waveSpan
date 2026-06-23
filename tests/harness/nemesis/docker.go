@@ -5,7 +5,7 @@ package nemesis
 import (
 	"os/exec"
 
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // Live docker nemeses inject faults from the HOST onto the compose network — exactly Jepsen's

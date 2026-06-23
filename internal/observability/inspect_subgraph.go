@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/security"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/security"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // GraphSubgraph resolves the sub-graph induced by an explicit set of node ids (design/26). It backs

@@ -3,10 +3,10 @@ package planner
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/graph"
-	"github.com/cwire/wavespan/internal/storage"
-	"github.com/cwire/wavespan/internal/vector"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/graph"
+	"github.com/yannick/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/vector"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func newVecExec(t *testing.T) (*Executor, *vector.Store) {

@@ -3,7 +3,7 @@ package nemesis
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 func TestNemesisStartStopHeal(t *testing.T) {

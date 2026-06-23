@@ -5,10 +5,10 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/rpcopts"
-	"github.com/cwire/wavespan/internal/security"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
-	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"github.com/yannick/wavespan/internal/rpcopts"
+	"github.com/yannick/wavespan/internal/security"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // InspectGlobal resolves a key across the cluster's holders (and peer clusters) and streams one

@@ -1159,7 +1159,7 @@ const file_wavespan_v1_kv_proto_rawDesc = "" +
 	"\bMultiGet\x12\x1c.wavespan.v1.MultiGetRequest\x1a\x1b.wavespan.v1.MultiGetResult\x12?\n" +
 	"\x06Delete\x12\x1a.wavespan.v1.DeleteRequest\x1a\x19.wavespan.v1.DeleteResult\x12=\n" +
 	"\x04Scan\x12\x18.wavespan.v1.ScanRequest\x1a\x19.wavespan.v1.ScanResponse0\x01B\x9f\x01\n" +
-	"\x0fcom.wavespan.v1B\aKvProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
+	"\x0fcom.wavespan.v1B\aKvProtoP\x01Z6github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
 	file_wavespan_v1_kv_proto_rawDescOnce sync.Once

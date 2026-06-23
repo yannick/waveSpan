@@ -4,10 +4,10 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/cwire/wavespan/internal/cypher/parser"
-	"github.com/cwire/wavespan/internal/graph"
-	"github.com/cwire/wavespan/internal/storage"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/cypher/parser"
+	"github.com/yannick/wavespan/internal/graph"
+	"github.com/yannick/wavespan/internal/storage"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func newExec(t *testing.T) *Executor {

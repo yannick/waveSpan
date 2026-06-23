@@ -15,7 +15,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/cwire/wavespan/internal/bench"
+	"github.com/yannick/wavespan/internal/bench"
 )
 
 func main() {

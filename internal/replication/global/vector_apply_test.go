@@ -3,9 +3,9 @@ package global
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/vector"
-	"github.com/cwire/wavespan/internal/vector/ann"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/vector"
+	"github.com/yannick/wavespan/internal/vector/ann"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func TestAppliedVectorEntersDeltaIndex(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"sort"
 
-	"github.com/cwire/wavespan/internal/version"
+	"github.com/yannick/wavespan/internal/version"
 )
 
 // scanRow is one merged scan row.

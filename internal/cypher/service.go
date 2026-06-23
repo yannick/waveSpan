@@ -7,13 +7,13 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/cypher/parser"
-	"github.com/cwire/wavespan/internal/cypher/planner"
-	"github.com/cwire/wavespan/internal/graph"
-	"github.com/cwire/wavespan/internal/rpcopts"
-	"github.com/cwire/wavespan/internal/vector"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
-	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"github.com/yannick/wavespan/internal/cypher/parser"
+	"github.com/yannick/wavespan/internal/cypher/planner"
+	"github.com/yannick/wavespan/internal/graph"
+	"github.com/yannick/wavespan/internal/rpcopts"
+	"github.com/yannick/wavespan/internal/vector"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // Service is the Cypher Connect handler over the local graph store, with optional vector search.

@@ -6,7 +6,7 @@
 
 **Architecture:** Vectors are `VectorRecord`s in WavesDB, optionally attached to a graph node. Exact search scans candidate raw vectors per partition, computes distance (SIMD where the platform allows), keeps a local top-k heap, and the coordinator merges per-fragment top-k into a global top-k. Vector partitioning is `hash(graph_id+node_id)` for graph-attached vectors and `hash(collection_id+vector_id)` for bare vectors. `VectorIndex` CRD spec parsing feeds index metadata (dimensions, metric, label/property). The `vector.searchExact` Cypher procedure plugs into the M08 planner's procedure-call hook.
 
-**Tech Stack:** Go, `github.com/cwire/wavespan`, `proto/wavespan/v1` vector messages, optional SIMD via `golang.org/x/sys/cpu` feature detection with a portable scalar fallback, fixture-based oracle tests.
+**Tech Stack:** Go, `github.com/yannick/wavespan`, `proto/wavespan/v1` vector messages, optional SIMD via `golang.org/x/sys/cpu` feature detection with a portable scalar fallback, fixture-based oracle tests.
 
 **Depends on:** M01 (record envelope), M07 (vector raw records replicate through the global stream — TS-084 is the M10 integration), M08 (Cypher planner + procedure-call hook, graph attachment). TS-080/081/082.
 
