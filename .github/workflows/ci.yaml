@@ -197,3 +197,44 @@ jobs:
           name: wavespan-binaries
           path: waveSpan/dist/*
           if-no-files-found: error
+
+  sdk:
+    # The Go SDK (sdk/go) is a self-contained module: it vendors its own generated stubs and depends
+    # only on protobuf + Connect (never the server module or wavesdb), so it needs neither the
+    # wavesdb sibling nor the UI. Verify its stubs are in sync with proto/, then build/vet/test/lint.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout wavespan
+        uses: actions/checkout@v4
+        with:
+          path: waveSpan
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: waveSpan/sdk/go/go.sum
+
+      - name: Install buf + codegen plugins
+        # Pinned to match the committed SDK stubs so the drift gate is reproducible (no protoc-gen-es:
+        # the SDK is Go-only).
+        run: |
+          go install github.com/bufbuild/buf/cmd/buf@v1.66.1
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.20.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: SDK proto gate (regenerate vendored stubs, fail on drift)
+        working-directory: waveSpan
+        run: |
+          make sdk-proto
+          git diff --exit-code sdk/go/internal/gen
+
+      - name: SDK build + vet + test
+        working-directory: waveSpan
+        run: make sdk-test
+
+      - name: SDK lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+          working-directory: waveSpan/sdk/go
