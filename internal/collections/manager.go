@@ -2,6 +2,7 @@ package collections
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -120,6 +121,32 @@ func NewManagerWithOptions(nodeHostDir, raftAddr string, store storage.LocalStor
 
 // Tunables returns the consensus knobs this Manager is running with.
 func (m *Manager) Tunables() Tunables { return m.tun }
+
+// ShardStatus is one shard's leadership snapshot for the operator view.
+type ShardStatus struct {
+	ShardID, ReplicaID, LeaderReplicaID uint64
+	HasLeader, IsLeader, IsData         bool
+}
+
+// ShardStatuses returns the leadership status of every shard this node hosts, ordered by shard id.
+func (m *Manager) ShardStatuses() []ShardStatus {
+	m.mu.Lock()
+	regs := make(map[uint64]shardReg, len(m.shards))
+	for k, v := range m.shards {
+		regs[k] = v
+	}
+	m.mu.Unlock()
+	out := make([]ShardStatus, 0, len(regs))
+	for sid, reg := range regs {
+		lead, ok := m.LeaderID(sid)
+		out = append(out, ShardStatus{
+			ShardID: sid, ReplicaID: reg.replicaID, LeaderReplicaID: lead,
+			HasLeader: ok, IsLeader: ok && lead == reg.replicaID, IsData: reg.isData,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ShardID < out[j].ShardID })
+	return out
+}
 
 func (m *Manager) shardConfig(shardID, replicaID uint64) config.Config {
 	return config.Config{

@@ -1,13 +1,142 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useUrlState } from "../router";
 import { collections } from "../transport";
-import { Badge, Button, InlineMessage, Input, Select, Spinner, StatCard, Table } from "../components";
+import { Badge, Button, Card, InlineMessage, Input, Select, Spinner, StatCard, Table } from "../components";
+import { color } from "../theme/tokens";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const dec = (b: Uint8Array) => new TextDecoder().decode(b);
 
 type CollType = "set" | "hash" | "zset";
 type Row = { key: string; extra?: string };
+
+type ShardSt = {
+  shardId: bigint;
+  leaderReplicaId: bigint;
+  hasLeader: boolean;
+  isLeader: boolean;
+  isData: boolean;
+};
+type TierInfo = {
+  voter: boolean;
+  raftAddress: string;
+  selfReplicaId: bigint;
+  rttMs: bigint;
+  electionRtt: bigint;
+  heartbeatRtt: bigint;
+  snapshotEntries: bigint;
+  compactionOverhead: bigint;
+  sweepMs: bigint;
+  shards: ShardSt[];
+};
+
+// TierPanel is a read-only operator view of this node's consensus-tier placement, active tunables, and
+// per-shard leader status. It polls TierInfo every 3s so leadership changes show up live.
+function TierPanel() {
+  const [info, setInfo] = useState<TierInfo | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    const load = () => {
+      collections
+        .tierInfo({})
+        .then((r) => {
+          if (live) {
+            setInfo(r as unknown as TierInfo);
+            setErr(null);
+          }
+        })
+        .catch((e: unknown) => {
+          if (live) setErr(e instanceof Error ? e.message : String(e));
+        });
+    };
+    load();
+    const id = setInterval(load, 3000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (err) return <InlineMessage tone="warning">Consensus tier status unavailable: {err}</InlineMessage>;
+  if (!info) return <Spinner />;
+
+  const tunables: [string, string][] = [
+    ["RTT unit", `${info.rttMs} ms`],
+    ["Election", `${info.electionRtt} × RTT`],
+    ["Heartbeat", `${info.heartbeatRtt} × RTT`],
+    ["Snapshot every", `${info.snapshotEntries} entries`],
+    ["Compaction overhead", `${info.compactionOverhead} entries`],
+    ["TTL sweep", `${info.sweepMs} ms`],
+  ];
+
+  return (
+    <Card style={{ marginTop: 28 }}>
+      <h3 className="ws-title" style={{ marginTop: 0, marginBottom: 12 }}>Consensus tier</h3>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
+        <StatCard
+          label="Role"
+          value={info.voter ? "Voter" : "Spot"}
+          hint={`replica #${info.selfReplicaId}`}
+          accent={info.voter ? color.teal : color.orange}
+        />
+        <StatCard label="Raft address" value={info.raftAddress || "—"} />
+        <StatCard label="Shards hosted" value={String(info.shards.length)} />
+      </div>
+
+      <div className="ws-label" style={{ marginBottom: 8 }}>Tunables</div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: 8,
+          marginBottom: 18,
+        }}
+      >
+        {tunables.map(([k, v]) => (
+          <div key={k} style={{ fontSize: 13 }}>
+            <span style={{ color: color.inkMuted }}>{k}: </span>
+            <strong>{v}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="ws-label" style={{ marginBottom: 8 }}>Shards</div>
+      {info.shards.length === 0 ? (
+        <InlineMessage tone="info">No shards hosted on this node yet.</InlineMessage>
+      ) : (
+        <Table mono>
+          <thead>
+            <tr>
+              <th>shard</th>
+              <th>kind</th>
+              <th>leader</th>
+              <th>this node</th>
+            </tr>
+          </thead>
+          <tbody>
+            {info.shards.map((s) => (
+              <tr key={s.shardId.toString()}>
+                <td>{s.shardId.toString()}</td>
+                <td>{s.isData ? "data" : "meta"}</td>
+                <td>{s.hasLeader ? `replica #${s.leaderReplicaId}` : "—"}</td>
+                <td>
+                  {s.isLeader ? (
+                    <Badge tone="success" dot>leader</Badge>
+                  ) : (
+                    <Badge tone="neutral">follower</Badge>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </Card>
+  );
+}
 
 // CollectionsExplorer is an operator console for the replicated-collections tier (design/30): pick a
 // namespace, collection, and datatype, then add/remove elements and list the contents. Writes are
@@ -199,6 +328,8 @@ export function CollectionsExplorer() {
           <Badge tone="neutral">empty collection</Badge>
         </div>
       )}
+
+      <TierPanel />
     </div>
   );
 }

@@ -29,6 +29,15 @@ type Service struct {
 	cols  *Collections
 	self  membership.Member
 	admit learnerAdmitTarget
+	tier  *tierStatus // optional: backs the TierInfo operator view
+}
+
+// tierStatus is this node's static collections placement, paired with the Manager for live status.
+type tierStatus struct {
+	mgr           *Manager
+	raftAddr      string
+	selfReplicaID uint64
+	voter         bool
 }
 
 // NewService wires the CollectionService Connect handler.
@@ -40,6 +49,13 @@ func NewService(cols *Collections, self membership.Member) *Service {
 // server side of demand-fill, design/30 §9).
 func (s *Service) WithLearnerAdmit(a learnerAdmitTarget) *Service {
 	s.admit = a
+	return s
+}
+
+// WithTierStatus backs the TierInfo RPC with this node's placement and Manager (active tunables +
+// per-shard leader status).
+func (s *Service) WithTierStatus(mgr *Manager, raftAddr string, selfReplicaID uint64, voter bool) *Service {
+	s.tier = &tierStatus{mgr: mgr, raftAddr: raftAddr, selfReplicaID: selfReplicaID, voter: voter}
 	return s
 }
 
@@ -272,6 +288,33 @@ func (s *Service) BulkRemove(ctx context.Context, req *connect.Request[wavespanv
 		out[i] = &wavespanv1.BulkRemoveEntry{Collection: e.Collection, Removed: e.Removed, Error: msg}
 	}
 	return connect.NewResponse(&wavespanv1.BulkRemoveResult{Meta: s.meta(), Results: out}), nil
+}
+
+// TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status.
+func (s *Service) TierInfo(_ context.Context, _ *connect.Request[wavespanv1.TierInfoRequest]) (*connect.Response[wavespanv1.TierInfoResult], error) {
+	res := &wavespanv1.TierInfoResult{Meta: s.meta(), Enabled: true}
+	if s.tier == nil || s.tier.mgr == nil {
+		return connect.NewResponse(res), nil // tier up, but status not wired
+	}
+	t := s.tier
+	tun := t.mgr.Tunables()
+	res.NodeHostId = t.mgr.NodeHostID()
+	res.RaftAddress = t.raftAddr
+	res.SelfReplicaId = t.selfReplicaID
+	res.Voter = t.voter
+	res.RttMs = tun.RTTMillisecond
+	res.ElectionRtt = tun.ElectionRTT
+	res.HeartbeatRtt = tun.HeartbeatRTT
+	res.SnapshotEntries = tun.SnapshotEntries
+	res.CompactionOverhead = tun.CompactionOverhead
+	res.SweepMs = uint64(tun.SweepEvery / time.Millisecond)
+	for _, st := range t.mgr.ShardStatuses() {
+		res.Shards = append(res.Shards, &wavespanv1.ShardStatus{
+			ShardId: st.ShardID, ReplicaId: st.ReplicaID, LeaderReplicaId: st.LeaderReplicaID,
+			HasLeader: st.HasLeader, IsLeader: st.IsLeader, IsData: st.IsData,
+		})
+	}
+	return connect.NewResponse(res), nil
 }
 
 // ProposeForward applies a write forwarded by a peer that was not the shard's leader (node-side leader

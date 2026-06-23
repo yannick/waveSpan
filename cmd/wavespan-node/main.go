@@ -582,7 +582,7 @@ func run() error {
 			cols := collections.New(mgr, dir).
 				WithDemandFill(collections.NewDemandFiller(mgr, spotRID, raftAddr, admitter)).
 				WithForwarder(collections.NewRPCForwarder(httpClient, peersFn)) // spot nodes never lead; forward all writes
-			collectionsSvc = collections.NewService(cols, self)
+			collectionsSvc = collections.NewService(cols, self).WithTierStatus(mgr, raftAddr, spotRID, false)
 			dataMux.Handle(collectionsSvc.Handler())
 			cypherSvc.WithCollections(collections.NewCypherCollections(cols))
 			go func() {
@@ -608,7 +608,8 @@ func run() error {
 				admitter := collections.NewRPCAdmitter(httpClient, peersFn)
 				cols.WithDemandFill(collections.NewDemandFiller(mgr, selfReplicaID, raftAddr, admitter))
 				cols.WithForwarder(collections.NewRPCForwarder(httpClient, peersFn)) // forward writes when not this shard's leader
-				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr)
+				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr).
+					WithTierStatus(mgr, raftAddr, selfReplicaID, true)
 				dataMux.Handle(collectionsSvc.Handler())
 				cypherSvc.WithCollections(collections.NewCypherCollections(cols)) // set.*/hash.*/zset.* built-ins
 				logger.Info("collections: tier enabled", "raftAddr", raftAddr, "replicaID", selfReplicaID, "voters", len(voters))

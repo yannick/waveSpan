@@ -77,6 +77,9 @@ const (
 	// CollectionServiceBulkRemoveProcedure is the fully-qualified name of the CollectionService's
 	// BulkRemove RPC.
 	CollectionServiceBulkRemoveProcedure = "/wavespan.v1.CollectionService/BulkRemove"
+	// CollectionServiceTierInfoProcedure is the fully-qualified name of the CollectionService's
+	// TierInfo RPC.
+	CollectionServiceTierInfoProcedure = "/wavespan.v1.CollectionService/TierInfo"
 	// CollectionServiceAdmitLearnerProcedure is the fully-qualified name of the CollectionService's
 	// AdmitLearner RPC.
 	CollectionServiceAdmitLearnerProcedure = "/wavespan.v1.CollectionService/AdmitLearner"
@@ -113,6 +116,9 @@ type CollectionServiceClient interface {
 	// sorted sets) and best-effort: each collection's change is atomic on its shard, the fan-out is
 	// eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
 	BulkRemove(context.Context, *connect.Request[v1.BulkRemoveRequest]) (*connect.Response[v1.BulkRemoveResult], error)
+	// TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status
+	// — a read-only operator view (design/30 §12).
+	TierInfo(context.Context, *connect.Request[v1.TierInfoRequest]) (*connect.Response[v1.TierInfoResult], error)
 	// AdmitLearner asks this node (a member of the shard) to admit replica_id, reachable at target, as a
 	// non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
 	// not host a collection's shard calls this on a peer that does, then starts its local learner.
@@ -243,6 +249,12 @@ func NewCollectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(collectionServiceMethods.ByName("BulkRemove")),
 			connect.WithClientOptions(opts...),
 		),
+		tierInfo: connect.NewClient[v1.TierInfoRequest, v1.TierInfoResult](
+			httpClient,
+			baseURL+CollectionServiceTierInfoProcedure,
+			connect.WithSchema(collectionServiceMethods.ByName("TierInfo")),
+			connect.WithClientOptions(opts...),
+		),
 		admitLearner: connect.NewClient[v1.AdmitLearnerRequest, v1.AdmitLearnerResponse](
 			httpClient,
 			baseURL+CollectionServiceAdmitLearnerProcedure,
@@ -278,6 +290,7 @@ type collectionServiceClient struct {
 	zCard          *connect.Client[v1.CardRequest, v1.CountResult]
 	zRange         *connect.Client[v1.RangeRequest, v1.ScoredMembersResult]
 	bulkRemove     *connect.Client[v1.BulkRemoveRequest, v1.BulkRemoveResult]
+	tierInfo       *connect.Client[v1.TierInfoRequest, v1.TierInfoResult]
 	admitLearner   *connect.Client[v1.AdmitLearnerRequest, v1.AdmitLearnerResponse]
 	proposeForward *connect.Client[v1.ProposeForwardRequest, v1.CountResult]
 }
@@ -372,6 +385,11 @@ func (c *collectionServiceClient) BulkRemove(ctx context.Context, req *connect.R
 	return c.bulkRemove.CallUnary(ctx, req)
 }
 
+// TierInfo calls wavespan.v1.CollectionService.TierInfo.
+func (c *collectionServiceClient) TierInfo(ctx context.Context, req *connect.Request[v1.TierInfoRequest]) (*connect.Response[v1.TierInfoResult], error) {
+	return c.tierInfo.CallUnary(ctx, req)
+}
+
 // AdmitLearner calls wavespan.v1.CollectionService.AdmitLearner.
 func (c *collectionServiceClient) AdmitLearner(ctx context.Context, req *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error) {
 	return c.admitLearner.CallUnary(ctx, req)
@@ -410,6 +428,9 @@ type CollectionServiceHandler interface {
 	// sorted sets) and best-effort: each collection's change is atomic on its shard, the fan-out is
 	// eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
 	BulkRemove(context.Context, *connect.Request[v1.BulkRemoveRequest]) (*connect.Response[v1.BulkRemoveResult], error)
+	// TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status
+	// — a read-only operator view (design/30 §12).
+	TierInfo(context.Context, *connect.Request[v1.TierInfoRequest]) (*connect.Response[v1.TierInfoResult], error)
 	// AdmitLearner asks this node (a member of the shard) to admit replica_id, reachable at target, as a
 	// non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
 	// not host a collection's shard calls this on a peer that does, then starts its local learner.
@@ -536,6 +557,12 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 		connect.WithSchema(collectionServiceMethods.ByName("BulkRemove")),
 		connect.WithHandlerOptions(opts...),
 	)
+	collectionServiceTierInfoHandler := connect.NewUnaryHandler(
+		CollectionServiceTierInfoProcedure,
+		svc.TierInfo,
+		connect.WithSchema(collectionServiceMethods.ByName("TierInfo")),
+		connect.WithHandlerOptions(opts...),
+	)
 	collectionServiceAdmitLearnerHandler := connect.NewUnaryHandler(
 		CollectionServiceAdmitLearnerProcedure,
 		svc.AdmitLearner,
@@ -586,6 +613,8 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 			collectionServiceZRangeHandler.ServeHTTP(w, r)
 		case CollectionServiceBulkRemoveProcedure:
 			collectionServiceBulkRemoveHandler.ServeHTTP(w, r)
+		case CollectionServiceTierInfoProcedure:
+			collectionServiceTierInfoHandler.ServeHTTP(w, r)
 		case CollectionServiceAdmitLearnerProcedure:
 			collectionServiceAdmitLearnerHandler.ServeHTTP(w, r)
 		case CollectionServiceProposeForwardProcedure:
@@ -669,6 +698,10 @@ func (UnimplementedCollectionServiceHandler) ZRange(context.Context, *connect.Re
 
 func (UnimplementedCollectionServiceHandler) BulkRemove(context.Context, *connect.Request[v1.BulkRemoveRequest]) (*connect.Response[v1.BulkRemoveResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.BulkRemove is not implemented"))
+}
+
+func (UnimplementedCollectionServiceHandler) TierInfo(context.Context, *connect.Request[v1.TierInfoRequest]) (*connect.Response[v1.TierInfoResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.TierInfo is not implemented"))
 }
 
 func (UnimplementedCollectionServiceHandler) AdmitLearner(context.Context, *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error) {

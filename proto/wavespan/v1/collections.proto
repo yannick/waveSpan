@@ -40,6 +40,10 @@ service CollectionService {
   // eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
   rpc BulkRemove(BulkRemoveRequest) returns (BulkRemoveResult);
 
+  // TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status
+  // — a read-only operator view (design/30 §12).
+  rpc TierInfo(TierInfoRequest) returns (TierInfoResult);
+
   // AdmitLearner asks this node (a member of the shard) to admit replica_id, reachable at target, as a
   // non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
   // not host a collection's shard calls this on a peer that does, then starts its local learner.
@@ -72,6 +76,35 @@ message HIncrByFloatRequest {
   bytes field = 3;
   double delta = 4;
   optional string idempotency_key = 5;
+}
+
+message TierInfoRequest {}
+
+message TierInfoResult {
+  ResponseMeta meta = 1;
+  bool enabled = 2;
+  string node_host_id = 3;
+  string raft_address = 4;
+  uint64 self_replica_id = 5;
+  bool voter = 6; // false = spot/edge node (non-voting learner)
+  // active consensus tunables
+  uint64 rtt_ms = 7;
+  uint64 election_rtt = 8;
+  uint64 heartbeat_rtt = 9;
+  uint64 snapshot_entries = 10;
+  uint64 compaction_overhead = 11;
+  uint64 sweep_ms = 12;
+  // per-shard leader status for shards this node hosts
+  repeated ShardStatus shards = 13;
+}
+
+message ShardStatus {
+  uint64 shard_id = 1;
+  uint64 replica_id = 2; // this node's replica id in the shard
+  uint64 leader_replica_id = 3;
+  bool has_leader = 4;
+  bool is_leader = 5; // this node currently leads the shard
+  bool is_data = 6; // true = data shard, false = meta shard
 }
 
 message BulkRemoveRequest {
