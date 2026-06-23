@@ -5,7 +5,7 @@ package kv
 import (
 	"context"
 
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // CypherKV satisfies planner.KVAccess (structural — this package does not import the planner).

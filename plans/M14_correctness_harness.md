@@ -16,7 +16,7 @@ history. Violations trigger a forensic dump and a shrinker that emits a standalo
 deterministic regression test. It reuses the proven `testing-waves` shape
 (generator -> apply -> record -> check -> dump -> minimal repro) at cluster scale.
 
-**Tech Stack:** Pure Go (no CGO, doc 17), `github.com/cwire/wavespan` public client, the
+**Tech Stack:** Pure Go (no CGO, doc 17), `github.com/yannick/wavespan` public client, the
 doc-24 runner + fault hooks, `os/exec`/docker for nemeses, `tests/harness/` package tree.
 Seeds the work from `/Volumes/HOME/code/storage-engines/testing-waves/` (bank.go, verify.go,
 repro_test.go, main.go).

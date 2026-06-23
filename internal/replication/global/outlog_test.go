@@ -3,8 +3,8 @@ package global
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/storage"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/storage"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func mut(seqHint int, ns string, key string) *wavespanv1.GlobalMutation {

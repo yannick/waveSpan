@@ -40,8 +40,13 @@ endef
 
 .DEFAULT_GOAL := help
 .PHONY: help all build ui ui-dev test test-race test-integration lint \
-        proto proto-check tools docker-up docker-kill image \
+        proto proto-check tools sdk-proto sdk-test sdk-example \
+        docker-up docker-kill image \
         container-image container-single container-up container-down clean
+
+# The Go SDK is a self-contained module (sdk/go) that vendors its own stubs; it builds OUTSIDE the
+# server's module graph, so SDK targets pin GOWORK=off and run from the module directory.
+SDK_DIR := sdk/go
 
 # ======================================================================
 ##@ General
@@ -122,6 +127,22 @@ tools: ## Install code-generation plugins into $(GOPATH)/bin
 	@$(GO) install google.golang.org/protobuf/cmd/protoc-gen-go
 	@$(GO) install connectrpc.com/connect/cmd/protoc-gen-connect-go
 	@$(call ok,plugins installed)
+
+# ======================================================================
+##@ Go SDK (sdk/go)
+# ======================================================================
+
+sdk-proto: ## Regenerate the SDK's vendored stubs from proto/ (single source of truth)
+	@$(call step,Regenerating SDK stubs into $(SDK_DIR)/internal/gen)
+	@buf generate --template $(SDK_DIR)/buf.gen.yaml && $(call ok,SDK stubs regenerated)
+
+sdk-test: ## Build, vet and test the Go SDK module
+	@$(call step,Testing the Go SDK)
+	@cd $(SDK_DIR) && GOWORK=off $(GO) vet ./... && GOWORK=off $(GO) test ./... && $(call ok,SDK tests passed)
+
+sdk-example: ## Run the SDK quickstart against a node (ADDR=host:port, default localhost:7800)
+	@$(call step,Running the SDK quickstart against $(or $(ADDR),localhost:7800))
+	@cd $(SDK_DIR) && GOWORK=off $(GO) run ./examples/quickstart --addr $(or $(ADDR),localhost:7800)
 
 # ======================================================================
 ##@ Cluster & images

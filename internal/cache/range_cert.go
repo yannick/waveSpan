@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"sync"
 
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // CertStore holds RangeCoverageCertificates this node has been issued for cache-complete scans

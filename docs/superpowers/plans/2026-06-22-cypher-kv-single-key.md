@@ -212,8 +212,8 @@ package planner
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/cypher/parser"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/cypher/parser"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func init() {
@@ -465,7 +465,7 @@ import (
 	"context"
 	"fmt"
 
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func init() {
@@ -645,9 +645,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
-	"github.com/cwire/wavespan/internal/placement"
-	"github.com/cwire/wavespan/internal/replication/local"
+	"github.com/yannick/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/placement"
+	"github.com/yannick/wavespan/internal/replication/local"
 )
 
 func TestCypherKVRoundTrip(t *testing.T) {

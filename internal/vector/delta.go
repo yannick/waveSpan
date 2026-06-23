@@ -3,7 +3,7 @@ package vector
 import (
 	"sync"
 
-	"github.com/cwire/wavespan/internal/vector/ann"
+	"github.com/yannick/wavespan/internal/vector/ann"
 )
 
 // Delta is the small, mutable, immediately-searchable index of recent inserts and deletes

@@ -3,8 +3,8 @@ package checker
 import (
 	"fmt"
 
-	"github.com/cwire/wavespan/internal/version"
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/internal/version"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // Idempotency (doc-16 property 5) asserts that a request_id retried across partition + origin

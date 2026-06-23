@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // Version is the per-mutation HLC version stamped by the writing coordinator. It mirrors

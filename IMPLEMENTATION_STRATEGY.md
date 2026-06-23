@@ -53,7 +53,7 @@ boundary as an idiomatic Go interface.
 
 ```
 waveSpan/
-  go.mod                      module github.com/cwire/wavespan
+  go.mod                      module github.com/yannick/wavespan
                               replace wavesdb => ../wavesdb
   cmd/
     wavespan-node/            data pod process

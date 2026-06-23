@@ -6,7 +6,7 @@
 
 **Architecture:** An `ANNIndex` abstraction wraps an HNSW implementation. Writes go to a small mutable **delta index** for immediate visibility; a background worker merges the delta into immutable main segments. Search queries both the main segments and the delta, merges candidates, fetches raw `VectorRecord`s to filter tombstones/stale/conflicted entries, and optionally exact-reranks the candidate set (reusing M09 exact distance). Globally, only **raw vectors** replicate (M07 stream); each cluster rebuilds its ANN locally from applied raw records. `vector.searchApprox` plugs into the M08 planner's procedure hook.
 
-**Tech Stack:** Go, `github.com/cwire/wavespan`, HNSW (decision below), M09 exact-distance kernels for reranking, `proto/wavespan/v1` vector messages, recall/latency benchmark harness.
+**Tech Stack:** Go, `github.com/yannick/wavespan`, HNSW (decision below), M09 exact-distance kernels for reranking, `proto/wavespan/v1` vector messages, recall/latency benchmark harness.
 
 **Depends on:** M07 (global raw-vector replication — TS-084), M09 (raw vector storage, exact distance, top-k merge, `IndexMeta`, procedure hook). TS-083/084.
 

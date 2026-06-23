@@ -3,8 +3,8 @@ package checker
 import (
 	"fmt"
 
-	"github.com/cwire/wavespan/internal/version"
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/internal/version"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // NoLostUpdatePerPolicy is policy-aware: under hlc-last-write-wins a concurrent overwrite legally

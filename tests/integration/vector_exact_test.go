@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
-	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 type embedding struct {

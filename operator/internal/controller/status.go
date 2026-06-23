@@ -3,7 +3,7 @@ package controller
 import (
 	appsv1 "k8s.io/api/apps/v1"
 
-	dbv1alpha1 "github.com/cwire/wavespan/operator/api/v1alpha1"
+	dbv1alpha1 "github.com/yannick/wavespan/operator/api/v1alpha1"
 )
 
 // deriveStatus computes the cluster status from the data StatefulSet status (design/09 "Status").

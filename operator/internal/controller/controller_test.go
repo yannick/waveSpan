@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	dbv1alpha1 "github.com/cwire/wavespan/operator/api/v1alpha1"
+	dbv1alpha1 "github.com/yannick/wavespan/operator/api/v1alpha1"
 )
 
 func newReconciler(t *testing.T, objs ...client.Object) (*WaveSpanClusterReconciler, client.Client) {

@@ -11,8 +11,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	dbv1alpha1 "github.com/cwire/wavespan/operator/api/v1alpha1"
-	"github.com/cwire/wavespan/operator/internal/controller"
+	dbv1alpha1 "github.com/yannick/wavespan/operator/api/v1alpha1"
+	"github.com/yannick/wavespan/operator/internal/controller"
 )
 
 func main() {

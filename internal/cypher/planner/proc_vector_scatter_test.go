@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cwire/wavespan/internal/vector"
+	"github.com/yannick/wavespan/internal/vector"
 )
 
 // TestVectorSearchScatterMergesRemoteFragment proves a vector held only on a peer (not on the

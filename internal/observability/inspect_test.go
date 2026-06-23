@@ -7,14 +7,14 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/latencygraph"
-	"github.com/cwire/wavespan/internal/membership"
-	"github.com/cwire/wavespan/internal/recordstore"
-	"github.com/cwire/wavespan/internal/security"
-	"github.com/cwire/wavespan/internal/storage"
-	"github.com/cwire/wavespan/internal/version"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
-	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"github.com/yannick/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/membership"
+	"github.com/yannick/wavespan/internal/recordstore"
+	"github.com/yannick/wavespan/internal/security"
+	"github.com/yannick/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/version"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 type fakeCluster struct{}

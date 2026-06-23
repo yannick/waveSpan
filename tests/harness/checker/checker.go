@@ -4,7 +4,7 @@
 // reads, partition-time divergence, and policy-legal LWW overwrites are NOT violations.
 package checker
 
-import "github.com/cwire/wavespan/tests/harness/runner"
+import "github.com/yannick/wavespan/tests/harness/runner"
 
 // Checker maps a history to the violations it found (empty when clean).
 type Checker interface {

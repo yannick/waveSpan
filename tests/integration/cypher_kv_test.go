@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // cypherScalar runs a single-row query and returns the string value of one column from the first row

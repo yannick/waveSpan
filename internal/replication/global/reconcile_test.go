@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwire/wavespan/internal/config"
-	"github.com/cwire/wavespan/internal/conflict"
-	"github.com/cwire/wavespan/internal/recordstore"
-	"github.com/cwire/wavespan/internal/storage"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/config"
+	"github.com/yannick/wavespan/internal/conflict"
+	"github.com/yannick/wavespan/internal/recordstore"
+	"github.com/yannick/wavespan/internal/storage"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func putRec(t *testing.T, s *recordstore.Store, cluster, member string, seq, phys uint64, key, val string) {

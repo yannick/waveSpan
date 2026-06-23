@@ -3,7 +3,7 @@ package checker
 import (
 	"fmt"
 
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // CompletenessHonesty (doc-16 property 4) asserts a scan is NEVER labeled COMPLETE without a valid,

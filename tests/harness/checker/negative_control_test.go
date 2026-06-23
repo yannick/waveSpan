@@ -3,7 +3,7 @@ package checker
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // TestNegativeControlCaught proves the harness is NOT vacuously green: for each injected defect, the

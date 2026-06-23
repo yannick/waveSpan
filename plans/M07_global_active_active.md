@@ -6,7 +6,7 @@
 
 **Architecture:** Every committed local mutation is appended to a per-peer, partitioned outbound replication log on disk. Replicators stream those entries to peer clusters over a gRPC `PushGlobal` stream; receivers apply mutation envelopes idempotently into local WavesDB through a conflict resolver (HLC-LWW by default, keep-siblings opt-in). A periodic anti-entropy pass exchanges per-range hash summaries to repair anything lost during outages. Out-log disk is bounded per peer with backpressure that, by default, never blocks local writes.
 
-**Tech Stack:** Go, `github.com/cwire/wavespan` (imports `wavesdb` in-process), gRPC (`proto/wavespan/v1/replication.proto`), Prometheus metrics, docker-compose for two-cluster integration tests.
+**Tech Stack:** Go, `github.com/yannick/wavespan` (imports `wavesdb` in-process), gRPC (`proto/wavespan/v1/replication.proto`), Prometheus metrics, docker-compose for two-cluster integration tests.
 
 **Depends on:** M01 (WavesDB wrapper, versioned record envelope), M02 (membership), M03/M04 (origin+1 + target-N fanout, mutation log), TS-060/061/062/063.
 

@@ -160,7 +160,7 @@ func containsAny(s string, subs []string) bool {
 // "where does it go" view — they sit at the top of every stack — so they are filtered out and
 // reported only as an aggregate overhead share.
 var appFrames = []string{
-	"cwire/wavespan", "wavesdb", "connectrpc", "protobuf", "protoimpl", "protowire",
+	"yannick/wavespan", "wavesdb", "connectrpc", "protobuf", "protoimpl", "protowire",
 	"syscall.", "os.(*File)", // fsync / disk I/O — the real write-latency cost
 }
 

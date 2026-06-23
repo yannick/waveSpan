@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/sampledata"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/sampledata"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // LoadSampleDataset loads a small, open-licensed demo graph (sampledata.Movies) into graph_id so the

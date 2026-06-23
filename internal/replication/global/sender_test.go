@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/cwire/wavespan/internal/config"
-	"github.com/cwire/wavespan/internal/conflict"
-	"github.com/cwire/wavespan/internal/storage"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/config"
+	"github.com/yannick/wavespan/internal/conflict"
+	"github.com/yannick/wavespan/internal/storage"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // receiverFor builds a GlobalReplication httptest server applying into a fresh store for clusterB,

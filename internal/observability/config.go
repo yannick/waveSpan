@@ -5,10 +5,10 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/membership"
-	"github.com/cwire/wavespan/internal/tunables"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
-	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"github.com/yannick/wavespan/internal/membership"
+	"github.com/yannick/wavespan/internal/tunables"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // NodeConfigProto snapshots the live tunables registry into the wire NodeConfig (effective value +

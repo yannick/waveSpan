@@ -3,7 +3,7 @@ package vector
 import (
 	"sync"
 
-	"github.com/cwire/wavespan/internal/vector/ann"
+	"github.com/yannick/wavespan/internal/vector/ann"
 )
 
 // Segment is an immutable, published ANN segment over a fixed vector set (design/08 "ANN segment").

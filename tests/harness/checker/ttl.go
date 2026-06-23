@@ -3,7 +3,7 @@ package checker
 import (
 	"fmt"
 
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // TTLBound asserts that an expired key disappears from all live replicas within

@@ -3,11 +3,11 @@ package global
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/conflict"
-	"github.com/cwire/wavespan/internal/recordstore"
-	"github.com/cwire/wavespan/internal/storage"
-	"github.com/cwire/wavespan/internal/version"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/conflict"
+	"github.com/yannick/wavespan/internal/recordstore"
+	"github.com/yannick/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/version"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func newRecStore(t *testing.T, member string) *recordstore.Store {

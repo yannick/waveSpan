@@ -3,8 +3,8 @@ package checker
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/version"
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/internal/version"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 func v(phys uint64, logical uint32, member string, seq uint64) *version.Version {

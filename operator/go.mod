@@ -1,4 +1,4 @@
-module github.com/cwire/wavespan/operator
+module github.com/yannick/wavespan/operator
 
 go 1.26
 

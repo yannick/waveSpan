@@ -7,7 +7,7 @@ package runner
 import (
 	"encoding/json"
 
-	"github.com/cwire/wavespan/internal/version"
+	"github.com/yannick/wavespan/internal/version"
 )
 
 // OpKind classifies a recorded operation.

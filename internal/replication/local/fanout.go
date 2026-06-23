@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
-	"github.com/cwire/wavespan/internal/membership"
-	"github.com/cwire/wavespan/internal/placement"
-	"github.com/cwire/wavespan/internal/version"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/membership"
+	"github.com/yannick/wavespan/internal/placement"
+	"github.com/yannick/wavespan/internal/version"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // Cluster exposes the live roster (satisfied by membership.Service).

@@ -5,10 +5,10 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/rpcopts"
-	"github.com/cwire/wavespan/internal/vector"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
-	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"github.com/yannick/wavespan/internal/rpcopts"
+	"github.com/yannick/wavespan/internal/vector"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // Peer is a cluster member a vector query can scatter to.

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package wavespan.v1;
 
-option go_package = "github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1";
+option go_package = "github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1";
 
 import "wavespan/v1/common.proto";
 

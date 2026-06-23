@@ -1114,7 +1114,7 @@ const file_wavespan_v1_common_proto_rawDesc = "" +
 	"\x19MUTATION_KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11MUTATION_KIND_PUT\x10\x01\x12\x18\n" +
 	"\x14MUTATION_KIND_DELETE\x10\x02B\xa3\x01\n" +
-	"\x0fcom.wavespan.v1B\vCommonProtoP\x01Z6github.com/cwire/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
+	"\x0fcom.wavespan.v1B\vCommonProtoP\x01Z6github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
 	file_wavespan_v1_common_proto_rawDescOnce sync.Once

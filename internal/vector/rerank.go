@@ -1,6 +1,6 @@
 package vector
 
-import "github.com/cwire/wavespan/internal/vector/ann"
+import "github.com/yannick/wavespan/internal/vector/ann"
 
 // Rerank reorders ANN candidates by exact distance over their raw vectors and returns the exact
 // top-k of that candidate set (design/08 "exact reranking"). It reuses the M9 distance kernels and

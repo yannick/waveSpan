@@ -1,8 +1,8 @@
 package graph
 
 import (
-	"github.com/cwire/wavespan/internal/storage"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/storage"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // ScanLabel returns the ids of live nodes carrying a label. Index hits are filtered against the

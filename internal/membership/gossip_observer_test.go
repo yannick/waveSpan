@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/latencygraph"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // recordingObserver counts the gossip-tap events the driver emits.

@@ -3,7 +3,7 @@ package local
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/version"
+	"github.com/yannick/wavespan/internal/version"
 )
 
 func TestHolderDirectoryResolvesWithoutBroadcast(t *testing.T) {

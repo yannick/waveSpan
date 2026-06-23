@@ -4,12 +4,12 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/graph"
-	"github.com/cwire/wavespan/internal/latencygraph"
-	"github.com/cwire/wavespan/internal/membership"
-	"github.com/cwire/wavespan/internal/recordstore"
-	"github.com/cwire/wavespan/internal/tunables"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/graph"
+	"github.com/yannick/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/membership"
+	"github.com/yannick/wavespan/internal/recordstore"
+	"github.com/yannick/wavespan/internal/tunables"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // ClusterSource snapshots membership + the latency graph (satisfied by membership.Service).

@@ -6,7 +6,7 @@ package recordstore
 import (
 	"encoding/binary"
 
-	"github.com/cwire/wavespan/internal/version"
+	"github.com/yannick/wavespan/internal/version"
 )
 
 // Key layout (design/01_architecture.md "Internal keyspace"), with column families supplying

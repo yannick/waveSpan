@@ -3,7 +3,7 @@ package observability
 import (
 	"testing"
 
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func rec(kind wavespanv1.GossipKind, peer string, dir wavespanv1.GossipDirection) *wavespanv1.GossipRecord {

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
-	"github.com/cwire/wavespan/internal/placement"
-	"github.com/cwire/wavespan/internal/replication/local"
+	"github.com/yannick/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/placement"
+	"github.com/yannick/wavespan/internal/replication/local"
 )
 
 // newCypherKVFixture builds a single-node CypherKV over one store. MinAckNearbyReplicas:0 lets the

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwire/wavespan/internal/cypher/parser"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/cypher/parser"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // loadFixture parses and executes the social fixture's statements into the executor's store.

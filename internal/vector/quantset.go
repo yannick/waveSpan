@@ -4,7 +4,7 @@ import (
 	"hash/fnv"
 	"sync"
 
-	"github.com/cwire/wavespan/internal/vector/quantizer"
+	"github.com/yannick/wavespan/internal/vector/quantizer"
 )
 
 // QuantSet holds one coarse quantizer per collection — the routing tokens for kNN (design/29). For a

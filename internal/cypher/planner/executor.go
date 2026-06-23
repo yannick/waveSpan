@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/cwire/wavespan/internal/cypher/parser"
-	"github.com/cwire/wavespan/internal/graph"
-	"github.com/cwire/wavespan/internal/vector"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/cypher/parser"
+	"github.com/yannick/wavespan/internal/graph"
+	"github.com/yannick/wavespan/internal/vector"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // bindingRow binds variables to nodes (*NodeRecord), edges (*EdgeRecord), or scalars (*Value).

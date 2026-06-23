@@ -3,7 +3,7 @@ package checker
 import (
 	"fmt"
 
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // Durability (doc-16 property 1) asserts that an acked origin+1 write is not silently lost: the

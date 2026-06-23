@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
-	"github.com/cwire/wavespan/internal/membership"
+	"github.com/yannick/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/membership"
 )
 
 func mem(id, node, zone, region, geo string) membership.Member {

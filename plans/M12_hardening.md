@@ -6,7 +6,7 @@
 
 **Architecture:** mTLS wraps gateway↔data, data↔data, replication, admin, and cross-cluster traffic; an auth middleware enforces five roles (admin/reader/writer/replicator/operator) with internal/public separation so replication credentials cannot drive public writes. Backup leverages `wavesdb`'s object-store mode + `PromoteToPrimary`; restore opens the object-store replica into a fresh cluster and rebuilds derived vector indexes. The chaos / convergence gate is **not built here** — it is the model-aware correctness harness specified in `25_correctness_harness.md` and built by **M14** (`tests/harness/`). M12 **consumes** that harness for TS-102: it runs the harness's convergence workloads + nemeses nightly and gates the release on green. Dashboards and alerts cover the required signals across all subsystems.
 
-**Tech Stack:** Go, `github.com/cwire/wavespan`, `wavesdb` object-store mode, gRPC + crypto/tls, Prometheus + Grafana, the `testing-waves` harness (`/Volumes/HOME/code/storage-engines/testing-waves`), docker-compose for chaos/load.
+**Tech Stack:** Go, `github.com/yannick/wavespan`, `wavesdb` object-store mode, gRPC + crypto/tls, Prometheus + Grafana, the `testing-waves` harness (`/Volumes/HOME/code/storage-engines/testing-waves`), docker-compose for chaos/load.
 
 **Depends on:** M03/M04 (StoreReplica internal API), M07 (global replication + ClusterPeer, anti-entropy), M09/M10 (vector indexes to rebuild), M11 (operator manages Secrets), **M14 (the correctness harness consumed by TS-102)**. TS-100/101/102.
 

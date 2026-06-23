@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
-	"github.com/cwire/wavespan/internal/version"
+	"github.com/yannick/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/version"
 )
 
 // TestRepairRestoresReplicaAfterHolderDeath builds an under-replicated key (target 2 holders),

@@ -6,7 +6,7 @@ WaveSpan is a Go multi-module repository. The data node, gateway, CLI, and opera
 
 ```text
 waveSpan/
-  go.mod                # module github.com/cwire/wavespan, go 1.26
+  go.mod                # module github.com/yannick/wavespan, go 1.26
                         # replace wavesdb => ../wavesdb
   README.md
   docs/
@@ -54,7 +54,7 @@ waveSpan/
     package.json
     vite.config.ts
   operator/             # SEPARATE go.mod, Kubebuilder
-    go.mod              # module github.com/cwire/wavespan-operator
+    go.mod              # module github.com/yannick/wavespan-operator
     api/
     controllers/
     config/
@@ -86,8 +86,8 @@ WaveSpan is a single-language Go system. There is no Rust crate tree and no C-FF
 
 There are two Go modules:
 
-- the root module `github.com/cwire/wavespan` — node, gateway, CLI, and all `internal/` packages. It depends on `wavesdb` via `replace wavesdb => ../wavesdb` until `wavesdb` is published;
-- `operator/` is a **separate module** (`github.com/cwire/wavespan-operator`) so the Kubebuilder/controller-runtime dependency tree does not leak into the data-plane build and so the operator can be versioned and released independently. The operator depends only on generated config/API types, never on data-node internals.
+- the root module `github.com/yannick/wavespan` — node, gateway, CLI, and all `internal/` packages. It depends on `wavesdb` via `replace wavesdb => ../wavesdb` until `wavesdb` is published;
+- `operator/` is a **separate module** (`github.com/yannick/wavespan-operator`) so the Kubebuilder/controller-runtime dependency tree does not leak into the data-plane build and so the operator can be versioned and released independently. The operator depends only on generated config/API types, never on data-node internals.
 
 The C engine `tidesdb` is reference-only and is not vendored or built.
 

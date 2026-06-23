@@ -3,8 +3,8 @@ package checker
 import (
 	"fmt"
 
-	"github.com/cwire/wavespan/internal/version"
-	"github.com/cwire/wavespan/tests/harness/runner"
+	"github.com/yannick/wavespan/internal/version"
+	"github.com/yannick/wavespan/tests/harness/runner"
 )
 
 // LWWDeterminism (doc-16 property 3) recomputes the doc-22-maximal winner over the acked writes of

@@ -1,6 +1,6 @@
 package planner
 
-import "github.com/cwire/wavespan/internal/cypher/parser"
+import "github.com/yannick/wavespan/internal/cypher/parser"
 
 // LogicalOp is a node in the logical plan tree (design/07 "Planner"). The plan is a linear pipeline
 // of operators for the v1 subset.

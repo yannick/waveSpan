@@ -66,7 +66,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build \
       -trimpath \
-      -ldflags="-s -w -X github.com/cwire/wavespan/internal/version.Build=${SOURCE_DATE_EPOCH}" \
+      -ldflags="-s -w -X github.com/yannick/wavespan/internal/version.Build=${SOURCE_DATE_EPOCH}" \
       -o /out/wavespan-node ./cmd/wavespan-node
 
 # ---- final stage ----

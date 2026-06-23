@@ -5,9 +5,9 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/rpcopts"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
-	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"github.com/yannick/wavespan/internal/rpcopts"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // Service is the VectorService Connect handler: it ingests raw vectors into the local store

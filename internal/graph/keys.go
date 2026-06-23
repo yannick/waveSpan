@@ -7,7 +7,7 @@ import (
 	"encoding/binary"
 	"math"
 
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // Key prefixes within a column family. CFGraphData holds nodes ("n") and edges-by-id ("e");

@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cwire/wavespan/tests/harness/client"
+	"github.com/yannick/wavespan/tests/harness/client"
 )
 
 // Register is the single-key concurrent read/write workload (Jepsen linearizable-register, adapted

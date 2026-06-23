@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cwire/wavespan/internal/bench"
-	"github.com/cwire/wavespan/internal/profile"
+	"github.com/yannick/wavespan/internal/bench"
+	"github.com/yannick/wavespan/internal/profile"
 )
 
 func main() {

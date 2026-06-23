@@ -5,10 +5,10 @@ import (
 	"sort"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/membership"
-	"github.com/cwire/wavespan/internal/security"
-	"github.com/cwire/wavespan/internal/version"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/membership"
+	"github.com/yannick/wavespan/internal/security"
+	"github.com/yannick/wavespan/internal/version"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 const inspectRowCap = 1000

@@ -3,7 +3,7 @@ package observability
 import (
 	"sync"
 
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // GossipRing is a bounded ring buffer of gossip records with filtered fan-out to live subscribers

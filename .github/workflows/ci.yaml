@@ -1,5 +1,6 @@
 # WaveSpan CI. Linux runners only; CI never uses Apple `container` (design/24). The same
-# docker/Dockerfile that `make image` builds locally is built here multi-arch with buildx.
+# docker/Dockerfile that `make image` builds locally is built here multi-arch with buildx,
+# and pushed to GHCR on pushes to main (build-only validation on pull requests).
 name: ci
 
 on:
@@ -7,10 +8,16 @@ on:
     branches: [main]
   pull_request:
 
-# The data node depends on the sibling `wavesdb` module via `replace wavesdb => ../wavesdb`,
-# so CI checks out both repos as siblings. Set WAVESDB_REPO to the wavesdb remote.
+# One run per ref; a new push cancels the in-flight run for that ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
-  WAVESDB_REPO: cwire/wavesdb
+  # The data node depends on the sibling `wavesdb` module via `replace wavesdb => ../wavesdb`,
+  # so CI checks out both repos as siblings. Defaults to <this owner>/wavesdb; override here if
+  # the wavesdb module lives under a different owner/name.
+  WAVESDB_REPO: ${{ github.repository_owner }}/wavesdb
 
 jobs:
   build-test:
@@ -21,16 +28,23 @@ jobs:
         with:
           path: waveSpan
 
-      - name: Checkout wavesdb (sibling)
+      - name: Checkout wavesdb (sibling module)
         uses: actions/checkout@v4
         with:
           repository: ${{ env.WAVESDB_REPO }}
+          token: ${{ secrets.WAVESDB_TOKEN }}
           path: wavesdb
 
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
           cache-dependency-path: waveSpan/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: waveSpan/ui/package-lock.json
 
       - name: Install buf + codegen plugins
         run: |
@@ -39,41 +53,89 @@ jobs:
           go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      # buf.gen.yaml also runs ui/node_modules/.bin/protoc-gen-es (browser stubs), so the UI deps
+      # must be installed before `buf generate` runs in the proto gate.
+      - name: Install UI deps (provides protoc-gen-es)
+        working-directory: waveSpan/ui
+        run: npm ci
+
       - name: Proto gate (regenerate, fail on drift)
         working-directory: waveSpan
         run: make proto-check
 
       - name: Lint
-        working-directory: waveSpan
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$(go env GOPATH)/bin"
-          make lint
+        # Official action: reliable pinned install (no flaky checksum), caching, respects
+        # waveSpan/.golangci.yml (config version 2 → golangci-lint v2).
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+          working-directory: waveSpan
 
       - name: Build
         working-directory: waveSpan
         run: make build
 
-      - name: Test
+      - name: Unit tests
         working-directory: waveSpan
         run: make test
 
+      - name: Race tests
+        working-directory: waveSpan
+        run: make test-race
+
   image:
+    # Validate the container build on every PR; build AND push to GHCR on pushes to main.
     runs-on: ubuntu-latest
+    needs: build-test
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/wavespan-node
     steps:
       - name: Checkout wavespan
         uses: actions/checkout@v4
         with:
           path: waveSpan
-      - name: Checkout wavesdb (sibling)
+
+      - name: Checkout wavesdb (sibling module)
         uses: actions/checkout@v4
         with:
           repository: ${{ env.WAVESDB_REPO }}
+          token: ${{ secrets.WAVESDB_TOKEN }}
           path: wavesdb
+
+      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-      - name: Build the same Dockerfile, multi-arch (no Apple container)
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            -f waveSpan/docker/Dockerfile \
-            -t wavespan/node:ci \
-            .
+
+      - name: Log in to GHCR
+        # Skip on pull requests: forked PRs cannot access packages:write, and we don't push from PRs.
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build (and push on main) the wavespan-node image, multi-arch
+        # Context is the workspace root holding the waveSpan/ and wavesdb/ siblings the
+        # Dockerfile COPYs; the build stage cross-compiles from $BUILDPLATFORM (CGO-free).
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: waveSpan/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

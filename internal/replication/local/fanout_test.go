@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/latencygraph"
 )
 
 func TestFanoutFillsToTarget(t *testing.T) {

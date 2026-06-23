@@ -3,9 +3,9 @@ package vector
 import (
 	"testing"
 
-	"github.com/cwire/wavespan/internal/storage"
-	"github.com/cwire/wavespan/internal/vector/ann"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/vector/ann"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func params() ann.Params { return ann.Params{M: 8, EfConstruction: 64, EfSearchDefault: 32, Seed: 1} }

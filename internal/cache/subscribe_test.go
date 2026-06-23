@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
-	"github.com/cwire/wavespan/internal/membership"
-	"github.com/cwire/wavespan/internal/recordstore"
-	local "github.com/cwire/wavespan/internal/replication/local"
-	"github.com/cwire/wavespan/internal/storage"
-	"github.com/cwire/wavespan/internal/version"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/membership"
+	"github.com/yannick/wavespan/internal/recordstore"
+	local "github.com/yannick/wavespan/internal/replication/local"
+	"github.com/yannick/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/version"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 func newStoreFor(t *testing.T, member string) *recordstore.Store {

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/cwire/wavespan/internal/config"
+	"github.com/yannick/wavespan/internal/config"
 )
 
 // NewLogger builds a slog.Logger: JSON output under the kubernetes runtime, human-readable

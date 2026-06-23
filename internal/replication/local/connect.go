@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/cwire/wavespan/internal/membership"
-	"github.com/cwire/wavespan/internal/rpcopts"
-	wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
-	"github.com/cwire/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"github.com/yannick/wavespan/internal/membership"
+	"github.com/yannick/wavespan/internal/rpcopts"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // ConnectReplicator dials peers' ReplicationService over the Connect protocol (clients cached

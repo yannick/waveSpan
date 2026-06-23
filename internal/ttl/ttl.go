@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/cwire/wavespan/internal/recordstore"
+	"github.com/yannick/wavespan/internal/recordstore"
 )
 
 // Expired reports whether a record with the given expiry (nil = none) is expired at nowMs.

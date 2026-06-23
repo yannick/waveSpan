@@ -5,7 +5,7 @@ package local
 import (
 	"sync"
 
-	"github.com/cwire/wavespan/internal/version"
+	"github.com/yannick/wavespan/internal/version"
 )
 
 // Idempotency is a bounded dedupe cache keyed by mutation_id. A retried mutation with the same id

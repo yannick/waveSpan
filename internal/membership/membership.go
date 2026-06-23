@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cwire/wavespan/internal/latencygraph"
+	"github.com/yannick/wavespan/internal/latencygraph"
 )
 
 // ServiceConfig tunes the membership service.

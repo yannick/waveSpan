@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/cwire/wavespan/internal/version"
+	"github.com/yannick/wavespan/internal/version"
 )
 
 // HolderDirectory tracks the durable holders of each key so a read miss can resolve a holder

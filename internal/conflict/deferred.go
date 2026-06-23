@@ -1,6 +1,6 @@
 package conflict
 
-import wavespanv1 "github.com/cwire/wavespan/proto/wavespan/v1"
+import wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 
 // Deferred conflict policies. v1 ships only hlc-last-write-wins and keep-siblings (ADR-0004,
 // design/06 "CRDT policies"/"Application resolver"). The CRDT and application/WASM resolvers are
