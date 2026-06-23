@@ -50,11 +50,12 @@ const (
 	opUnfreeze     opKind = 11 // split: lift a freeze
 	opHIncrBy      opKind = 12 // hash: atomic integer increment of a field (HINCRBY)
 	opHIncrByFloat opKind = 13 // hash: atomic float increment of a field (HINCRBYFLOAT)
+	opRemove       opKind = 14 // type-agnostic element removal (bulk cross-collection delete, §13.7)
 )
 
 // mutates reports whether an op changes element state (and so must respect a subrange freeze).
 func mutates(op opKind) bool {
-	return typeForOp(op) != 0 || op == opExpire
+	return typeForOp(op) != 0 || op == opExpire || op == opRemove
 }
 
 // collType is the fixed datatype of a collection, recorded in its header.
@@ -123,7 +124,7 @@ func decodeCommand(b []byte) (command, error) {
 		return command{}, errShortCommand
 	}
 	c := command{Op: opKind(b[0])}
-	if typeForOp(c.Op) == 0 && c.Op != opExpire {
+	if typeForOp(c.Op) == 0 && c.Op != opExpire && c.Op != opRemove {
 		return command{}, errUnknownOp
 	}
 	rest := b[1:]

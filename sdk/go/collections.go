@@ -269,3 +269,29 @@ func (cc *CollectionsClient) ZRange(ctx context.Context, namespace string, colle
 	}
 	return out, nil
 }
+
+// --- Bulk / namespace ---
+
+// BulkRemoveEntry is the per-collection result of BulkRemove.
+type BulkRemoveEntry struct {
+	Collection []byte
+	Removed    uint64
+	Error      string // empty = success
+}
+
+// BulkRemove removes members from many collections at once: the named collections, or (when
+// collections is empty) every collection in the namespace. The removal is type-agnostic and
+// best-effort across shards; per-collection results are returned (design/30 §13.7).
+func (cc *CollectionsClient) BulkRemove(ctx context.Context, namespace string, collections, members [][]byte) ([]BulkRemoveEntry, error) {
+	resp, err := cc.c.collections.BulkRemove(ctx, connect.NewRequest(&wavespanv1.BulkRemoveRequest{
+		Namespace: namespace, Collections: collections, Members: members,
+	}))
+	if err != nil {
+		return nil, wrapErr("BulkRemove", err)
+	}
+	out := make([]BulkRemoveEntry, len(resp.Msg.GetResults()))
+	for i, e := range resp.Msg.GetResults() {
+		out[i] = BulkRemoveEntry{Collection: e.GetCollection(), Removed: e.GetRemoved(), Error: e.GetError()}
+	}
+	return out, nil
+}

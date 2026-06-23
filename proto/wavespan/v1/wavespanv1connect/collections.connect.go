@@ -74,6 +74,9 @@ const (
 	// CollectionServiceZRangeProcedure is the fully-qualified name of the CollectionService's ZRange
 	// RPC.
 	CollectionServiceZRangeProcedure = "/wavespan.v1.CollectionService/ZRange"
+	// CollectionServiceBulkRemoveProcedure is the fully-qualified name of the CollectionService's
+	// BulkRemove RPC.
+	CollectionServiceBulkRemoveProcedure = "/wavespan.v1.CollectionService/BulkRemove"
 	// CollectionServiceAdmitLearnerProcedure is the fully-qualified name of the CollectionService's
 	// AdmitLearner RPC.
 	CollectionServiceAdmitLearnerProcedure = "/wavespan.v1.CollectionService/AdmitLearner"
@@ -104,6 +107,12 @@ type CollectionServiceClient interface {
 	ZScore(context.Context, *connect.Request[v1.MemberRequest]) (*connect.Response[v1.ScoreResult], error)
 	ZCard(context.Context, *connect.Request[v1.CardRequest]) (*connect.Response[v1.CountResult], error)
 	ZRange(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.ScoredMembersResult], error)
+	// Bulk / namespace
+	// BulkRemove removes a list of members from many collections at once — a named list, or (when
+	// collections is empty) every collection in the namespace. Type-agnostic (works on sets, hashes, and
+	// sorted sets) and best-effort: each collection's change is atomic on its shard, the fan-out is
+	// eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
+	BulkRemove(context.Context, *connect.Request[v1.BulkRemoveRequest]) (*connect.Response[v1.BulkRemoveResult], error)
 	// AdmitLearner asks this node (a member of the shard) to admit replica_id, reachable at target, as a
 	// non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
 	// not host a collection's shard calls this on a peer that does, then starts its local learner.
@@ -228,6 +237,12 @@ func NewCollectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(collectionServiceMethods.ByName("ZRange")),
 			connect.WithClientOptions(opts...),
 		),
+		bulkRemove: connect.NewClient[v1.BulkRemoveRequest, v1.BulkRemoveResult](
+			httpClient,
+			baseURL+CollectionServiceBulkRemoveProcedure,
+			connect.WithSchema(collectionServiceMethods.ByName("BulkRemove")),
+			connect.WithClientOptions(opts...),
+		),
 		admitLearner: connect.NewClient[v1.AdmitLearnerRequest, v1.AdmitLearnerResponse](
 			httpClient,
 			baseURL+CollectionServiceAdmitLearnerProcedure,
@@ -262,6 +277,7 @@ type collectionServiceClient struct {
 	zScore         *connect.Client[v1.MemberRequest, v1.ScoreResult]
 	zCard          *connect.Client[v1.CardRequest, v1.CountResult]
 	zRange         *connect.Client[v1.RangeRequest, v1.ScoredMembersResult]
+	bulkRemove     *connect.Client[v1.BulkRemoveRequest, v1.BulkRemoveResult]
 	admitLearner   *connect.Client[v1.AdmitLearnerRequest, v1.AdmitLearnerResponse]
 	proposeForward *connect.Client[v1.ProposeForwardRequest, v1.CountResult]
 }
@@ -351,6 +367,11 @@ func (c *collectionServiceClient) ZRange(ctx context.Context, req *connect.Reque
 	return c.zRange.CallUnary(ctx, req)
 }
 
+// BulkRemove calls wavespan.v1.CollectionService.BulkRemove.
+func (c *collectionServiceClient) BulkRemove(ctx context.Context, req *connect.Request[v1.BulkRemoveRequest]) (*connect.Response[v1.BulkRemoveResult], error) {
+	return c.bulkRemove.CallUnary(ctx, req)
+}
+
 // AdmitLearner calls wavespan.v1.CollectionService.AdmitLearner.
 func (c *collectionServiceClient) AdmitLearner(ctx context.Context, req *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error) {
 	return c.admitLearner.CallUnary(ctx, req)
@@ -383,6 +404,12 @@ type CollectionServiceHandler interface {
 	ZScore(context.Context, *connect.Request[v1.MemberRequest]) (*connect.Response[v1.ScoreResult], error)
 	ZCard(context.Context, *connect.Request[v1.CardRequest]) (*connect.Response[v1.CountResult], error)
 	ZRange(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.ScoredMembersResult], error)
+	// Bulk / namespace
+	// BulkRemove removes a list of members from many collections at once — a named list, or (when
+	// collections is empty) every collection in the namespace. Type-agnostic (works on sets, hashes, and
+	// sorted sets) and best-effort: each collection's change is atomic on its shard, the fan-out is
+	// eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
+	BulkRemove(context.Context, *connect.Request[v1.BulkRemoveRequest]) (*connect.Response[v1.BulkRemoveResult], error)
 	// AdmitLearner asks this node (a member of the shard) to admit replica_id, reachable at target, as a
 	// non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
 	// not host a collection's shard calls this on a peer that does, then starts its local learner.
@@ -503,6 +530,12 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 		connect.WithSchema(collectionServiceMethods.ByName("ZRange")),
 		connect.WithHandlerOptions(opts...),
 	)
+	collectionServiceBulkRemoveHandler := connect.NewUnaryHandler(
+		CollectionServiceBulkRemoveProcedure,
+		svc.BulkRemove,
+		connect.WithSchema(collectionServiceMethods.ByName("BulkRemove")),
+		connect.WithHandlerOptions(opts...),
+	)
 	collectionServiceAdmitLearnerHandler := connect.NewUnaryHandler(
 		CollectionServiceAdmitLearnerProcedure,
 		svc.AdmitLearner,
@@ -551,6 +584,8 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 			collectionServiceZCardHandler.ServeHTTP(w, r)
 		case CollectionServiceZRangeProcedure:
 			collectionServiceZRangeHandler.ServeHTTP(w, r)
+		case CollectionServiceBulkRemoveProcedure:
+			collectionServiceBulkRemoveHandler.ServeHTTP(w, r)
 		case CollectionServiceAdmitLearnerProcedure:
 			collectionServiceAdmitLearnerHandler.ServeHTTP(w, r)
 		case CollectionServiceProposeForwardProcedure:
@@ -630,6 +665,10 @@ func (UnimplementedCollectionServiceHandler) ZCard(context.Context, *connect.Req
 
 func (UnimplementedCollectionServiceHandler) ZRange(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.ScoredMembersResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.ZRange is not implemented"))
+}
+
+func (UnimplementedCollectionServiceHandler) BulkRemove(context.Context, *connect.Request[v1.BulkRemoveRequest]) (*connect.Response[v1.BulkRemoveResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.BulkRemove is not implemented"))
 }
 
 func (UnimplementedCollectionServiceHandler) AdmitLearner(context.Context, *connect.Request[v1.AdmitLearnerRequest]) (*connect.Response[v1.AdmitLearnerResponse], error) {

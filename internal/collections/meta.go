@@ -210,6 +210,21 @@ func (d *RangeDirectory) all() []rangeEntry {
 	return append([]rangeEntry(nil), d.ranges...)
 }
 
+// Shards returns the distinct data shard ids in the directory (for cross-shard enumeration, §13.7).
+func (d *RangeDirectory) Shards() []uint64 {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	seen := map[uint64]bool{}
+	var out []uint64
+	for _, r := range d.ranges {
+		if !seen[r.ShardID] {
+			seen[r.ShardID] = true
+			out = append(out, r.ShardID)
+		}
+	}
+	return out
+}
+
 // maxShardID is the largest data shard id in the directory (for allocating the next one).
 func (d *RangeDirectory) maxShardID() uint64 {
 	d.mu.RLock()

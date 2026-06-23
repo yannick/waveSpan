@@ -83,6 +83,7 @@ type zRangeQuery struct {
 	NS, Coll []byte
 	Limit    int
 }
+type collectionsQuery struct{ NS []byte } // list collection names in a namespace (design/30 §13.7)
 
 // CardCheck reports the stored cardinality counter against the actual element count, read from one
 // consistent snapshot. They must always be equal — an internal invariant probe for tests/ops.
@@ -130,6 +131,21 @@ func (u *updateCtx) zScore(ns, coll, member []byte) (float64, bool, error) {
 		return 0, false, err
 	}
 	return float64FromBits(raw), true, nil
+}
+
+// typeOf reads a collection's type without creating it (0 = absent), honoring the in-batch overlay.
+func (u *updateCtx) typeOf(ns, coll []byte) (collType, error) {
+	cs := string(u.s.collScope(ns, coll))
+	if t, ok := u.htype[cs]; ok {
+		return t, nil
+	}
+	v, found, err := u.s.store.Get(storage.CFReplData, u.s.typeKey(ns, coll))
+	if err != nil || !found {
+		return 0, err
+	}
+	t := collType(v[0])
+	u.htype[cs] = t
+	return t, nil
 }
 
 // ensureType resolves/sets the collection type; returns false (WRONGTYPE) on a mismatch.
@@ -207,7 +223,7 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 				continue
 			}
 		}
-		if c.Op != opExpire { // opExpire is type-agnostic: it only deletes existing elements
+		if c.Op != opExpire && c.Op != opRemove { // these are type-agnostic: they only delete existing elements
 			ok, err := u.ensureType(c.NS, c.Coll, typeForOp(c.Op))
 			if err != nil {
 				return nil, err
@@ -379,6 +395,44 @@ func (u *updateCtx) applyCommand(c command) (int64, error) {
 				u.cardDelta[ck]--
 				changed++
 			}
+		case opRemove:
+			// Type-agnostic removal (bulk cross-collection delete): dispatch on the collection's actual
+			// type, skipping a collection that doesn't exist (design/30 §13.7).
+			t, err := u.typeOf(c.NS, c.Coll)
+			if err != nil {
+				return 0, err
+			}
+			switch t {
+			case typeSet, typeHash:
+				ek := s.elemKey(c.NS, c.Coll, it.Key)
+				present, err := u.elemExists(ek)
+				if err != nil {
+					return 0, err
+				}
+				if present {
+					u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: ek, Delete: true})
+					u.exists[string(ek)] = false
+					u.vals[string(ek)] = nil
+					u.cardDelta[ck]--
+					changed++
+				}
+				if err := u.clearTTL(c.NS, c.Coll, it.Key); err != nil {
+					return 0, err
+				}
+			case typeZSet:
+				old, had, err := u.zScore(c.NS, c.Coll, it.Key)
+				if err != nil {
+					return 0, err
+				}
+				if had {
+					u.ops = append(u.ops,
+						storage.StoreOp{CF: storage.CFReplData, Key: s.zscoreKey(c.NS, c.Coll, old, it.Key), Delete: true},
+						storage.StoreOp{CF: storage.CFReplData, Key: s.zptrKey(c.NS, c.Coll, it.Key), Delete: true})
+					u.zscore[string(s.zptrKey(c.NS, c.Coll, it.Key))] = nil
+					u.cardDelta[ck]--
+					changed++
+				}
+			}
 		}
 	}
 	return changed, nil
@@ -461,6 +515,22 @@ func (s *shardSM) Lookup(query interface{}) (interface{}, error) {
 					Score:  unsortableScore(k[:8]),
 					Member: append([]byte(nil), k[8:]...),
 				})
+			}
+			it.Next()
+		}
+		return out, it.Err()
+	case collectionsQuery:
+		prefix := appendChunk(s.dataSpace(), q.NS) // dataSpace || chunk(ns)
+		it, err := snap.Scan(storage.CFReplData, prefix, prefixEnd(prefix), 0)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = it.Close() }()
+		var out [][]byte
+		for it.Valid() {
+			rest := it.Key()[len(prefix):] // chunk(coll) || scope-suffix
+			if coll, suffix, terr := takeChunk(rest); terr == nil && len(suffix) == 1 && suffix[0] == scopeType {
+				out = append(out, append([]byte(nil), coll...))
 			}
 			it.Next()
 		}

@@ -255,6 +255,25 @@ func (s *Service) ZRange(ctx context.Context, req *connect.Request[wavespanv1.Ra
 	return connect.NewResponse(&wavespanv1.ScoredMembersResult{Meta: s.meta(), Members: members}), nil
 }
 
+// BulkRemove removes a list of members from many collections at once (best-effort fan-out, design/30
+// §13.7). collections empty = every collection in the namespace.
+func (s *Service) BulkRemove(ctx context.Context, req *connect.Request[wavespanv1.BulkRemoveRequest]) (*connect.Response[wavespanv1.BulkRemoveResult], error) {
+	m := req.Msg
+	entries, err := s.cols.BulkRemove(ctx, []byte(m.GetNamespace()), m.GetCollections(), m.GetMembers())
+	if err != nil {
+		return nil, collErr(err)
+	}
+	out := make([]*wavespanv1.BulkRemoveEntry, len(entries))
+	for i, e := range entries {
+		msg := ""
+		if e.Err != nil {
+			msg = e.Err.Error()
+		}
+		out[i] = &wavespanv1.BulkRemoveEntry{Collection: e.Collection, Removed: e.Removed, Error: msg}
+	}
+	return connect.NewResponse(&wavespanv1.BulkRemoveResult{Meta: s.meta(), Results: out}), nil
+}
+
 // ProposeForward applies a write forwarded by a peer that was not the shard's leader (node-side leader
 // routing, design/30 §13.13). It commits locally only — if this node also isn't the leader, the error
 // propagates and the forwarder tries the next peer.
