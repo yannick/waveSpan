@@ -190,6 +190,12 @@ The **Collections** tab is a small operator console: pick a namespace, collectio
 or remove elements and list the contents with the live cardinality. It calls the same
 `CollectionService`, mounted on the admin port for same-origin access.
 
+Below the browser, a read-only **Consensus tier** panel shows the node's placement (voter or spot,
+its replica id, Raft address), the active tunables, and a **per-shard leader table** — which shard
+this node hosts, whether it has a leader, and whether this node currently leads it. It polls every few
+seconds, so leadership changes show up live. The same data is available programmatically via the
+`TierInfo` RPC (and `Collections().TierInfo(ctx)` in the Go SDK).
+
 ## Under the hood
 
 Collections live on a **range-based multi-Raft** layout (design/30): the keyspace is partitioned into

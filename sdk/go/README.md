@@ -129,6 +129,9 @@ col.BulkRemove(ctx, "app", nil, [][]byte{[]byte("user-42")}) // remove user-42 f
 
 // Exactly-once write (idempotency key — important for non-idempotent ops like counters):
 col.WithIdempotencyKey("req-7f3a").HIncrBy(ctx, "metrics", []byte("page:home"), []byte("views"), 1)
+
+// Operator view: the serving node's placement, tunables, and per-shard leader status.
+status, _ := col.TierInfo(ctx)
 ```
 
 A mutation against a collection of the wrong datatype returns a `FailedPrecondition` error

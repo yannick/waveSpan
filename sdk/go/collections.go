@@ -295,3 +295,54 @@ func (cc *CollectionsClient) BulkRemove(ctx context.Context, namespace string, c
 	}
 	return out, nil
 }
+
+// --- Tier status (operator) ---
+
+// ShardStatus is one shard's leadership snapshot.
+type ShardStatus struct {
+	ShardID         uint64
+	ReplicaID       uint64
+	LeaderReplicaID uint64
+	HasLeader       bool
+	IsLeader        bool // this node currently leads the shard
+	IsData          bool // true = data shard, false = meta shard
+}
+
+// TierStatus is a node's consensus-tier placement, active tunables, and per-shard leader status.
+type TierStatus struct {
+	Enabled            bool
+	NodeHostID         string
+	RaftAddress        string
+	SelfReplicaID      uint64
+	Voter              bool // false = spot/edge node
+	RTTMs              uint64
+	ElectionRTT        uint64
+	HeartbeatRTT       uint64
+	SnapshotEntries    uint64
+	CompactionOverhead uint64
+	SweepMs            uint64
+	Shards             []ShardStatus
+}
+
+// TierInfo reports the consensus-tier status of the node serving this call (placement, tunables, and
+// per-shard leader status) — a read-only operator view.
+func (cc *CollectionsClient) TierInfo(ctx context.Context) (TierStatus, error) {
+	resp, err := cc.c.collections.TierInfo(ctx, connect.NewRequest(&wavespanv1.TierInfoRequest{}))
+	if err != nil {
+		return TierStatus{}, wrapErr("TierInfo", err)
+	}
+	m := resp.Msg
+	out := TierStatus{
+		Enabled: m.GetEnabled(), NodeHostID: m.GetNodeHostId(), RaftAddress: m.GetRaftAddress(),
+		SelfReplicaID: m.GetSelfReplicaId(), Voter: m.GetVoter(),
+		RTTMs: m.GetRttMs(), ElectionRTT: m.GetElectionRtt(), HeartbeatRTT: m.GetHeartbeatRtt(),
+		SnapshotEntries: m.GetSnapshotEntries(), CompactionOverhead: m.GetCompactionOverhead(), SweepMs: m.GetSweepMs(),
+	}
+	for _, s := range m.GetShards() {
+		out.Shards = append(out.Shards, ShardStatus{
+			ShardID: s.GetShardId(), ReplicaID: s.GetReplicaId(), LeaderReplicaID: s.GetLeaderReplicaId(),
+			HasLeader: s.GetHasLeader(), IsLeader: s.GetIsLeader(), IsData: s.GetIsData(),
+		})
+	}
+	return out, nil
+}
