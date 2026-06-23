@@ -2,6 +2,7 @@ package collections
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +36,7 @@ func TestMultiNodeBootstrap(t *testing.T) {
 
 	// Every stable-core voter bootstraps with the same voter set (meta + data are 3-voter groups).
 	ctrls := map[uint64]*Control{}
+	var ctrlsMu sync.Mutex // Go maps are not safe for concurrent writes, even to distinct keys.
 	done := make(chan struct{}, n)
 	errs := make(chan error, n)
 	for i := uint64(1); i <= n; i++ {
@@ -47,7 +49,9 @@ func TestMultiNodeBootstrap(t *testing.T) {
 				errs <- err
 				return
 			}
+			ctrlsMu.Lock()
 			ctrls[i] = ctrl
+			ctrlsMu.Unlock()
 			done <- struct{}{}
 		}()
 	}
