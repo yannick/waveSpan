@@ -15,9 +15,14 @@ its own container.
 
 ## Hard constraint
 
-**The existing `wavespan-bench` CLI keeps working unchanged.** The new engine lives *alongside*
-`internal/bench` (reusing its workload op logic and Connect clients), never replacing it. Benchmarks
-remain runnable from pure CLI.
+**The `wavespan-bench` CLI keeps running benchmarks identically.** To share logic DRY-ly (rather than
+duplicate op bodies), `internal/bench` is **refactored**: its Connect-client constructors are exported
+(`kvClient`→`KVClient`, `cypherClient`→`CypherClient`) and the per-op logic — currently inlined inside
+worker-loop closures (`kv.go:46-68`, `multiget.go:44-57`, `query.go:70-88`, `load.go:104`) — is
+extracted into **single-op functions** (`OpKVRead`/`OpKVWrite`/`OpMultiGet`/`OpCypher`). The CLI's
+existing `RunKV`/`RunQueries`/`RunMultiGet`/`Load` are rewired to call these shared ops, so their
+behavior and output are **unchanged**. The new `internal/benchengine` reuses the same exported clients
+and op functions. Net: benches still run from pure CLI; no duplicated op bodies.
 
 ## Non-goals (YAGNI)
 
@@ -37,7 +42,7 @@ remain runnable from pure CLI.
 | Charts | **uPlot** (tiny, fast live time-series), wrapped for React. |
 | Pause | **Freeze & resume** — pause halts load generation, keeps the run + timeline alive; resume continues. |
 | Profiling | **Full** — detect profiling-capable nodes, capture during/after a run, render the cross-node breakdown, offer raw `.pb.gz`. |
-| Engine vs CLI | Engine **alongside** `internal/bench`; CLI unchanged. |
+| Engine vs CLI | `internal/bench` refactored to export clients + extract single-op funcs; CLI rewired onto the same shared ops (identical behavior); engine reuses them. |
 
 ---
 
@@ -50,8 +55,10 @@ grow-forever latency slice (`Latencies`); the engine adds control + windowed str
 
 - **Windowed histogram.** Each workload owns a metrics collector: a ring of 1-second windows. Each
   window holds `count`, `errs`, and a fixed-bucket **log-linear latency histogram** (HDR-lite, ~µs
-  to ~10s, e.g. base-2 sub-buckets) so p50/p95/p99 are computed without retaining every sample. A
-  cumulative histogram tracks the whole run.
+  to ~10s, e.g. base-2 buckets with 8 sub-buckets → ≤~5% relative percentile error) so p50/p95/p99
+  are computed without retaining every sample. A cumulative histogram tracks the whole run. Because
+  percentiles are bucket-approximate, the unit test (feed known latencies → assert p50/p95/p99)
+  asserts within the histogram's relative-error tolerance, not exact equality.
 - **Sample.** Every ~1s the engine emits a `Sample{ TimeMs, PerWorkload: map[kind]WindowStat }` where
   `WindowStat{ Tput, P50, P95, P99, Errs, Total }`. Subscribers (SSE) receive samples live.
 - This fixes the CLI's grow-forever slice + per-op global mutex (the engine's hot path increments a
@@ -66,12 +73,14 @@ grow-forever latency slice (`Latencies`); the engine adds control + windowed str
   op; **Resume** releases it; **Stop** cancels the run context and finalizes the cumulative summary.
 - A bounded duration is optional (unbounded runs allowed; the user stops them).
 
-### Workload ops (reused)
+### Workload ops (extracted into `internal/bench`, shared)
 
-Each workload is reduced to a single-op function `func(ctx) (latency, error)` over the existing
-Connect clients (`kvClient`/`cypherClient` in `internal/bench`). KV (read/write split by ratio),
-MultiGet (batch), Cypher-suite (round-robin over loaded `.cypher` queries). `Load` (bulk dataset) is
-exposed as a run-to-completion action with progress, not a start/pause workload.
+Each workload's per-op logic is extracted into an exported single-op function
+`func(ctx) (latency, error)` in `internal/bench`, over the exported Connect clients
+(`KVClient`/`CypherClient`). KV (read/write split by ratio), MultiGet (batch), Cypher-suite
+(round-robin over loaded `.cypher` queries). The CLI's `RunKV`/etc. and the engine both call these.
+`Load` (bulk dataset) is exposed as a run-to-completion action with progress, not a start/pause
+workload (its op, currently `execCypher` + the KV put, is likewise exported).
 
 ### Public surface
 
@@ -82,7 +91,7 @@ func New(cfg Config) (*Run, error)
 func (r *Run) Start() ; func (r *Run) Pause() ; func (r *Run) Resume() ; func (r *Run) Stop()
 func (r *Run) State() State
 func (r *Run) Subscribe() (<-chan Sample, func())   // func() unsubscribes
-func (r *Run) Summary() Summary                       // cumulative, valid after Stop
+func (r *Run) Summary() Summary                       // cumulative, valid after Stop or natural completion (done)
 ```
 
 ## Unit 2 — `internal/benchui` + `cmd/wavespan-benchui`
@@ -177,5 +186,6 @@ uPlot buffers → Pause/Resume/Stop → on Stop fetch summary; optional Capture 
 | `ui/src/bench/**` | new — React dashboard (target, workloads, controls, charts, profiling) |
 | `docker/Dockerfile.benchui` | new — multi-stage container |
 | `.github/workflows/ci.yaml`, `release.yaml` | benchui image jobs |
-| `internal/bench/*` | unchanged (CLI preserved); op logic reused by the engine where shared |
+| `internal/bench/{latency.go,kv.go,multiget.go,query.go,load.go}` | refactor: export `KVClient`/`CypherClient`; extract `OpKVRead/OpKVWrite/OpMultiGet/OpCypher` (+ load op); rewire `RunKV`/`RunQueries`/`RunMultiGet`/`Load` onto them (behavior + output identical; CLI unchanged). |
+| `.gitignore` | add `/internal/benchui/dist/*` + `!/internal/benchui/dist/.gitkeep` (the root `/dist/` rule does not match it) |
 | `Makefile`/`justfile` | `build:bench`, a `benchui` run target (optional) |
