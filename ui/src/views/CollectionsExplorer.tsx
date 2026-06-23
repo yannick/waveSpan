@@ -11,8 +11,8 @@ type Row = { key: string; extra?: string };
 
 // CollectionsExplorer is an operator console for the replicated-collections tier (design/30): pick a
 // namespace, collection, and datatype, then add/remove elements and list the contents. Writes are
-// linearizable through the owning shard's leader; the list reads are bounded-stale. Requires the node
-// to be started with WAVESPAN_COLLECTIONS_ENABLED=1 (otherwise the calls return "not configured").
+// linearizable through the owning shard's leader; the list reads are bounded-stale. The tier is on by
+// default (set WAVESPAN_COLLECTIONS_ENABLED=0 to disable; the calls then return "not configured").
 export function CollectionsExplorer() {
   const [ns, setNs] = useUrlState("ns", "default");
   const [coll, setColl] = useUrlState("coll", "");
@@ -103,8 +103,8 @@ export function CollectionsExplorer() {
       <h2 className="ws-title ws-view__title">Collections</h2>
       <p className="ws-view__intro">
         Browse and edit replicated collections (sets, hash tables, sorted sets) on the consensus tier.
-        Writes are linearizable; listings are bounded-stale. The node must run with{" "}
-        <code>WAVESPAN_COLLECTIONS_ENABLED=1</code>.
+        Writes are linearizable; listings are bounded-stale. The tier is enabled by default (disable
+        with <code>WAVESPAN_COLLECTIONS_ENABLED=0</code>).
       </p>
 
       <div style={gridStyle}>

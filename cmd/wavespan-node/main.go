@@ -507,16 +507,17 @@ func run() error {
 
 	// Replicated collections (design/30): CP consensus tier over a dedicated dragonboat NodeHost that
 	// shares the wavesdb store, carries Raft over the cluster's mTLS, and bootstraps a multi-voter
-	// stable core. Opt-in via WAVESPAN_COLLECTIONS_ENABLED=1. Placement:
+	// stable core. Enabled by default; set WAVESPAN_COLLECTIONS_ENABLED=0 to turn the tier off.
+	// Placement:
 	//   WAVESPAN_COLLECTIONS_RAFT_ADDR  this node's Raft transport address (default data port + 1000)
 	//   WAVESPAN_COLLECTIONS_VOTERS     comma-separated stable-core Raft addresses; replicaID = index+1.
 	//                                   Empty -> single-node (this node is the sole voter). A node not
-	//                                   in the list is a spot node (serving via demand-fill is a
-	//                                   follow-up — it needs the directory off the meta shard).
+	//                                   in the list is a spot node that joins the meta shard and serves
+	//                                   via demand-fill.
 	// Failures here never block node startup.
 	var collectionsMgr *collections.Manager
 	var collectionsSvc *collections.Service
-	if os.Getenv("WAVESPAN_COLLECTIONS_ENABLED") == "1" {
+	if os.Getenv("WAVESPAN_COLLECTIONS_ENABLED") != "0" {
 		raftAddr := os.Getenv("WAVESPAN_COLLECTIONS_RAFT_ADDR")
 		if raftAddr == "" {
 			raftAddr = fmt.Sprintf("127.0.0.1:%d", cfg.Ports.Data+1000)

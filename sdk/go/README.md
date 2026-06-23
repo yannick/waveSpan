@@ -105,7 +105,7 @@ fmt.Println(q.Meta().GetCompleteness())
 
 The strongly-consistent collections tier (sets, hash tables, sorted sets) is reached via
 `c.Collections()`. Writes are linearizable; reads take a `linearizable bool` (pass `false` for the
-fast bounded-stale path). Requires the node to run with `WAVESPAN_COLLECTIONS_ENABLED=1`.
+fast bounded-stale path). The tier is enabled by default (set `WAVESPAN_COLLECTIONS_ENABLED=0` to disable).
 
 ```go
 col := c.Collections()
