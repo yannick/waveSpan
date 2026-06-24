@@ -548,3 +548,25 @@ Two caveats from the research: CockroachDB's exact `MaxQuotaProposalSize` consta
 verified (the `quotaPool`/ProposalQuota mechanism is confirmed — grep `pkg/kv/kvserver` to pin the
 name); etcd-the-cluster and ClickHouse Keeper are single-Raft and contribute the per-group engine, not
 the sharding layer.
+
+---
+
+## Profiling validation (staging, 3-voter core, RTT=5)
+
+Measured on the data-shard leader during a sustained collections write load (seed 8k + bulk-remove,
+concurrency 64), after applying QW1 (raft clock) + the pipelined bulk path:
+
+- **Throughput: 62 sets/s → 4,469–5,590 sets/s (~72–90×)** from QW1 + pipelining + direct-to-leader,
+  i.e. the two cheapest levers already clear the 10× bar and approach the low end of the 100× target.
+- **CPU profile: ~63% in GC** (`runtime.gcDrain` 63.5% cum; `scanObject`/`scanSpan`/`scanObjectsSmall`
+  ~22–25% each), only ~9% in `Syscall6`. **The consensus path is allocation-bound, not protocol-bound.**
+- Allocation hot spots in our code: `collections.(*updateCtx).applyCommand`, `collections.appendChunk`,
+  the per-op command encode/decode, the proto-marshaled raft entry, and dragonboat `newBlockWriter`.
+
+**Added top lever — A1 (allocation reduction in the propose/encode/apply path):** pool + reuse command
+buffers (`command.go` encode/decode), reuse the `updateCtx`/apply scratch (`statemachine.go`,
+`applyCommand`/`appendChunk`), and avoid per-entry proto allocs. With 63% of CPU in GC, cutting
+consensus-path allocations is plausibly a 2–3× standalone win and compounds with QW2 batching (fewer,
+larger proposals amortize per-op allocs). This is NOT the IO layer (separate effort) — it is the raft
+proposal/apply path. Recommended sequence now: A1 + QW2 next, since the profile shows GC — not the raft
+protocol or IO — is the active ceiling.
