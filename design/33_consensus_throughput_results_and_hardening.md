@@ -98,3 +98,20 @@ Single-client baseline (conc 64) → multi-client aggregate (4 benchui):
 - **Known rough edge**: a one-at-a-time StatefulSet rolling update can leave the data shards in
   election churn (no leader); a simultaneous core restart re-elects cleanly. A roll that preserves
   quorum-aware ordering is future work.
+
+## 6. GC tuning — the write path was GC-bound (addendum)
+
+Re-profiling a core under sustained write load showed **~88% of CPU in `runtime.gcDrain`** — the cores
+were burning ~2.3 of ~2.7 used cores collecting garbage, with only ~0.3 cores doing real work. Root
+cause: the core pods set **no `GOGC`** (default 100 = collect when the heap doubles), while a fast-
+churning write path doubles the heap constantly. A1's per-op alloc cut helped but the gRPC/proto +
+forward-path allocations dominate.
+
+Fix (config only): `GOGC=600` + `GOMEMLIMIT=3GiB` on the core (it uses <1Gi of its 4Gi, so the heap
+can grow far between collections). Result: **core CPU under the same load dropped from ~3.2 to ~1.0
+cores** and the write ceiling moved **off the cores** — the cluster now has large headroom and write
+throughput scales with client concurrency (conc 400→700 → ~6.4k→8.3k aggregate, 0 restarts).
+
+The remaining write ceiling is now the **per-op forward hop** (client → spot → shard leader) and
+client/gRPC concurrency — not core CPU. Next levers: a shard-aware client that routes each write to
+its shard leader (eliminating the forward), and batching forwarded writes (doc 32 §D2).
