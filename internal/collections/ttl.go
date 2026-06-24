@@ -44,7 +44,7 @@ func (s *shardSM) ttlPtrKey(ns, coll, member []byte) []byte {
 
 // ttlExpiryOf returns the absolute expiry recorded for an element, if any.
 func (s *shardSM) ttlExpiryOf(ns, coll, member []byte) (uint64, bool, error) {
-	v, found, err := s.store.Get(storage.CFReplData, s.ttlPtrKey(ns, coll, member))
+	v, found, err := s.getData(s.ttlPtrKey(ns, coll, member))
 	if err != nil || !found {
 		return 0, false, err
 	}

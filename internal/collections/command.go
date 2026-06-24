@@ -28,6 +28,10 @@ var (
 	ErrFrozen = errors.New("collections: subrange frozen (splitting)")
 	// ErrNotNumber is returned when HIncrBy/HIncrByFloat targets a field whose value is not a number.
 	ErrNotNumber = errors.New("collections: hash field value is not a number")
+	// ErrBusy is returned when a write is shed under load: the per-shard propose queue is full, or
+	// dragonboat reports the system busy / proposal dropped. It is a transient backpressure signal the
+	// client should retry with backoff — mapped to gRPC ResourceExhausted, never a node crash.
+	ErrBusy = errors.New("collections: busy (load shed, retry)")
 
 	wrongType  = []byte("WRONGTYPE") // Result.Data sentinel set by the state machine
 	frozenMark = []byte("FROZEN")    // Result.Data sentinel: mutation rejected, subrange is migrating

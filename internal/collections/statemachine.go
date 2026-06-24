@@ -119,7 +119,7 @@ func (u *updateCtx) elemExists(k []byte) (bool, error) {
 	if v, ok := u.exists[string(k)]; ok {
 		return v, nil
 	}
-	_, found, err := u.s.store.Get(storage.CFReplData, k)
+	_, found, err := u.s.getData(k)
 	return found, err
 }
 
@@ -131,7 +131,7 @@ func (u *updateCtx) zScore(ns, coll, member []byte) (float64, bool, error) {
 		}
 		return *v, true, nil
 	}
-	raw, found, err := u.s.store.Get(storage.CFReplData, pk)
+	raw, found, err := u.s.getData(pk)
 	if err != nil || !found {
 		return 0, false, err
 	}
@@ -144,8 +144,8 @@ func (u *updateCtx) typeOf(ns, coll []byte) (collType, error) {
 	if t, ok := u.htype[cs]; ok {
 		return t, nil
 	}
-	v, found, err := u.s.store.Get(storage.CFReplData, u.s.typeKey(ns, coll))
-	if err != nil || !found {
+	v, found, err := u.s.getData(u.s.typeKey(ns, coll))
+	if err != nil || !found || len(v) == 0 {
 		return 0, err
 	}
 	t := collType(v[0])
@@ -159,11 +159,11 @@ func (u *updateCtx) ensureType(ns, coll []byte, want collType) (bool, error) {
 	if t, ok := u.htype[cs]; ok {
 		return t == want, nil
 	}
-	v, found, err := u.s.store.Get(storage.CFReplData, u.s.typeKey(ns, coll))
+	v, found, err := u.s.getData(u.s.typeKey(ns, coll))
 	if err != nil {
 		return false, err
 	}
-	if found {
+	if found && len(v) > 0 {
 		t := collType(v[0])
 		u.htype[cs] = t
 		return t == want, nil
@@ -197,43 +197,25 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 	var scratch []item             // reused across entries to decode Items without a per-entry alloc (A1)
 	var subResults []ProposeResult // reused result scratch for opBatch expansion (QW2)
 	for i := range entries {
-		cmd := entries[i].Cmd
-		if len(cmd) > 0 && (opKind(cmd[0]) == opIngest || opKind(cmd[0]) == opPurge) {
-			changed, err := u.applyMigrate(cmd) // raw subrange copy/purge (design/30 §6)
-			if err != nil {
-				return nil, err
-			}
-			entries[i].Result = sm.Result{Value: uint64(changed)}
-			continue
-		}
-		if len(cmd) > 0 && (opKind(cmd[0]) == opFreeze || opKind(cmd[0]) == opUnfreeze) {
-			if err := u.applyFreeze(cmd); err != nil {
-				return nil, err
-			}
-			entries[i].Result = sm.Result{Value: 1}
-			continue
-		}
-		if len(cmd) > 0 && opKind(cmd[0]) == opBatch { // QW2: a coalesced batch of single commands
-			subCmds, err := decodeBatch(cmd)
-			if err != nil {
-				return nil, err
-			}
-			subResults = subResults[:0]
-			for _, sub := range subCmds {
-				r, aerr := u.applyOne(sub, frozen, scratch)
-				if aerr != nil {
-					return nil, aerr
-				}
-				subResults = append(subResults, r)
-			}
-			entries[i].Result = sm.Result{Value: 0, Data: encodeBatchResult(nil, subResults)}
-			continue
-		}
-		r, err := u.applyOne(cmd, frozen, scratch)
+		// CRITICAL ROBUSTNESS: applying a committed entry must never return an error or panic for any
+		// reason attributable to the entry's bytes (malformed/truncated/corrupt) — dragonboat treats an
+		// Update error as fatal and the poison entry replays into a crash-loop. So each entry is applied
+		// under a recover() with its accumulated effects snapshotted: a non-fatal (decode/corruption)
+		// failure OR a panic rolls the entry back and SKIPS it deterministically (every replica skips the
+		// same bytes, so state stays consistent), leaving a benign result. Only a genuine storage fault
+		// (wrapped fatalErr) still propagates and stops this replica.
+		snap := u.snapshot()
+		res, err := s.applyEntrySafe(u, &entries[i], frozen, scratch, &subResults)
 		if err != nil {
-			return nil, err
+			if isFatal(err) {
+				return nil, err // genuine storage fault — must stop this replica
+			}
+			u.restore(snap) // discard any partial effects from this entry
+			logCorruptEntry(corruptEntry{index: entries[i].Index, err: err})
+			entries[i].Result = sm.Result{} // benign: applied nothing, continue
+			continue
 		}
-		entries[i].Result = sm.Result{Value: r.Value, Data: r.Data}
+		entries[i].Result = res
 	}
 	if u.dedupSeq != startDedupSeq {
 		u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: s.dedupSeqKey(), Value: u64(u.dedupSeq)})
@@ -298,6 +280,9 @@ func (u *updateCtx) applyOne(cmd []byte, frozen []frozenRange, scratch []item) (
 	}
 	// HIncrBy/HIncrByFloat are atomic counters whose result is the new value (Data), not a count.
 	if c.Op == opHIncrBy || c.Op == opHIncrByFloat {
+		if len(c.Items) == 0 { // a corrupt HIncr entry with no item — skip deterministically (non-fatal)
+			return ProposeResult{}, errShortCommand
+		}
 		var changed int64
 		var data []byte
 		if c.Op == opHIncrBy {
@@ -609,12 +594,14 @@ func scanSuffixes(snap storage.Snapshot, prefix []byte, limit int) ([][]byte, er
 }
 
 func (s *shardSM) readCard(cardKey []byte) (uint64, error) {
-	v, found, err := s.store.Get(storage.CFReplData, cardKey)
+	v, found, err := s.getData(cardKey)
 	if err != nil || !found {
 		return 0, err
 	}
 	if len(v) != 8 {
-		return 0, errors.New("collections: corrupt card value")
+		// Internal card counter is corrupt (not entry-attributable). Treat as fatal: it indicates a real
+		// storage/state-integrity fault, never a malformed input, so it must stop this replica.
+		return 0, fatal(errors.New("collections: corrupt card value"))
 	}
 	return binary.BigEndian.Uint64(v), nil
 }

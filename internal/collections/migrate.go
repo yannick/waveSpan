@@ -167,7 +167,7 @@ func (u *updateCtx) applyMigrate(cmd []byte) (int64, error) {
 		}
 		kvs, err := scanRange(u.s.store, u.s.prefix, start, end, 0)
 		if err != nil {
-			return 0, err
+			return 0, fatal(err) // genuine storage fault during purge scan — must stay fatal
 		}
 		for _, kv := range kvs {
 			key := append(append([]byte{}, u.s.prefix...), kv.Suffix...)

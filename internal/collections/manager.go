@@ -2,6 +2,7 @@ package collections
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -229,9 +230,15 @@ func coalescable(cmd []byte) bool {
 }
 
 // proposeRaw issues one un-batched synchronous proposal (the engine round-trip the proposer drives).
+// dragonboat's own overload signals (ErrSystemBusy when the proposal pipeline is saturated, ErrShardNotReady
+// when a proposal is dropped) are surfaced as the transient ErrBusy (→ ResourceExhausted) so a flood is
+// shed with a retryable error — never a panic, never a node crash.
 func (m *Manager) proposeRaw(ctx context.Context, shardID uint64, cmd []byte) (ProposeResult, error) {
 	res, err := m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
 	if err != nil {
+		if errors.Is(err, dragonboat.ErrSystemBusy) || errors.Is(err, dragonboat.ErrShardNotReady) {
+			return ProposeResult{}, ErrBusy
+		}
 		return ProposeResult{}, err
 	}
 	return ProposeResult{Value: res.Value, Data: res.Data}, nil

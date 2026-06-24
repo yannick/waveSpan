@@ -110,9 +110,11 @@ func (c *Collections) proposeCore(ctx context.Context, ns, coll, enc []byte) (ui
 }
 
 // forwardable reports whether a local propose error should be retried on a peer (it indicates this node
-// can't act as leader). Definitive results (WRONGTYPE, FROZEN) and a cancelled context are not.
+// can't act as leader). Definitive results (WRONGTYPE, FROZEN, NOTNUM) and a cancelled context are not.
+// ErrBusy is a load-shed signal — forwarding it would just spread the flood to peers, so it surfaces to
+// the client (as ResourceExhausted) instead.
 func forwardable(ctx context.Context, err error) bool {
-	if errors.Is(err, ErrWrongType) || errors.Is(err, ErrFrozen) {
+	if errors.Is(err, ErrWrongType) || errors.Is(err, ErrFrozen) || errors.Is(err, ErrNotNumber) || errors.Is(err, ErrBusy) {
 		return false
 	}
 	return ctx.Err() == nil
