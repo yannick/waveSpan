@@ -596,18 +596,31 @@ func run() error {
 			TransportFactory: &collections.TransportFactory{ServerTLS: serverMTLS, ClientTLS: raftTLSClient, ListenAddr: raftListenAddr},
 			Tunables:         tun,
 		}
+		// Static hash pre-split into N data shards (D1, design/32 §3.4). N>1 spreads writes/reads across N
+		// parallel Raft groups, routed by hash((ns,coll)); N<=1 keeps the single full-range shard (range-
+		// routed, split/merge-capable). Default 4. Must be identical on every node so routing agrees.
+		dataShards := envU64("WAVESPAN_COLLECTIONS_DATA_SHARDS")
+		if dataShards == 0 {
+			dataShards = 4
+		}
 		mgr, err := collections.NewManagerWithOptions(filepath.Join(cfg.Storage.Path, "collections-raft"), raftAddr, store, raftOpts)
 		switch {
 		case err != nil:
 			logger.Error("collections: NodeHost init failed; tier disabled", "err", err)
 		case !voterEligible:
-			// Spot/edge node: mount the service now and join the meta shard in the background (retrying
-			// until the stable core is reachable), so the node serves collections via demand-fill once it
-			// has the directory — without blocking startup.
+			// Spot/edge node: mount the service now and serve collections via demand-fill — without blocking
+			// startup. In hash mode (N>1) routing is purely local (HashDirectory), so the spot needs no
+			// meta-shard ranges; it demand-fills each data shard it reads. In range mode it joins the meta
+			// shard in the background to obtain the directory.
 			collectionsMgr = mgr
 			spotRID := collections.SpotReplicaID(cfg.MemberID)
 			admitter := collections.NewRPCAdmitter(peersFn)
-			dir := collections.NewRangeDirectory(mgr, collections.MetaShardID)
+			var dir collections.Directory
+			if dataShards > 1 {
+				dir = collections.NewHashDirectory(dataShards)
+			} else {
+				dir = collections.NewRangeDirectory(mgr, collections.MetaShardID)
+			}
 			cols := collections.New(mgr, dir).
 				WithDemandFill(collections.NewDemandFiller(mgr, spotRID, raftAddr, admitter)).
 				WithForwarder(collections.NewRPCForwarder(peersFn)) // spot nodes never lead; forward all writes
@@ -615,17 +628,19 @@ func run() error {
 			cypherCollections := collections.NewCypherCollections(cols)
 			cypherSvc.WithCollections(cypherCollections)
 			grpcCypherSvc.WithCollections(cypherCollections)
-			go func() {
-				if err := collections.EnsureSpotMembership(ctx, mgr, spotRID, raftAddr, admitter, dir); err != nil {
-					logger.Error("collections: spot membership not established", "err", err)
-					return
-				}
-				logger.Info("collections: spot node joined; serving via demand-fill", "replicaID", spotRID)
-			}()
-			logger.Info("collections: spot node starting (joining meta shard in background)", "raftAddr", raftAddr)
+			if rd, ok := dir.(*collections.RangeDirectory); ok {
+				go func() {
+					if err := collections.EnsureSpotMembership(ctx, mgr, spotRID, raftAddr, admitter, rd); err != nil {
+						logger.Error("collections: spot membership not established", "err", err)
+						return
+					}
+					logger.Info("collections: spot node joined; serving via demand-fill", "replicaID", spotRID)
+				}()
+			}
+			logger.Info("collections: spot node starting", "raftAddr", raftAddr, "dataShards", dataShards)
 		default:
 			bctx, bcancel := context.WithTimeout(context.Background(), 40*time.Second)
-			ctrl, berr := collections.BootstrapWithPlacement(bctx, mgr, collections.Placement{SelfReplicaID: selfReplicaID, VoterEligible: true, Voters: voters})
+			ctrl, berr := collections.BootstrapWithPlacement(bctx, mgr, collections.Placement{SelfReplicaID: selfReplicaID, VoterEligible: true, Voters: voters, DataShards: dataShards})
 			bcancel()
 			if berr != nil || ctrl == nil {
 				logger.Error("collections: bootstrap failed; tier disabled", "err", berr)
