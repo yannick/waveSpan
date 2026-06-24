@@ -2,9 +2,6 @@ package global
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/yannick/wavespan/internal/config"
@@ -42,18 +39,13 @@ func TestAntiEntropyRepairsMissedMutation(t *testing.T) {
 	putRec(t, bStore, "test-a", "a1", 3, 100, "c", "vc")
 
 	// A serves GlobalReplication (with anti-entropy over its store)
-	aSrv := NewServer(NewApplier(aStore, conflict.NewRegistry(), nil), NewAntiEntropy(aStore))
-	path, h := aSrv.Handler()
-	mux := http.NewServeMux()
-	mux.Handle(path, h)
-	ts := httptest.NewServer(mux)
-	t.Cleanup(ts.Close)
+	addr := serveGlobal(t, &grpcGlobalServer{applier: NewApplier(aStore, conflict.NewRegistry(), nil), ae: NewAntiEntropy(aStore)})
 
 	// B reconciles against A
 	mem := storage.NewMemStore()
 	t.Cleanup(func() { _ = mem.Close() })
-	peer := config.ClusterPeer{ClusterID: "test-a", ReplEndpoint: strings.TrimPrefix(ts.URL, "http://")}
-	rec := NewReconciler(NewAntiEntropy(bStore), NewApplier(bStore, conflict.NewRegistry(), nil), NewOutLog(mem, 0), []config.ClusterPeer{peer}, []string{"default"}, ts.Client(), nil)
+	peer := config.ClusterPeer{ClusterID: "test-a", ReplEndpoint: addr}
+	rec := NewReconciler(NewAntiEntropy(bStore), NewApplier(bStore, conflict.NewRegistry(), nil), NewOutLog(mem, 0), []config.ClusterPeer{peer}, []string{"default"}, nil, nil)
 
 	if got := rec.ReconcileOnce(context.Background()); got == 0 {
 		t.Fatal("expected a divergent range to be repaired")
@@ -70,12 +62,7 @@ func TestAntiEntropyRepairsMissedMutation(t *testing.T) {
 func TestAntiEntropyAdvancesCheckpoint(t *testing.T) {
 	bStore := newRecStore(t, "b1")
 	aStore := newRecStore(t, "a1")
-	aSrv := NewServer(NewApplier(aStore, conflict.NewRegistry(), nil), NewAntiEntropy(aStore))
-	path, h := aSrv.Handler()
-	mux := http.NewServeMux()
-	mux.Handle(path, h)
-	ts := httptest.NewServer(mux)
-	t.Cleanup(ts.Close)
+	addr := serveGlobal(t, &grpcGlobalServer{applier: NewApplier(aStore, conflict.NewRegistry(), nil), ae: NewAntiEntropy(aStore)})
 
 	mem := storage.NewMemStore()
 	t.Cleanup(func() { _ = mem.Close() })
@@ -85,8 +72,8 @@ func TestAntiEntropyAdvancesCheckpoint(t *testing.T) {
 	for i := 1; i <= 3; i++ {
 		_ = outlog.Append("test-a", mut(i, "default", "k"), false)
 	}
-	peer := config.ClusterPeer{ClusterID: "test-a", ReplEndpoint: strings.TrimPrefix(ts.URL, "http://")}
-	rec := NewReconciler(NewAntiEntropy(bStore), NewApplier(bStore, conflict.NewRegistry(), nil), outlog, []config.ClusterPeer{peer}, []string{"default"}, ts.Client(), nil)
+	peer := config.ClusterPeer{ClusterID: "test-a", ReplEndpoint: addr}
+	rec := NewReconciler(NewAntiEntropy(bStore), NewApplier(bStore, conflict.NewRegistry(), nil), outlog, []config.ClusterPeer{peer}, []string{"default"}, nil, nil)
 	rec.ReconcileOnce(context.Background())
 
 	// checkpoint advanced -> compaction can now reclaim the shipped entries
