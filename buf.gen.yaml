@@ -11,6 +11,11 @@ plugins:
   - local: protoc-gen-connect-go
     out: proto
     opt: paths=source_relative
+  # Real grpc-go service stubs — the high-throughput data-plane transport. The Connect stubs above
+  # stay for the browser/UI (gRPC-Web) on the admin port.
+  - local: protoc-gen-go-grpc
+    out: proto
+    opt: paths=source_relative
   # Browser client: protobuf-es v2 service+message descriptors; @connectrpc/connect v2 createClient
   # consumes them directly. Generated into the SPA (run after `npm ci` in ui/).
   - local: ui/node_modules/.bin/protoc-gen-es
