@@ -104,7 +104,8 @@ func (m *metaSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		}
 	}
 	ops = append(ops, storage.StoreOp{CF: storage.CFReplData, Key: m.appliedKey(), Value: u64(entries[len(entries)-1].Index)})
-	if err := m.store.Batch(ops); err != nil {
+	// BatchRC: deterministic SM apply, no write-write conflict check needed (see shardSM.Update).
+	if err := m.store.BatchRC(ops); err != nil {
 		return nil, err
 	}
 	return entries, nil

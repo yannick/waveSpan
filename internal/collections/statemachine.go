@@ -237,8 +237,13 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: ck, Value: u64(uint64(nv))})
 	}
 	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: s.appliedKey(), Value: u64(entries[len(entries)-1].Index)})
-	if err := s.store.Batch(u.ops); err != nil {
-		return nil, err
+	// BatchRC (ReadCommitted) not Batch (Snapshot): the SM apply is a deterministic, authoritative
+	// write of shard-prefixed keys and orders same-key writes itself (the in-batch overlays), so it
+	// needs no write-write conflict check. Under N concurrent data-shard applies to the shared store,
+	// the SI check spuriously aborted with ErrConflict — which dragonboat treats as fatal and panicked
+	// the node. BatchRC lets the independent shards commit in parallel without that false conflict.
+	if err := s.store.BatchRC(u.ops); err != nil {
+		return nil, fatal(err)
 	}
 	return entries, nil
 }

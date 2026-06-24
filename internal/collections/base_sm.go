@@ -113,7 +113,7 @@ func (b *baseSM) RecoverFromSnapshot(r io.Reader, stopc <-chan struct{}) error {
 		if len(ops) == 0 {
 			return nil
 		}
-		e := b.store.Batch(ops)
+		e := b.store.BatchRC(ops) // deterministic SM apply: no write-write conflict check (see shardSM.Update)
 		ops = ops[:0]
 		return e
 	}
@@ -167,7 +167,7 @@ func (b *baseSM) clearPrefix() error {
 		if len(ops) == 0 {
 			return nil
 		}
-		e := b.store.Batch(ops)
+		e := b.store.BatchRC(ops) // deterministic SM apply: no write-write conflict check (see shardSM.Update)
 		ops = ops[:0]
 		return e
 	}
