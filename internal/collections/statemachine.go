@@ -108,6 +108,11 @@ type updateCtx struct {
 	htype     map[string]collType // string(collScope) -> resolved type (0 = unknown/new)
 	vals      map[string][]byte   // hash field elemKey -> value-after (for HIncr; nil = deleted)
 	dedupSeq  uint64              // idempotency ring sequence (design/30 §13.12)
+	// inBatchDedup mirrors dedup records created earlier in THIS Update batch. dedupGet reads the store,
+	// which does not see un-flushed in-batch records, so without this overlay two identical keyed writes
+	// coalesced into one entry (QW2) would both apply — breaking idempotency for non-idempotent ops
+	// (HIncrBy). Checking it first makes coalesced keyed writes dedup exactly like un-coalesced ones.
+	inBatchDedup map[string]ProposeResult
 }
 
 func (u *updateCtx) elemExists(k []byte) (bool, error) {
@@ -176,6 +181,7 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 	u := &updateCtx{
 		s: s, exists: map[string]bool{}, zscore: map[string]*float64{},
 		cardDelta: map[string]int64{}, htype: map[string]collType{}, vals: map[string][]byte{},
+		inBatchDedup: map[string]ProposeResult{},
 	}
 	// Frozen ranges are read once per batch; a freeze committed in an earlier batch (Control.Split
 	// proposes it before migrating) rejects subrange mutations here. Same-batch writes still commit but
@@ -188,6 +194,8 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		return nil, err
 	}
 	startDedupSeq := u.dedupSeq
+	var scratch []item             // reused across entries to decode Items without a per-entry alloc (A1)
+	var subResults []ProposeResult // reused result scratch for opBatch expansion (QW2)
 	for i := range entries {
 		cmd := entries[i].Cmd
 		if len(cmd) > 0 && (opKind(cmd[0]) == opIngest || opKind(cmd[0]) == opPurge) {
@@ -205,64 +213,27 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 			entries[i].Result = sm.Result{Value: 1}
 			continue
 		}
-		c, err := decodeCommand(cmd)
-		if err != nil {
-			return nil, err
-		}
-		if len(frozen) > 0 && mutates(c.Op) && frozenCovers(frozen, routeKey(c.NS, c.Coll)) {
-			entries[i].Result = sm.Result{Value: 0, Data: frozenMark} // splitting: client retries onto the new shard
-			continue
-		}
-		// Idempotency: a repeated keyed write returns its cached result without re-applying (§13.12).
-		deduped := mutates(c.Op) && len(c.Idem) > 0
-		if deduped {
-			if cached, cdata, found, derr := s.dedupGet(c.Idem); derr != nil {
-				return nil, derr
-			} else if found {
-				entries[i].Result = sm.Result{Value: cached, Data: cdata}
-				continue
-			}
-		}
-		if c.Op != opExpire && c.Op != opRemove { // these are type-agnostic: they only delete existing elements
-			ok, err := u.ensureType(c.NS, c.Coll, typeForOp(c.Op))
+		if len(cmd) > 0 && opKind(cmd[0]) == opBatch { // QW2: a coalesced batch of single commands
+			subCmds, err := decodeBatch(cmd)
 			if err != nil {
 				return nil, err
 			}
-			if !ok {
-				entries[i].Result = sm.Result{Value: 0, Data: wrongType}
-				continue
-			}
-		}
-		// HIncrBy/HIncrByFloat are atomic counters whose result is the new value (Data), not a count.
-		if c.Op == opHIncrBy || c.Op == opHIncrByFloat {
-			var changed int64
-			var data []byte
-			if c.Op == opHIncrBy {
-				changed, data, err = u.applyHIncrInt(c, c.Items[0])
-			} else {
-				changed, data, err = u.applyHIncrFloat(c, c.Items[0])
-			}
-			if err != nil {
-				return nil, err
-			}
-			if deduped && !bytes.Equal(data, notNumber) { // don't cache a failed (non-number) increment
-				if derr := u.dedupRecord(c.Idem, uint64(changed), data); derr != nil {
-					return nil, derr
+			subResults = subResults[:0]
+			for _, sub := range subCmds {
+				r, aerr := u.applyOne(sub, frozen, scratch)
+				if aerr != nil {
+					return nil, aerr
 				}
+				subResults = append(subResults, r)
 			}
-			entries[i].Result = sm.Result{Value: uint64(changed), Data: data}
+			entries[i].Result = sm.Result{Value: 0, Data: encodeBatchResult(nil, subResults)}
 			continue
 		}
-		changed, err := u.applyCommand(c)
+		r, err := u.applyOne(cmd, frozen, scratch)
 		if err != nil {
 			return nil, err
 		}
-		if deduped {
-			if derr := u.dedupRecord(c.Idem, uint64(changed), nil); derr != nil {
-				return nil, derr
-			}
-		}
-		entries[i].Result = sm.Result{Value: uint64(changed)}
+		entries[i].Result = sm.Result{Value: r.Value, Data: r.Data}
 	}
 	if u.dedupSeq != startDedupSeq {
 		u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: s.dedupSeqKey(), Value: u64(u.dedupSeq)})
@@ -288,6 +259,74 @@ func (s *shardSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		return nil, err
 	}
 	return entries, nil
+}
+
+// applyOne decodes and applies a single encoded command (the shared body for both a top-level entry and
+// a coalesced opBatch sub-command, QW2). It honors freeze, idempotency dedup, type checks, and the
+// HIncr counter path, returning the op's apply result (Value + optional Data sentinel/payload). scratch
+// is reused to decode Items without a per-call allocation (A1); its backing array is overwritten on the
+// next call, so callers must consume the result before applying the next command (the loops do).
+func (u *updateCtx) applyOne(cmd []byte, frozen []frozenRange, scratch []item) (ProposeResult, error) {
+	c, err := decodeCommandInto(cmd, scratch)
+	if err != nil {
+		return ProposeResult{}, err
+	}
+	if len(frozen) > 0 && mutates(c.Op) && frozenCovers(frozen, routeKey(c.NS, c.Coll)) {
+		return ProposeResult{Data: frozenMark}, nil // splitting: client retries onto the new shard
+	}
+	// Idempotency: a repeated keyed write returns its cached result without re-applying (§13.12). Check
+	// the in-batch overlay first (a duplicate coalesced into this same entry), then the persisted cache.
+	deduped := mutates(c.Op) && len(c.Idem) > 0
+	if deduped {
+		if r, ok := u.inBatchDedup[string(c.Idem)]; ok {
+			return r, nil
+		}
+		if cached, cdata, found, derr := u.s.dedupGet(c.Idem); derr != nil {
+			return ProposeResult{}, derr
+		} else if found {
+			return ProposeResult{Value: cached, Data: cdata}, nil
+		}
+	}
+	if c.Op != opExpire && c.Op != opRemove { // these are type-agnostic: they only delete existing elements
+		ok, terr := u.ensureType(c.NS, c.Coll, typeForOp(c.Op))
+		if terr != nil {
+			return ProposeResult{}, terr
+		}
+		if !ok {
+			return ProposeResult{Data: wrongType}, nil
+		}
+	}
+	// HIncrBy/HIncrByFloat are atomic counters whose result is the new value (Data), not a count.
+	if c.Op == opHIncrBy || c.Op == opHIncrByFloat {
+		var changed int64
+		var data []byte
+		if c.Op == opHIncrBy {
+			changed, data, err = u.applyHIncrInt(c, c.Items[0])
+		} else {
+			changed, data, err = u.applyHIncrFloat(c, c.Items[0])
+		}
+		if err != nil {
+			return ProposeResult{}, err
+		}
+		if deduped && !bytes.Equal(data, notNumber) { // don't cache a failed (non-number) increment
+			if derr := u.dedupRecord(c.Idem, uint64(changed), data); derr != nil {
+				return ProposeResult{}, derr
+			}
+			u.inBatchDedup[string(c.Idem)] = ProposeResult{Value: uint64(changed), Data: append([]byte(nil), data...)}
+		}
+		return ProposeResult{Value: uint64(changed), Data: data}, nil
+	}
+	changed, err := u.applyCommand(c)
+	if err != nil {
+		return ProposeResult{}, err
+	}
+	if deduped {
+		if derr := u.dedupRecord(c.Idem, uint64(changed), nil); derr != nil {
+			return ProposeResult{}, derr
+		}
+		u.inBatchDedup[string(c.Idem)] = ProposeResult{Value: uint64(changed)}
+	}
+	return ProposeResult{Value: uint64(changed)}, nil
 }
 
 // applyCommand applies one command's items via the overlays and returns the count of changes
