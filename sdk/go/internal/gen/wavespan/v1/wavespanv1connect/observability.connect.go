@@ -62,6 +62,9 @@ const (
 	// ObservabilityServiceAdminDeleteProcedure is the fully-qualified name of the
 	// ObservabilityService's AdminDelete RPC.
 	ObservabilityServiceAdminDeleteProcedure = "/wavespan.v1.ObservabilityService/AdminDelete"
+	// ObservabilityServiceDeleteNamespaceProcedure is the fully-qualified name of the
+	// ObservabilityService's DeleteNamespace RPC.
+	ObservabilityServiceDeleteNamespaceProcedure = "/wavespan.v1.ObservabilityService/DeleteNamespace"
 	// ObservabilityServiceGetNodeConfigProcedure is the fully-qualified name of the
 	// ObservabilityService's GetNodeConfig RPC.
 	ObservabilityServiceGetNodeConfigProcedure = "/wavespan.v1.ObservabilityService/GetNodeConfig"
@@ -94,6 +97,9 @@ type ObservabilityServiceClient interface {
 	// AdminDelete writes a tombstone for a KV record from the node UI (Data Browser delete),
 	// coordinated by a chosen cluster member (target_member_id), mirroring AdminPut.
 	AdminDelete(context.Context, *connect.Request[v1.AdminDeleteRequest]) (*connect.Response[v1.AdminDeleteResponse], error)
+	// DeleteNamespace tombstones every live key in a namespace cluster-wide (fan-out scan + coordinated
+	// deletes). The namespace may still appear in the gossiped list afterwards until summaries age out.
+	DeleteNamespace(context.Context, *connect.Request[v1.DeleteNamespaceRequest]) (*connect.Response[v1.DeleteNamespaceResponse], error)
 	// GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
 	// serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
 	// UI Config tab and cross-node config inspection.
@@ -168,6 +174,12 @@ func NewObservabilityServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(observabilityServiceMethods.ByName("AdminDelete")),
 			connect.WithClientOptions(opts...),
 		),
+		deleteNamespace: connect.NewClient[v1.DeleteNamespaceRequest, v1.DeleteNamespaceResponse](
+			httpClient,
+			baseURL+ObservabilityServiceDeleteNamespaceProcedure,
+			connect.WithSchema(observabilityServiceMethods.ByName("DeleteNamespace")),
+			connect.WithClientOptions(opts...),
+		),
 		getNodeConfig: connect.NewClient[v1.GetNodeConfigRequest, v1.NodeConfig](
 			httpClient,
 			baseURL+ObservabilityServiceGetNodeConfigProcedure,
@@ -194,6 +206,7 @@ type observabilityServiceClient struct {
 	loadSampleDataset *connect.Client[v1.LoadSampleDatasetRequest, v1.LoadSampleDatasetResponse]
 	adminPut          *connect.Client[v1.AdminPutRequest, v1.AdminPutResponse]
 	adminDelete       *connect.Client[v1.AdminDeleteRequest, v1.AdminDeleteResponse]
+	deleteNamespace   *connect.Client[v1.DeleteNamespaceRequest, v1.DeleteNamespaceResponse]
 	getNodeConfig     *connect.Client[v1.GetNodeConfigRequest, v1.NodeConfig]
 	adminSetTunable   *connect.Client[v1.AdminSetTunableRequest, v1.AdminSetTunableResponse]
 }
@@ -243,6 +256,11 @@ func (c *observabilityServiceClient) AdminDelete(ctx context.Context, req *conne
 	return c.adminDelete.CallUnary(ctx, req)
 }
 
+// DeleteNamespace calls wavespan.v1.ObservabilityService.DeleteNamespace.
+func (c *observabilityServiceClient) DeleteNamespace(ctx context.Context, req *connect.Request[v1.DeleteNamespaceRequest]) (*connect.Response[v1.DeleteNamespaceResponse], error) {
+	return c.deleteNamespace.CallUnary(ctx, req)
+}
+
 // GetNodeConfig calls wavespan.v1.ObservabilityService.GetNodeConfig.
 func (c *observabilityServiceClient) GetNodeConfig(ctx context.Context, req *connect.Request[v1.GetNodeConfigRequest]) (*connect.Response[v1.NodeConfig], error) {
 	return c.getNodeConfig.CallUnary(ctx, req)
@@ -272,6 +290,9 @@ type ObservabilityServiceHandler interface {
 	// AdminDelete writes a tombstone for a KV record from the node UI (Data Browser delete),
 	// coordinated by a chosen cluster member (target_member_id), mirroring AdminPut.
 	AdminDelete(context.Context, *connect.Request[v1.AdminDeleteRequest]) (*connect.Response[v1.AdminDeleteResponse], error)
+	// DeleteNamespace tombstones every live key in a namespace cluster-wide (fan-out scan + coordinated
+	// deletes). The namespace may still appear in the gossiped list afterwards until summaries age out.
+	DeleteNamespace(context.Context, *connect.Request[v1.DeleteNamespaceRequest]) (*connect.Response[v1.DeleteNamespaceResponse], error)
 	// GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
 	// serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
 	// UI Config tab and cross-node config inspection.
@@ -342,6 +363,12 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 		connect.WithSchema(observabilityServiceMethods.ByName("AdminDelete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	observabilityServiceDeleteNamespaceHandler := connect.NewUnaryHandler(
+		ObservabilityServiceDeleteNamespaceProcedure,
+		svc.DeleteNamespace,
+		connect.WithSchema(observabilityServiceMethods.ByName("DeleteNamespace")),
+		connect.WithHandlerOptions(opts...),
+	)
 	observabilityServiceGetNodeConfigHandler := connect.NewUnaryHandler(
 		ObservabilityServiceGetNodeConfigProcedure,
 		svc.GetNodeConfig,
@@ -374,6 +401,8 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 			observabilityServiceAdminPutHandler.ServeHTTP(w, r)
 		case ObservabilityServiceAdminDeleteProcedure:
 			observabilityServiceAdminDeleteHandler.ServeHTTP(w, r)
+		case ObservabilityServiceDeleteNamespaceProcedure:
+			observabilityServiceDeleteNamespaceHandler.ServeHTTP(w, r)
 		case ObservabilityServiceGetNodeConfigProcedure:
 			observabilityServiceGetNodeConfigHandler.ServeHTTP(w, r)
 		case ObservabilityServiceAdminSetTunableProcedure:
@@ -421,6 +450,10 @@ func (UnimplementedObservabilityServiceHandler) AdminPut(context.Context, *conne
 
 func (UnimplementedObservabilityServiceHandler) AdminDelete(context.Context, *connect.Request[v1.AdminDeleteRequest]) (*connect.Response[v1.AdminDeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.AdminDelete is not implemented"))
+}
+
+func (UnimplementedObservabilityServiceHandler) DeleteNamespace(context.Context, *connect.Request[v1.DeleteNamespaceRequest]) (*connect.Response[v1.DeleteNamespaceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.DeleteNamespace is not implemented"))
 }
 
 func (UnimplementedObservabilityServiceHandler) GetNodeConfig(context.Context, *connect.Request[v1.GetNodeConfigRequest]) (*connect.Response[v1.NodeConfig], error) {
