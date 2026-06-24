@@ -191,6 +191,14 @@ func (r *RepairEngine) ProcessOne(ctx context.Context) bool {
 		rec = got
 	}
 	v := version.FromProto(rec.GetVersion())
+	// We hold this record locally, so make sure the directory counts self toward the target. Without
+	// this, after a restart rebuilds the directory it may not know self holds its own keys — and since
+	// there are only (cluster-1) peers to push to, a key whose target is the full set could never
+	// reach it by pushing alone, so it would re-enqueue forever and the backlog would never drain.
+	r.holders.RecordHolder(it.Namespace, it.Key, r.self.MemberID, v)
+	if r.aliveHolderCount(it.Namespace, it.Key) >= target {
+		return true
+	}
 	req := BuildRequest(it.Namespace, it.Key, rec, r.self.MemberID)
 
 	cands := r.repairCandidates(it.Namespace)
