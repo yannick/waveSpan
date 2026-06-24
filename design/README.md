@@ -60,14 +60,15 @@ Read in this order:
 31. `29_vector_kv_search_plan.md`
 32. `30_replicated_collections.md`
 33. `31_cluster_data_deletion.md`
-34. `adr/0001_eventual_consistency.md`
-35. `adr/0002_origin_plus_one_write_ack.md`
-36. `adr/0003_cache_replicas_are_derived.md`
-37. `adr/0004_global_active_active_conflicts.md`
-38. `adr/0005_go_and_wavesdb_engine.md`
-39. `adr/0006_pure_go_hnsw.md`
-40. `adr/0007_replicated_collections_consensus_tier.md`
-41. `adr/0008_raft_library_dragonboat.md`
+34. `32_consensus_tier_throughput.md`
+35. `adr/0001_eventual_consistency.md`
+36. `adr/0002_origin_plus_one_write_ack.md`
+37. `adr/0003_cache_replicas_are_derived.md`
+38. `adr/0004_global_active_active_conflicts.md`
+39. `adr/0005_go_and_wavesdb_engine.md`
+40. `adr/0006_pure_go_hnsw.md`
+41. `adr/0007_replicated_collections_consensus_tier.md`
+42. `adr/0008_raft_library_dragonboat.md`
 
 ## Implementation stance
 
