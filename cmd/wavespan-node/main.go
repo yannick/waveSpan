@@ -182,10 +182,11 @@ func run() error {
 	svc.SetHolderHooks(
 		func() membership.HolderSummaryWire {
 			s := cacheDir.OwnSummary()
-			return membership.HolderSummaryWire{MemberID: s.MemberID, Bloom: s.Bloom, GeneratedAtUnixMs: s.GeneratedAtUnixMs}
+			// ApproxKeys is the authoritative live-key count (the bloom/HLL are insert-only estimates).
+			return membership.HolderSummaryWire{MemberID: s.MemberID, Bloom: s.Bloom, HLL: s.HLL, ApproxKeys: uint64(rstore.LiveKeys()), Namespaces: s.Namespaces, GeneratedAtUnixMs: s.GeneratedAtUnixMs}
 		},
 		func(s membership.HolderSummaryWire) {
-			cacheDir.ApplyPeerSummary(cache.HolderSummaryWire{MemberID: s.MemberID, Bloom: s.Bloom, GeneratedAtUnixMs: s.GeneratedAtUnixMs})
+			cacheDir.ApplyPeerSummary(cache.HolderSummaryWire{MemberID: s.MemberID, Bloom: s.Bloom, HLL: s.HLL, ApproxKeys: s.ApproxKeys, Namespaces: s.Namespaces, GeneratedAtUnixMs: s.GeneratedAtUnixMs})
 		},
 	)
 	// Runtime tunable overrides ride gossip: each node advertises the override set it knows and
@@ -267,7 +268,14 @@ func run() error {
 	// M4 metrics: under-replication estimate (spot-churn alert signal) + repair queue depth.
 	underReplicated := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_under_replicated_keys_estimate", Help: "keys below target durable-holder count"})
 	repairQueueDepth := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_repair_queue_depth", Help: "pending repair items"})
-	metrics.Registry.MustRegister(underReplicated, repairQueueDepth)
+	// Key-count gauges: exact local live keys, the replica-weighted cluster sum (every alive member's
+	// live-key count gossiped via holder summaries), the HLL-union distinct-key estimate, and the
+	// gossiped namespace count.
+	localKeys := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_local_keys", Help: "live (non-tombstone) keys held by this node"})
+	clusterReplicas := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_cluster_replicas_estimate", Help: "sum of every alive member's live-key count (replica-weighted)"})
+	distinctKeys := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_cluster_distinct_keys_estimate", Help: "HLL-union estimate of distinct logical keys cluster-wide"})
+	namespaceCount := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_namespaces", Help: "namespaces held cluster-wide (gossiped union; emptied ones may linger)"})
+	metrics.Registry.MustRegister(underReplicated, repairQueueDepth, localKeys, clusterReplicas, distinctKeys, namespaceCount)
 	targetHolders := policy.TargetNearbyReplicas + 1
 
 	coord := kv.NewCoordinator(rstore, self, svc, svc.Graph(), replicator, policy, idem, holders, fanout, 2*time.Second)
@@ -646,6 +654,10 @@ func run() error {
 	svc.SetGossipObserver(gossipTap)
 	obsSvc := observability.NewObsService(gossipRing, svc, self, rstore).
 		WithUnderReplicated(func() uint64 { return uint64(holders.UnderReplicatedEstimate(targetHolders, isAlive)) }).
+		WithKeyStats(func() (uint64, uint64, uint64, []string) {
+			local := uint64(rstore.LiveKeys())
+			return local, local + cacheDir.PeerReplicaSum(isAlive), cacheDir.DistinctKeysEstimate(isAlive), cacheDir.Namespaces(isAlive)
+		}).                                                                     // cluster key counts + gossiped namespace list for the metrics/KV UI
 		WithGraph(graphStore).                                                  // enables the visual node explorer (GraphExplore / GraphSubgraph)
 		WithSampleDataset(!cfg.Features.DisableSampleDataset, newGraphVersion). // UI "load demo graph" action
 		WithClusterScan(replicator).                                            // cluster-wide Data Browser: fan InspectLocal out to all members
@@ -758,6 +770,11 @@ func run() error {
 			case <-t.C:
 				underReplicated.Set(float64(holders.UnderReplicatedEstimate(targetHolders, isAlive)))
 				repairQueueDepth.Set(float64(repair.QueueDepth()))
+				local := rstore.LiveKeys()
+				localKeys.Set(float64(local))
+				clusterReplicas.Set(float64(uint64(local) + cacheDir.PeerReplicaSum(isAlive)))
+				distinctKeys.Set(float64(cacheDir.DistinctKeysEstimate(isAlive)))
+				namespaceCount.Set(float64(len(cacheDir.Namespaces(isAlive))))
 			}
 		}
 	}()

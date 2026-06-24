@@ -20,10 +20,15 @@ type GossipObserver interface {
 }
 
 // HolderSummaryWire is a gossiped compact holder advertisement (design/04 "Holder summaries"):
-// a bloom filter over the keys a member holds. The cache directory provides/consumes these.
+// a bloom filter over the keys a member holds, an HLL sketch for distinct-cardinality estimation,
+// the member's exact live-key count, and the namespaces it holds keys in. The cache directory
+// provides/consumes these.
 type HolderSummaryWire struct {
 	MemberID          string
 	Bloom             []byte
+	HLL               []byte
+	ApproxKeys        uint64
+	Namespaces        []string
 	GeneratedAtUnixMs int64
 }
 
@@ -127,7 +132,7 @@ func (g *Gossip) SetObserver(o GossipObserver) { g.observer = o }
 func (g *Gossip) consumeSummaries(dir wavespanv1.GossipDirection, ss []HolderSummaryWire) {
 	for _, s := range ss {
 		if g.observer != nil {
-			g.observer.HolderSummary(s.MemberID, dir, uint64(s.GeneratedAtUnixMs), 0, uint32(len(s.Bloom)))
+			g.observer.HolderSummary(s.MemberID, dir, uint64(s.GeneratedAtUnixMs), s.ApproxKeys, uint32(len(s.Bloom)+len(s.HLL)))
 		}
 		if g.consumeSummary != nil {
 			g.consumeSummary(s)

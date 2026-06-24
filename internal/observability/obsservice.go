@@ -40,6 +40,10 @@ type ObsService struct {
 	self            membership.Member
 	rstore          *recordstore.Store
 	underReplicated func() uint64
+	// keyStats supplies the cluster key-count summary for the cluster view: this node's live-key
+	// count, the replica-weighted cluster sum, the distinct-key (HLL-union) estimate, and the
+	// gossiped namespace union. nil omits these from the response.
+	keyStats func() (local, replicas, distinct uint64, namespaces []string)
 
 	// InspectGlobal support (M13.B); nil disables cross-cluster resolution.
 	globalInspector GlobalInspector
@@ -86,6 +90,12 @@ func NewObsService(ring *GossipRing, cluster ClusterSource, self membership.Memb
 // WithUnderReplicated supplies the under-replication estimate for the cluster view.
 func (s *ObsService) WithUnderReplicated(fn func() uint64) *ObsService {
 	s.underReplicated = fn
+	return s
+}
+
+// WithKeyStats supplies the cluster key-count + namespace summary for the cluster view.
+func (s *ObsService) WithKeyStats(fn func() (local, replicas, distinct uint64, namespaces []string)) *ObsService {
+	s.keyStats = fn
 	return s
 }
 
@@ -157,6 +167,13 @@ func (s *ObsService) GetClusterView(_ context.Context, _ *connect.Request[wavesp
 	}
 	if s.underReplicated != nil {
 		resp.UnderReplicatedEstimate = s.underReplicated()
+	}
+	if s.keyStats != nil {
+		local, replicas, distinct, namespaces := s.keyStats()
+		resp.LocalKeys = local
+		resp.ClusterReplicasEstimate = replicas
+		resp.DistinctKeysEstimate = distinct
+		resp.Namespaces = namespaces
 	}
 	return connect.NewResponse(resp), nil
 }

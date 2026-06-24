@@ -6,6 +6,7 @@ import { type InspectKey, Keyspace } from "../gen/wavespan/v1/observability_pb";
 import {
   Badge,
   Button,
+  Chip,
   Checkbox,
   EmptyState,
   InlineMessage,
@@ -55,6 +56,9 @@ export function DataBrowser() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Gossiped cluster-wide namespace list (emptied ones may linger), with a per-namespace delete.
+  const [namespaces, setNamespaces] = useState<string[]>([]);
+  const [nsBusy, setNsBusy] = useState<string | null>(null);
 
   // Live clock so TTL countdowns tick and expired rows drop without re-querying.
   const [now, setNow] = useState(() => Date.now());
@@ -63,7 +67,7 @@ export function DataBrowser() {
     return () => clearInterval(id);
   }, []);
 
-  const run = async () => {
+  const run = async (ns: string = namespace) => {
     setKeys([]);
     setWarnings([]);
     setCompleteness(null);
@@ -72,10 +76,10 @@ export function DataBrowser() {
     const collected: InspectKey[] = [];
     const stream =
       scope === "global"
-        ? obs.inspectGlobal({ keyspace: Keyspace.KV, namespace, key: new TextEncoder().encode(query), includeValue })
+        ? obs.inspectGlobal({ keyspace: Keyspace.KV, namespace: ns, key: new TextEncoder().encode(query), includeValue })
         : obs.inspectLocal({
             keyspace: Keyspace.KV,
-            namespace,
+            namespace: ns,
             prefix: new TextEncoder().encode(query),
             includeValue,
             clusterWide: scope === "cluster",
@@ -95,6 +99,38 @@ export function DataBrowser() {
     if (searched) void run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const loadNamespaces = async () => {
+    try {
+      const view = await obs.getClusterView({});
+      setNamespaces(view.namespaces);
+    } catch {
+      // best-effort: leave the existing list in place on a transient error
+    }
+  };
+  useEffect(() => {
+    void loadNamespaces();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onDeleteNamespace = async (ns: string) => {
+    const label = ns === "" ? "(default / empty)" : ns;
+    if (!window.confirm(`Delete ALL keys in namespace "${label}"?\n\nThis tombstones every key in the namespace across the whole cluster and cannot be undone. The namespace name may still appear until gossiped holder summaries age out.`)) {
+      return;
+    }
+    setActionError(null);
+    setNsBusy(ns);
+    try {
+      const res = await obs.deleteNamespace({ namespace: ns });
+      if (!res.ok) setActionError(res.error || "namespace delete failed");
+      await loadNamespaces();
+      if (searched && ns === namespace) await run();
+    } catch (e) {
+      setActionError(String(e));
+    } finally {
+      setNsBusy(null);
+    }
+  };
 
   const onDelete = async (k: InspectKey) => {
     setActionError(null);
@@ -150,10 +186,37 @@ export function DataBrowser() {
           onChange={(e) => setHideExpired(e.target.checked)}
           label="hide expired"
         />
-        <Button variant="primary" onClick={run}>
+        <Button variant="primary" onClick={() => void run()}>
           Search
         </Button>
       </Toolbar>
+
+      {namespaces.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--ws-space-xs)", flexWrap: "wrap", marginBottom: "var(--ws-space-md)" }}>
+          <span className="ws-caption ws-muted">namespaces ({namespaces.length}):</span>
+          {namespaces.map((ns) => (
+            <span key={ns} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+              <Chip
+                onClick={() => {
+                  setNamespace(ns);
+                  void run(ns);
+                }}
+                title={`browse ${ns === "" ? "(default)" : ns}`}
+              >
+                {ns === "" ? "(default)" : ns}
+              </Chip>
+              <Button
+                variant="danger"
+                onClick={() => void onDeleteNamespace(ns)}
+                disabled={nsBusy !== null}
+                title={`delete all keys in ${ns === "" ? "(default)" : ns}`}
+              >
+                {nsBusy === ns ? "…" : "✕"}
+              </Button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {(scope !== "node" && completeness !== null) || hiddenCount > 0 ? (
         <div style={{ display: "flex", alignItems: "center", gap: "var(--ws-space-sm)", marginBottom: "var(--ws-space-md)", flexWrap: "wrap" }}>

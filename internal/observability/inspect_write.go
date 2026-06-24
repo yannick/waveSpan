@@ -71,6 +71,44 @@ func (s *ObsService) AdminDelete(ctx context.Context, req *connect.Request[waves
 	}), nil
 }
 
+// DeleteNamespace tombstones every live key in a namespace cluster-wide. It enumerates the namespace
+// the same way the Data Browser does (a cluster-wide fan-out scan, merged by key) and issues a
+// coordinated Delete for each live key via this node as coordinator, so the tombstones replicate.
+// It is best-effort: a key whose delete fails is skipped and not counted. The namespace may still
+// appear in the gossiped list until holder summaries age out (an emptied namespace is acceptable).
+func (s *ObsService) DeleteNamespace(ctx context.Context, req *connect.Request[wavespanv1.DeleteNamespaceRequest]) (*connect.Response[wavespanv1.DeleteNamespaceResponse], error) {
+	ns := req.Msg.GetNamespace()
+	if ns == "" {
+		return connect.NewResponse(&wavespanv1.DeleteNamespaceResponse{Error: "namespace is required"}), nil
+	}
+	if s.kvDeleter == nil {
+		return connect.NewResponse(&wavespanv1.DeleteNamespaceResponse{Error: "admin delete not enabled on this node"}), nil
+	}
+	target, ok := s.resolveTarget("")
+	if !ok {
+		return connect.NewResponse(&wavespanv1.DeleteNamespaceResponse{Error: "no coordinator available"}), nil
+	}
+
+	// Enumerate every key in the namespace across the cluster (values not revealed — we only need keys).
+	keys, err := s.collectInspectKeys(ctx, &wavespanv1.InspectLocalRequest{Namespace: ns, ClusterWide: true}, ns, nil, nil, false)
+	if err != nil {
+		return connect.NewResponse(&wavespanv1.DeleteNamespaceResponse{Error: err.Error()}), nil
+	}
+
+	var deleted uint64
+	for _, ik := range keys {
+		if ik.GetTombstone() {
+			continue // already dead
+		}
+		del := &wavespanv1.DeleteRequest{Namespace: ns, Key: ik.GetLogicalKey(), RequireOriginPlusOne: true}
+		if _, derr := s.kvDeleter(ctx, target, del); derr != nil {
+			continue // best-effort: skip keys that fail to delete
+		}
+		deleted++
+	}
+	return connect.NewResponse(&wavespanv1.DeleteNamespaceResponse{Ok: true, DeletedKeys: deleted}), nil
+}
+
 // resolveTarget maps a requested member id to a member: empty or self resolves to this node;
 // otherwise it must be a current cluster member.
 func (s *ObsService) resolveTarget(id string) (membership.Member, bool) {

@@ -85,7 +85,7 @@ func summariesToProto(ss []HolderSummaryWire) []*wavespanv1.HolderSummary {
 	}
 	out := make([]*wavespanv1.HolderSummary, 0, len(ss))
 	for _, s := range ss {
-		out = append(out, &wavespanv1.HolderSummary{MemberId: s.MemberID, BloomFilter: s.Bloom, GeneratedAtUnixMs: s.GeneratedAtUnixMs})
+		out = append(out, &wavespanv1.HolderSummary{MemberId: s.MemberID, BloomFilter: s.Bloom, HllSketch: s.HLL, ApproximateKeyCount: s.ApproxKeys, Namespaces: s.Namespaces, GeneratedAtUnixMs: s.GeneratedAtUnixMs})
 	}
 	return out
 }
@@ -96,7 +96,7 @@ func summariesFromProto(ps []*wavespanv1.HolderSummary) []HolderSummaryWire {
 	}
 	out := make([]HolderSummaryWire, 0, len(ps))
 	for _, p := range ps {
-		out = append(out, HolderSummaryWire{MemberID: p.GetMemberId(), Bloom: p.GetBloomFilter(), GeneratedAtUnixMs: p.GetGeneratedAtUnixMs()})
+		out = append(out, HolderSummaryWire{MemberID: p.GetMemberId(), Bloom: p.GetBloomFilter(), HLL: p.GetHllSketch(), ApproxKeys: p.GetApproximateKeyCount(), Namespaces: p.GetNamespaces(), GeneratedAtUnixMs: p.GetGeneratedAtUnixMs()})
 	}
 	return out
 }

@@ -25,17 +25,32 @@ type Store struct {
 	// ReadCommitted commits (which run concurrently), two writes to the same key still produce a
 	// correct LWW pointer while writes to different keys proceed in parallel.
 	stripes [numStripes]sync.Mutex
-	// latestVer caches the current winning version per key (guarded by the key's stripe). The common
-	// monotonic write (incoming version > the cached winner) then skips the read-modify-write storage
-	// Get + pointer decode entirely. Capped per stripe; on overflow a stripe's cache is cleared (a
-	// miss simply falls back to the storage read, so correctness is unaffected).
-	latestVer [numStripes]map[string]version.Version
+	// latestVer caches the current winning version (and its tombstone bit) per key (guarded by the
+	// key's stripe). The common monotonic write (incoming version > the cached winner) then skips the
+	// read-modify-write storage Get + pointer decode entirely. Capped per stripe; on overflow a
+	// stripe's cache is cleared (a miss simply falls back to the storage read, so correctness — and
+	// the live-key count below — stay intact, since the slow path re-reads the prior pointer).
+	latestVer [numStripes]map[string]latestEntry
+
+	// liveKeys is the number of distinct keys with a live (non-tombstone) winning pointer in this
+	// node's local store. It is maintained exactly in Apply from the prior→new winner liveness
+	// transition, so it stays O(1) per write and never scans. Caveat: physical TTL reclaim drops an
+	// expired key's bytes without an Apply, so a key counts as live until the lazy TTL sweeper
+	// tombstones it (a coordinated Delete, which does route through Apply).
+	liveKeys atomic.Int64
 
 	// applyObserver, if set, fires after every durable Apply (origin, replica, anti-entropy,
 	// bootstrap, and cross-cluster all route through Apply). `won` reports whether the applied record
 	// is the LWW winner for its key, so a derived index (e.g. the vector ANN) can mirror the winner
 	// and ignore losing/older writes.
 	applyObserver func(rec *wavespanv1.StoredRecord, won bool)
+}
+
+// latestEntry is the per-key cached winner: its version and whether that winner is a tombstone. The
+// tombstone bit lets Apply's fast path compute the live-key delta without re-reading storage.
+type latestEntry struct {
+	ver       version.Version
+	tombstone bool
 }
 
 // SetApplyObserver installs a post-apply hook (nil clears it). It is the single integration point for
@@ -53,10 +68,13 @@ const (
 func NewStore(local storage.LocalStore, clusterID, memberID string, clock *version.Clock, seq *version.Sequencer) *Store {
 	s := &Store{local: local, clock: clock, seq: seq, clusterID: clusterID, memberID: memberID}
 	for i := range s.latestVer {
-		s.latestVer[i] = make(map[string]version.Version)
+		s.latestVer[i] = make(map[string]latestEntry)
 	}
 	return s
 }
+
+// LiveKeys returns this node's current count of distinct keys with a live (non-tombstone) winner.
+func (s *Store) LiveKeys() int64 { return s.liveKeys.Load() }
 
 // stripeIdx hashes a namespace/key to its stripe (FNV-1a).
 func stripeIdx(ns string, key []byte) uint32 {
@@ -129,10 +147,17 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 		e := rec.GetExpiresAtUnixMs()
 		winnerExpiry = &e
 	}
+	// priorKnown/priorTombstone capture the winner's liveness BEFORE this Apply, so the live-key
+	// count can be adjusted by the transition once the write commits.
+	var priorKnown, priorTombstone bool
 	// Fast path: if the cached winner is older than the incoming version (the monotonic common case),
-	// the incoming record wins outright — skip the storage read + pointer decode. Otherwise read the
-	// authoritative pointer to pick the winner and carry its tombstone/expiry.
-	if cached, ok := s.latestVer[si][ckey]; !ok || recVer.Compare(cached) <= 0 {
+	// the incoming record wins outright — skip the storage read + pointer decode; the cached entry is
+	// the prior winner. Otherwise read the authoritative pointer to pick the winner and carry its
+	// tombstone/expiry (and the prior liveness).
+	if cached, ok := s.latestVer[si][ckey]; ok && recVer.Compare(cached.ver) > 0 {
+		priorKnown = true
+		priorTombstone = cached.tombstone
+	} else {
 		if cur, found, err := s.local.Get(storage.CFKVMeta, latestKey(ns, key)); err != nil {
 			return version.Version{}, err
 		} else if found {
@@ -140,6 +165,8 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 			if err != nil {
 				return version.Version{}, err
 			}
+			priorKnown = true
+			priorTombstone = lp.GetTombstone()
 			curWin := version.FromProto(lp.GetWinner())
 			if curWin.Compare(recVer) >= 0 {
 				winner = curWin
@@ -220,11 +247,21 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 	if err != nil {
 		return version.Version{}, err
 	}
-	// Record the new winner so subsequent monotonic writes to this key skip the storage read.
+	// Adjust the live-key count by the winner's liveness transition (a brand-new key has no prior).
+	beforeLive := priorKnown && !priorTombstone
+	afterLive := !winnerTombstone
+	if afterLive && !beforeLive {
+		s.liveKeys.Add(1)
+	} else if beforeLive && !afterLive {
+		s.liveKeys.Add(-1)
+	}
+	// Record the new winner (and its tombstone bit) so subsequent monotonic writes to this key skip
+	// the storage read and still compute the transition correctly.
+	entry := latestEntry{ver: winner, tombstone: winnerTombstone}
 	if m := s.latestVer[si]; len(m) < maxVerCachePer {
-		m[ckey] = winner
+		m[ckey] = entry
 	} else {
-		s.latestVer[si] = map[string]version.Version{ckey: winner} // bounded reset
+		s.latestVer[si] = map[string]latestEntry{ckey: entry} // bounded reset
 	}
 	if s.applyObserver != nil {
 		s.applyObserver(rec, winner.Compare(recVer) == 0)

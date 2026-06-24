@@ -34,6 +34,18 @@ function fmtRate(perSec: number | undefined): string {
   return perSec >= 100 || perSec === 0 ? Math.round(perSec).toString() : perSec.toFixed(1);
 }
 
+/** Write:read ratio (writes per read) from the per-second rates. */
+function fmtRatio(writes: number | undefined, reads: number | undefined): string {
+  if (writes === undefined || reads === undefined) return "…";
+  if (reads === 0) return writes === 0 ? "—" : "∞";
+  return `${(writes / reads).toFixed(2)}×`;
+}
+
+/** A possibly-null bigint count as a grouped string, or "…" while loading. */
+function fmtCount(n: bigint | null): string {
+  return n === null ? "…" : Number(n).toLocaleString();
+}
+
 /** Bytes/sec to a human-readable bandwidth string. */
 function fmtBandwidth(bytesPerSec: number | undefined): string {
   if (bytesPerSec === undefined) return "…";
@@ -78,6 +90,10 @@ function ago(ms: number): string {
 export function MetricsSummary() {
   const [underReplicated, setUnderReplicated] = useState<bigint | null>(null);
   const [members, setMembers] = useState<number | null>(null);
+  const [localKeys, setLocalKeys] = useState<bigint | null>(null);
+  const [clusterReplicas, setClusterReplicas] = useState<bigint | null>(null);
+  const [distinctKeys, setDistinctKeys] = useState<bigint | null>(null);
+  const [namespaces, setNamespaces] = useState<string[]>([]);
   const [families, setFamilies] = useState<MetricFamily[]>([]);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [error, setError] = useState("");
@@ -105,6 +121,10 @@ export function MetricsSummary() {
         if (view) {
           setMembers(view.members.length);
           setUnderReplicated(view.underReplicatedEstimate);
+          setLocalKeys(view.localKeys);
+          setClusterReplicas(view.clusterReplicasEstimate);
+          setDistinctKeys(view.distinctKeysEstimate);
+          setNamespaces(view.namespaces);
         }
         const fams = parsePrometheus(metricsText).filter((f) => f.samples.length > 0);
         setFamilies(fams);
@@ -194,6 +214,15 @@ export function MetricsSummary() {
         <StatCard label="TPS" value={fmtRate(rates?.txns)} hint="durable commits / sec" accent={color.olive} chart={<Sparkline data={historyRef.current.txns ?? []} stroke={color.olive} />} />
         <StatCard label="Bandwidth" value={fmtBandwidth(rates?.bytes)} hint="rx + tx, all listeners" accent={color.mustard} chart={<Sparkline data={historyRef.current.bytes ?? []} stroke={color.mustard} />} />
         <StatCard label="New conns/s" value={fmtRate(rates?.conns)} hint="accepted connections / sec" accent={color.purple} chart={<Sparkline data={historyRef.current.conns ?? []} stroke={color.purple} />} />
+        <StatCard label="Write : Read" value={fmtRatio(rates?.writes, rates?.reads)} hint="writes per read" accent={color.red} />
+      </div>
+
+      <h3 className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>Keys</h3>
+      <div style={{ display: "flex", gap: "var(--ws-space-lg)", flexWrap: "wrap", marginBottom: "var(--ws-space-xl)" }}>
+        <StatCard label="Keys (this node)" value={fmtCount(localKeys)} hint="live keys stored locally" accent={color.teal} />
+        <StatCard label="Distinct keys (cluster)" value={fmtCount(distinctKeys)} hint="unique logical keys · HLL estimate" accent={color.blue} />
+        <StatCard label="Stored replicas (cluster)" value={fmtCount(clusterReplicas)} hint="sum of every node's keys" accent={color.orange} />
+        <StatCard label="Inserts/s" value={fmtRate(rates?.writes)} hint="Put · Delete · Store / sec" accent={color.olive} chart={<Sparkline data={historyRef.current.writes ?? []} stroke={color.olive} />} />
       </div>
 
       <h3 className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>Cluster</h3>
@@ -209,6 +238,12 @@ export function MetricsSummary() {
           value={underReplicated === null ? "…" : String(underReplicated)}
           hint="estimate · target-N not yet met"
           accent={underRepCount && underRepCount > 0 ? color.mustard : color.olive}
+        />
+        <StatCard
+          label="Namespaces"
+          value={String(namespaces.length)}
+          hint="gossiped cluster-wide"
+          accent={color.purple}
         />
         <StatCard
           label="Metric series"
