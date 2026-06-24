@@ -143,3 +143,38 @@ func TestApplyGossipSelfRefutation(t *testing.T) {
 		t.Fatalf("self refutation must out-incarnate the suspicion: %d", selfAfter.Incarnation)
 	}
 }
+
+// TestMembersSnapshotCachedAndImmutable verifies Members()/Live() return a cached snapshot that is
+// reused between mutations and never mutated in place (a previously-returned slice stays valid).
+func TestMembersSnapshotCachedAndImmutable(t *testing.T) {
+	now := time.Now()
+	r := NewRoster(mem("self"), testCfg())
+	r.Upsert(mem("a"), now)
+
+	s1 := r.Members()
+	if len(s1) != 2 {
+		t.Fatalf("Members = %d, want 2 (self+a)", len(s1))
+	}
+	if &r.Members()[0] != &s1[0] {
+		t.Fatal("Members() reallocated the snapshot without a mutation")
+	}
+
+	r.Upsert(mem("b"), now) // mutation: must not touch the already-returned s1
+	if len(s1) != 2 {
+		t.Fatalf("previously-returned snapshot changed to len %d", len(s1))
+	}
+	if got := r.Members(); len(got) != 3 {
+		t.Fatalf("Members after upsert = %d, want 3", len(got))
+	}
+
+	if got := r.Live(); len(got) != 3 {
+		t.Fatalf("Live = %d, want 3 alive", len(got))
+	}
+	r.Suspect("a", now)
+	if got := r.Live(); len(got) != 2 {
+		t.Fatalf("Live after suspecting a = %d, want 2", len(got))
+	}
+	if got := r.Members(); len(got) != 3 {
+		t.Fatalf("Members after suspecting a = %d, want 3 (suspect still listed)", len(got))
+	}
+}

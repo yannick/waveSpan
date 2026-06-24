@@ -33,6 +33,13 @@ type Roster struct {
 	members  map[string]*memberState
 	cfg      LivenessConfig
 	observer func(memberID string, newState State) // optional liveness-transition observer (M13)
+
+	// Cached, sorted snapshots returned by Members()/Live(). Rebuilt under the write lock on every
+	// mutation, so the hot read path (per-request placement/fanout/fetch) returns a shared immutable
+	// slice with no per-call allocation or sort. Each rebuild creates fresh slices, so references
+	// handed to callers stay valid after a later mutation.
+	membersSnap []MemberView
+	liveSnap    []MemberView
 }
 
 // SetStateObserver installs a callback invoked on every liveness transition (for the observability
@@ -47,7 +54,29 @@ func (r *Roster) SetStateObserver(fn func(memberID string, newState State)) {
 func NewRoster(self Member, cfg LivenessConfig) *Roster {
 	r := &Roster{selfID: self.MemberID, members: map[string]*memberState{}, cfg: cfg}
 	r.members[self.MemberID] = &memberState{member: self, state: StateAlive}
+	r.rebuildSnapshots()
 	return r
+}
+
+// rebuildSnapshots recomputes the cached Members()/Live() slices. The caller must hold r.mu (write
+// lock). Fresh slices are allocated each time so previously-returned snapshots remain immutable.
+func (r *Roster) rebuildSnapshots() {
+	members := make([]MemberView, 0, len(r.members))
+	live := make([]MemberView, 0, len(r.members))
+	for _, ms := range r.members {
+		if ms.state == StateForgotten {
+			continue
+		}
+		v := view(ms)
+		members = append(members, v)
+		if ms.state == StateAlive {
+			live = append(live, v)
+		}
+	}
+	sort.Slice(members, func(i, j int) bool { return members[i].Member.MemberID < members[j].Member.MemberID })
+	sort.Slice(live, func(i, j int) bool { return live[i].Member.MemberID < live[j].Member.MemberID })
+	r.membersSnap = members
+	r.liveSnap = live
 }
 
 // Self returns the local member.
@@ -62,6 +91,7 @@ func (r *Roster) Self() Member {
 func (r *Roster) Upsert(m Member, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.rebuildSnapshots()
 	ms, ok := r.members[m.MemberID]
 	if !ok {
 		r.members[m.MemberID] = &memberState{member: m, state: StateAlive, lastSeenMs: unixMs(now), stateSince: unixMs(now)}
@@ -75,6 +105,7 @@ func (r *Roster) Upsert(m Member, now time.Time) {
 func (r *Roster) ObserveAck(id string, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.rebuildSnapshots()
 	ms, ok := r.members[id]
 	if !ok {
 		return
@@ -90,6 +121,7 @@ func (r *Roster) ObserveAck(id string, now time.Time) {
 func (r *Roster) Suspect(id string, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.rebuildSnapshots()
 	ms, ok := r.members[id]
 	if !ok || id == r.selfID {
 		return
@@ -104,6 +136,7 @@ func (r *Roster) Suspect(id string, now time.Time) {
 func (r *Roster) ApplyGossip(u MemberView, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.rebuildSnapshots()
 
 	if u.Member.MemberID == r.selfID {
 		// refute any non-alive claim about ourselves
@@ -139,6 +172,7 @@ func (r *Roster) ApplyGossip(u MemberView, now time.Time) {
 func (r *Roster) Tick(now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.rebuildSnapshots()
 	nowMs := unixMs(now)
 	for id, ms := range r.members {
 		if id == r.selfID {
@@ -166,38 +200,25 @@ func (r *Roster) Tick(now time.Time) {
 func (r *Roster) MarkRepairComplete(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.rebuildSnapshots()
 	if ms, ok := r.members[id]; ok {
 		ms.repairDone = true
 	}
 }
 
-// Members returns all members except those forgotten, sorted by memberId.
+// Members returns all members except those forgotten, sorted by memberId. The returned slice is a
+// shared immutable snapshot (rebuilt only on roster mutation) — callers must not mutate it.
 func (r *Roster) Members() []MemberView {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]MemberView, 0, len(r.members))
-	for _, ms := range r.members {
-		if ms.state == StateForgotten {
-			continue
-		}
-		out = append(out, view(ms))
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Member.MemberID < out[j].Member.MemberID })
-	return out
+	return r.membersSnap
 }
 
-// Live returns members currently ALIVE, sorted by memberId.
+// Live returns members currently ALIVE, sorted by memberId. Shared immutable snapshot (see Members).
 func (r *Roster) Live() []MemberView {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]MemberView, 0, len(r.members))
-	for _, ms := range r.members {
-		if ms.state == StateAlive {
-			out = append(out, view(ms))
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Member.MemberID < out[j].Member.MemberID })
-	return out
+	return r.liveSnap
 }
 
 // Get returns a member's view by id.
