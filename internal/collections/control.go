@@ -22,14 +22,16 @@ const (
 // plane foundation — a single data range; range split/merge, learner demand-fill, and a multi-node
 // placement driver are later milestones.
 type Control struct {
-	mgr  *Manager
-	dir  *RangeDirectory
-	cols *Collections
+	mgr     *Manager
+	dir     *RangeDirectory // range-routed directory (single-shard / split-merge mode); nil in hash mode
+	hashDir *HashDirectory  // hash-routed directory (D1 static pre-split, N>1); nil in range mode
+	cols    *Collections
 }
 
-// Bootstrap starts the meta shard and the initial data shard on this node, ensures the directory has
-// a full initial range, and returns a ready Control. metaMembers and dataMembers map ReplicaID ->
-// RaftAddress for each group (identical sets when single-node).
+// Bootstrap starts the meta shard and a single full-range data shard on this node (range-routed; the
+// layout that supports operator split/merge), ensures the directory has a full initial range, and
+// returns a ready Control. metaMembers and dataMembers map ReplicaID -> RaftAddress (identical sets
+// when single-node). For static hash pre-split into N data shards (D1), use BootstrapN.
 func Bootstrap(ctx context.Context, mgr *Manager, replicaID uint64, metaMembers, dataMembers map[uint64]string) (*Control, error) {
 	// Start both replicas first — these are fast and recover their persisted state on restart; they do
 	// not require a leader/quorum to be present yet.
@@ -66,6 +68,30 @@ func Bootstrap(ctx context.Context, mgr *Manager, replicaID uint64, metaMembers,
 	return ctrl, nil
 }
 
+// BootstrapN starts the meta shard and N hash-routed data shards (ids firstDataShard..firstDataShard+N-1)
+// on this node, all over the same voter set, and returns a ready Control whose Directory is a
+// HashDirectory (D1, design/32 §3.4): writes/reads spread across N independent Raft groups (N leaders,
+// N apply loops) routed by hash((ns,coll)). N<=1 falls back to the range-routed single-shard Bootstrap
+// (so operator split/merge stays available); N>1 is static pre-split with no automatic split. The
+// mapping depends only on N, so every node — including spot learners built with the same N — agrees on
+// routing without meta-shard ranges (the meta shard stays up for membership/control but is not consulted
+// for data routing).
+func BootstrapN(ctx context.Context, mgr *Manager, replicaID, dataShards uint64, metaMembers, dataMembers map[uint64]string) (*Control, error) {
+	if dataShards <= 1 {
+		return Bootstrap(ctx, mgr, replicaID, metaMembers, dataMembers)
+	}
+	if err := mgr.StartMetaShard(MetaShardID, replicaID, metaMembers, false); err != nil {
+		return nil, err
+	}
+	for i := uint64(0); i < dataShards; i++ {
+		if err := mgr.StartShard(firstDataShard+i, replicaID, dataMembers, false); err != nil {
+			return nil, err
+		}
+	}
+	dir := NewHashDirectory(dataShards)
+	return &Control{mgr: mgr, hashDir: dir, cols: New(mgr, dir)}, nil
+}
+
 // Placement describes a node's role in the consensus tier (design/30 §4, §7). Voter-eligible nodes are
 // the stable core — e.g. annotated in Kubernetes — that hold voting replicas of the meta and data
 // shards; non-eligible (spot/edge) nodes hold no replicas until they demand-fill a collection as a
@@ -75,16 +101,21 @@ type Placement struct {
 	SelfReplicaID uint64
 	VoterEligible bool
 	Voters        map[uint64]string
+	// DataShards is the static number of hash-routed data shards to pre-split into (D1). 0 or 1 keeps the
+	// single full-range data shard (range-routed, split/merge-capable); >1 pre-splits into N parallel
+	// Raft groups. Must be identical on every node so routing agrees.
+	DataShards uint64
 }
 
-// BootstrapWithPlacement brings up the tier per p: a voter-eligible node bootstraps the meta + initial
-// data shard with the stable-core voter set; a non-eligible node holds no replicas and returns
-// (nil, nil) — it serves collections by demand-filling them as a learner on read (design/30 §9).
+// BootstrapWithPlacement brings up the tier per p: a voter-eligible node bootstraps the meta shard and
+// the data shard(s) (one full-range shard, or N hash-routed shards when p.DataShards>1) with the
+// stable-core voter set; a non-eligible node holds no replicas and returns (nil, nil) — it serves
+// collections by demand-filling them as a learner on read (design/30 §9).
 func BootstrapWithPlacement(ctx context.Context, mgr *Manager, p Placement) (*Control, error) {
 	if !p.VoterEligible {
 		return nil, nil
 	}
-	return Bootstrap(ctx, mgr, p.SelfReplicaID, p.Voters, p.Voters)
+	return BootstrapN(ctx, mgr, p.SelfReplicaID, p.DataShards, p.Voters, p.Voters)
 }
 
 // SpotReplicaID derives a stable, high, per-node replica id from a node identity (e.g. its member id),
@@ -157,6 +188,9 @@ func (c *Control) Collections() *Collections { return c.cols }
 // v1 assumes the splitting subrange is quiescent during the migration (no concurrent writes to it);
 // a freeze/cutover is a follow-up (design/30 §6.2).
 func (c *Control) Split(ctx context.Context, splitKey []byte, replicaID uint64, newMembers map[uint64]string) (uint64, error) {
+	if c.dir == nil {
+		return 0, errors.New("collections: Split not supported in hash-routed (pre-split) mode")
+	}
 	if len(splitKey) == 0 {
 		return 0, errors.New("collections: empty split key")
 	}
@@ -222,6 +256,9 @@ func (c *Control) Split(ctx context.Context, splitKey []byte, replicaID uint64, 
 // (design/30 §6.2). Mirror of Split; same quiescent-subrange assumption for v1. The emptied shard is
 // left running but unreferenced — clean replica teardown is a follow-up.
 func (c *Control) Merge(ctx context.Context, boundary []byte) error {
+	if c.dir == nil {
+		return errors.New("collections: Merge not supported in hash-routed (pre-split) mode")
+	}
 	if len(boundary) == 0 {
 		return errors.New("collections: empty merge boundary")
 	}

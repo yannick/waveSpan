@@ -50,7 +50,12 @@ func (c *Collections) WithForwarder(f Forwarder) *Collections {
 // instead of issuing a (blocking) local propose that would just fail; if we believe we're the leader
 // but lose it mid-propose, we fall back to forwarding (design/30 §13.13).
 func (c *Collections) proposeCmd(ctx context.Context, cmd command) (uint64, []byte, error) {
-	enc := encodeCommand(cmd)
+	// Encode into a pooled buffer (A1): Propose/Forward copy the bytes before returning, so the scratch
+	// is reused for the next op — cutting a per-op allocation off the hot, GC-bound consensus path. The
+	// release is deferred so enc stays valid across the frozenMark retry loop in proposeCore.
+	eb := encodeCommandPooled(cmd)
+	defer eb.release()
+	enc := eb.bytes()
 	if c.forwarder == nil {
 		return c.proposeCore(ctx, cmd.NS, cmd.Coll, enc)
 	}

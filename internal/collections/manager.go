@@ -25,6 +25,7 @@ type Manager struct {
 	mu     sync.Mutex
 	shards map[uint64]shardReg // shardID -> registration
 
+	prop       *proposer // QW2: batching/pipelining write driver for data shards
 	tun        Tunables
 	sweepEvery time.Duration
 	stopCh     chan struct{}
@@ -55,6 +56,8 @@ type Tunables struct {
 	SnapshotEntries    uint64        // entries between snapshots (smaller = faster catch-up, more I/O)
 	CompactionOverhead uint64        // log entries retained after a snapshot
 	SweepEvery         time.Duration // TTL sweep interval on shard leaders
+	CoalesceWindow     time.Duration // QW2: window the proposer coalesces concurrent data-shard writes over
+	CoalesceMaxOps     int           // QW2: max single ops coalesced into one Raft entry
 }
 
 // DefaultTunables returns the built-in consensus defaults.
@@ -62,6 +65,7 @@ func DefaultTunables() Tunables {
 	return Tunables{
 		RTTMillisecond: 50, ElectionRTT: 10, HeartbeatRTT: 1,
 		SnapshotEntries: 1000, CompactionOverhead: 500, SweepEvery: 500 * time.Millisecond,
+		CoalesceWindow: defaultCoalesceWindow, CoalesceMaxOps: defaultCoalesceMaxOps,
 	}
 }
 
@@ -84,6 +88,12 @@ func (t Tunables) withDefaults() Tunables {
 	}
 	if t.SweepEvery == 0 {
 		t.SweepEvery = d.SweepEvery
+	}
+	if t.CoalesceWindow == 0 {
+		t.CoalesceWindow = d.CoalesceWindow
+	}
+	if t.CoalesceMaxOps == 0 {
+		t.CoalesceMaxOps = d.CoalesceMaxOps
 	}
 	return t
 }
@@ -115,8 +125,17 @@ func NewManagerWithOptions(nodeHostDir, raftAddr string, store storage.LocalStor
 		sweepEvery: tun.SweepEvery,
 		stopCh:     make(chan struct{}), doneCh: make(chan struct{}),
 	}
+	m.prop = newProposer(rawProposeShard{m}, tun.CoalesceWindow, tun.CoalesceMaxOps)
 	go m.sweepLoop()
 	return m, nil
+}
+
+// rawProposeShard adapts the Manager's un-batched SyncPropose to the proposer's asyncShard surface,
+// breaking the recursion (Manager.Propose -> proposer -> rawPropose).
+type rawProposeShard struct{ m *Manager }
+
+func (r rawProposeShard) Propose(ctx context.Context, shardID uint64, cmd []byte) (ProposeResult, error) {
+	return r.m.proposeRaw(ctx, shardID, cmd)
 }
 
 // Tunables returns the consensus knobs this Manager is running with.
@@ -184,8 +203,33 @@ func (m *Manager) StartMetaShard(shardID, replicaID uint64, initialMembers map[u
 	return m.startReplica(shardID, replicaID, initialMembers, join, factory, false, false)
 }
 
-// Propose commits an encoded command through the shard leader and returns the apply result.
+// Propose commits an encoded command through the shard leader and returns the apply result. Data-shard
+// writes are driven through the batching/pipelining proposer (QW2) so concurrent single ops coalesce
+// into few large Raft entries; the meta shard (control-plane, low write rate, distinct encoding) uses
+// the un-batched path so its commands are never wrapped in a data-only opBatch.
 func (m *Manager) Propose(ctx context.Context, shardID uint64, cmd []byte) (ProposeResult, error) {
+	if shardID == MetaShardID || m.prop == nil || !coalescable(cmd) {
+		return m.proposeRaw(ctx, shardID, cmd)
+	}
+	return m.prop.Propose(ctx, shardID, cmd)
+}
+
+// coalescable reports whether a data-shard command may be wrapped into an opBatch entry. Only regular
+// datatype mutations (and expire/remove) are — control-plane ops (ingest/purge/freeze/unfreeze) carry a
+// distinct encoding the batch sub-decoder rejects, so they take the un-batched path and stay atomic.
+func coalescable(cmd []byte) bool {
+	if len(cmd) == 0 {
+		return false
+	}
+	switch opKind(cmd[0]) {
+	case opSAdd, opSRem, opHSet, opHDel, opZAdd, opZRem, opHIncrBy, opHIncrByFloat, opExpire, opRemove:
+		return true
+	}
+	return false
+}
+
+// proposeRaw issues one un-batched synchronous proposal (the engine round-trip the proposer drives).
+func (m *Manager) proposeRaw(ctx context.Context, shardID uint64, cmd []byte) (ProposeResult, error) {
 	res, err := m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
 	if err != nil {
 		return ProposeResult{}, err
@@ -193,6 +237,11 @@ func (m *Manager) Propose(ctx context.Context, shardID uint64, cmd []byte) (Prop
 	return ProposeResult{Value: res.Value, Data: res.Data}, nil
 }
 
+// Read answers a query against shardID. linearizable routes a ReadIndex through the leader (a quorum
+// confirm, no log write); otherwise it is a local stale read with no round-trip (QW3, design/32 §3.3):
+// it reads the local replica directly, so it serves off any replica — a voter OR a demand-filled spot
+// learner — keeping reads off the write path. The datatype/benchmark read path defaults to stale (the
+// proto Linearizable flag is false by default, see Service); callers opt into linearizable per call.
 func (m *Manager) Read(ctx context.Context, shardID uint64, query interface{}, linearizable bool) (interface{}, error) {
 	if linearizable {
 		return m.nh.SyncRead(ctx, shardID, query)
