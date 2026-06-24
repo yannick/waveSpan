@@ -29,3 +29,5 @@ perf-report/
 # Local secrets (e.g. GITHUB_TOKEN for CI setup) — never commit
 .env
 .env.*
+
+.worktrees/
