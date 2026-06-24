@@ -571,8 +571,13 @@ func run() error {
 		if ms := envU64("WAVESPAN_COLLECTIONS_SWEEP_MS"); ms > 0 {
 			tun.SweepEvery = time.Duration(ms) * time.Millisecond
 		}
+		// Bind address for the raft listener, separate from the advertised RaftAddress. In k8s a
+		// StatefulSet core pod advertises its stable per-ordinal DNS (in the voter list) but binds
+		// 0.0.0.0:port, since binding the DNS is racy until the record resolves. Empty => bind the
+		// advertised address (single-node / dev).
+		raftListenAddr := os.Getenv("WAVESPAN_COLLECTIONS_LISTEN_ADDR")
 		raftOpts := collections.Options{
-			TransportFactory: &collections.TransportFactory{ServerTLS: serverMTLS, ClientTLS: raftTLSClient},
+			TransportFactory: &collections.TransportFactory{ServerTLS: serverMTLS, ClientTLS: raftTLSClient, ListenAddr: raftListenAddr},
 			Tunables:         tun,
 		}
 		mgr, err := collections.NewManagerWithOptions(filepath.Join(cfg.Storage.Path, "collections-raft"), raftAddr, store, raftOpts)

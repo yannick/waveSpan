@@ -31,6 +31,11 @@ const (
 type TransportFactory struct {
 	ServerTLS *tls.Config
 	ClientTLS *tls.Config
+	// ListenAddr, when set, is the local bind address for the raft listener, separate from the
+	// advertised RaftAddress. This lets a node advertise a stable name (e.g. a StatefulSet pod's
+	// DNS) while binding 0.0.0.0:port locally — binding directly to the DNS is racy at startup
+	// (the record may not resolve yet). Empty = bind the advertised RaftAddress (dev / tests).
+	ListenAddr string
 	// Gate, when set, is consulted before every send: Gate(src, dst) == false drops the message,
 	// simulating a network partition. Test-only (nil in production = all sends allowed).
 	Gate func(src, dst string) bool
@@ -38,10 +43,12 @@ type TransportFactory struct {
 
 var _ config.TransportFactory = (*TransportFactory)(nil)
 
-// Create builds the transport for a NodeHost, listening on its RaftAddress.
+// Create builds the transport for a NodeHost, advertising its RaftAddress and binding ListenAddr
+// (falling back to RaftAddress when ListenAddr is empty).
 func (f *TransportFactory) Create(nh config.NodeHostConfig, mh raftio.MessageHandler, ch raftio.ChunkHandler) raftio.ITransport {
 	t := newHTTPTransport(nh.RaftAddress, f.ServerTLS, f.ClientTLS, mh, ch)
 	t.gate = f.Gate
+	t.bindAddr = f.ListenAddr
 	return t
 }
 
@@ -49,7 +56,8 @@ func (f *TransportFactory) Create(nh config.NodeHostConfig, mh raftio.MessageHan
 func (f *TransportFactory) Validate(addr string) bool { return addr != "" }
 
 type httpTransport struct {
-	listenAddr   string
+	listenAddr   string // advertised RaftAddress (node identity)
+	bindAddr     string // local bind address; empty => bind listenAddr
 	serverTLS    *tls.Config
 	clientTLS    *tls.Config
 	msgHandler   raftio.MessageHandler
@@ -87,7 +95,11 @@ func newHTTPTransport(addr string, srvTLS, cliTLS *tls.Config, mh raftio.Message
 func (t *httpTransport) Name() string { return "wavespan-mtls" }
 
 func (t *httpTransport) Start() error {
-	ln, err := net.Listen("tcp", t.listenAddr)
+	bind := t.listenAddr
+	if t.bindAddr != "" {
+		bind = t.bindAddr
+	}
+	ln, err := net.Listen("tcp", bind)
 	if err != nil {
 		return err
 	}
