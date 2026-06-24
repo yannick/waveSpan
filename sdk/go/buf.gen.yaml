@@ -1,6 +1,6 @@
-# Generates the WaveSpan SDK's OWN copy of the protobuf messages + Connect client stubs, under an
+# Generates the WaveSpan SDK's OWN copy of the protobuf messages + grpc-go client stubs, under an
 # internal package so they are not part of the SDK's public API (callers use the ergonomic wrappers).
-# This keeps the SDK module self-contained — depending only on protobuf + Connect, never on the
+# This keeps the SDK module self-contained — depending only on protobuf + grpc-go, never on the
 # server module (which is private and carries a local `replace wavesdb`). The .proto files in
 # ../../proto are the single source of truth; regenerate with:
 #
@@ -18,6 +18,6 @@ plugins:
   - local: protoc-gen-go
     out: sdk/go/internal/gen
     opt: paths=source_relative
-  - local: protoc-gen-connect-go
+  - local: protoc-gen-go-grpc
     out: sdk/go/internal/gen
     opt: paths=source_relative
