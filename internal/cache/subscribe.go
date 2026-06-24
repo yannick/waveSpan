@@ -6,12 +6,10 @@ import (
 	"strconv"
 	"sync"
 
-	"connectrpc.com/connect"
 	"github.com/yannick/wavespan/internal/membership"
 	"github.com/yannick/wavespan/internal/recordstore"
 	"github.com/yannick/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // --- Source side: push CacheUpdates to subscribers (design/05 "Update propagation") ---
@@ -133,25 +131,21 @@ func (s *SubscriptionSource) Notify(ns string, key []byte) {
 // Subscriber opens SubscribeKey streams to holders and applies updates to the local cache, with
 // resync on a sequence gap or a snapshot_required signal (design/05 "Subscription state machine").
 type Subscriber struct {
-	self       membership.Member
-	store      *Store
-	fetcher    *Fetcher
-	httpClient connect.HTTPClient
-	baseCtx    context.Context
+	self    membership.Member
+	store   *Store
+	fetcher *Fetcher
+	baseCtx context.Context
 
 	mu      sync.Mutex
 	active  map[string]context.CancelFunc // keyID -> cancel
-	clients map[string]wavespanv1connect.ReplicationServiceClient
+	clients map[string]wavespanv1.ReplicationServiceClient
 }
 
 // NewSubscriber builds a subscriber. Subscriptions live under the base context (set via
-// SetBaseContext to the node lifetime), not the per-read request context.
-func NewSubscriber(self membership.Member, store *Store, fetcher *Fetcher, hc *http.Client) *Subscriber {
-	var c connect.HTTPClient = rpcopts.H2CClient()
-	if hc != nil {
-		c = hc
-	}
-	return &Subscriber{self: self, store: store, fetcher: fetcher, httpClient: c, baseCtx: context.Background(), active: map[string]context.CancelFunc{}, clients: map[string]wavespanv1connect.ReplicationServiceClient{}}
+// SetBaseContext to the node lifetime), not the per-read request context. The hc argument is
+// retained for call-site compatibility but is unused: subscription streams now dial peers over gRPC.
+func NewSubscriber(self membership.Member, store *Store, fetcher *Fetcher, _ *http.Client) *Subscriber {
+	return &Subscriber{self: self, store: store, fetcher: fetcher, baseCtx: context.Background(), active: map[string]context.CancelFunc{}, clients: map[string]wavespanv1.ReplicationServiceClient{}}
 }
 
 // SetBaseContext sets the node-lifetime context under which subscription streams run.
@@ -161,15 +155,19 @@ func (s *Subscriber) SetBaseContext(ctx context.Context) {
 	s.mu.Unlock()
 }
 
-func (s *Subscriber) client(addr string) wavespanv1connect.ReplicationServiceClient {
+func (s *Subscriber) client(addr string) (wavespanv1.ReplicationServiceClient, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if c, ok := s.clients[addr]; ok {
-		return c
+		return c, nil
 	}
-	c := wavespanv1connect.NewReplicationServiceClient(s.httpClient, "http://"+addr)
+	conn, err := rpcopts.GRPCConn(addr)
+	if err != nil {
+		return nil, err
+	}
+	c := wavespanv1.NewReplicationServiceClient(conn)
 	s.clients[addr] = c
-	return c
+	return c, nil
 }
 
 // Ensure opens a subscription for a key if one is not already active for it. The subscription
@@ -197,15 +195,22 @@ func (s *Subscriber) run(ctx context.Context, ns string, key []byte, addr, keyID
 		s.mu.Unlock()
 	}()
 
-	stream, err := s.client(addr).SubscribeKey(ctx, connect.NewRequest(&wavespanv1.SubscribeKeyRequest{
+	c, err := s.client(addr)
+	if err != nil {
+		return
+	}
+	stream, err := c.SubscribeKey(ctx, &wavespanv1.SubscribeKeyRequest{
 		Namespace: ns, Key: key, SubscriberMemberId: s.self.MemberID,
-	}))
+	})
 	if err != nil {
 		return
 	}
 	var lastSeq uint64
-	for stream.Receive() {
-		u := stream.Msg()
+	for {
+		u, err := stream.Recv()
+		if err != nil {
+			break // io.EOF on a clean close, or a transport error
+		}
 		if u.GetSnapshotRequired() || (lastSeq != 0 && u.GetStreamSequence() > lastSeq+1) {
 			// gap or explicit resync: refetch the authoritative record
 			if fr, e := s.fetcher.Fetch(ctx, ns, key); e == nil && fr.Found {

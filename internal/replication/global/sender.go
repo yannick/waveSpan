@@ -6,45 +6,44 @@ import (
 	"sync"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/yannick/wavespan/internal/config"
 	"github.com/yannick/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // Sender drains each peer's outbound log and ships batches via PushGlobal, advancing its cursor
 // and checkpointing the out-log so disk can be reclaimed (design/06). It resumes from the last
 // sent cursor after a disconnect — no gaps, idempotent on replay.
 type Sender struct {
-	outlog     *OutLog
-	peers      []config.ClusterPeer
-	httpClient connect.HTTPClient
-	batch      int
+	outlog *OutLog
+	peers  []config.ClusterPeer
+	batch  int
 
 	mu      sync.Mutex
-	clients map[string]wavespanv1connect.GlobalReplicationClient
+	clients map[string]wavespanv1.GlobalReplicationClient
 	cursor  map[string]uint64 // (peer,partition) -> last sent seq
 }
 
-// NewSender wires a sender over an out-log and the configured peers.
-func NewSender(outlog *OutLog, peers []config.ClusterPeer, hc *http.Client) *Sender {
-	var c connect.HTTPClient = rpcopts.H2CClient()
-	if hc != nil {
-		c = hc
-	}
-	return &Sender{outlog: outlog, peers: peers, httpClient: c, batch: 256, clients: map[string]wavespanv1connect.GlobalReplicationClient{}, cursor: map[string]uint64{}}
+// NewSender wires a sender over an out-log and the configured peers. The hc argument is retained for
+// call-site compatibility but is unused: peer replication endpoints are dialled over gRPC via the
+// rpcopts pooled connections.
+func NewSender(outlog *OutLog, peers []config.ClusterPeer, _ *http.Client) *Sender {
+	return &Sender{outlog: outlog, peers: peers, batch: 256, clients: map[string]wavespanv1.GlobalReplicationClient{}, cursor: map[string]uint64{}}
 }
 
-func (s *Sender) client(endpoint string) wavespanv1connect.GlobalReplicationClient {
+func (s *Sender) client(endpoint string) (wavespanv1.GlobalReplicationClient, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if c, ok := s.clients[endpoint]; ok {
-		return c
+		return c, nil
 	}
-	c := wavespanv1connect.NewGlobalReplicationClient(s.httpClient, "http://"+endpoint)
+	conn, err := rpcopts.GRPCConn(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	c := wavespanv1.NewGlobalReplicationClient(conn)
 	s.clients[endpoint] = c
-	return c
+	return c, nil
 }
 
 func (s *Sender) getCursor(peer string, partition uint32) uint64 {
@@ -74,7 +73,11 @@ func (s *Sender) DrainOnce(ctx context.Context) int {
 			for _, e := range entries {
 				req.Mutations = append(req.Mutations, e.Mutation)
 			}
-			if _, err := s.client(peer.ReplEndpoint).PushGlobal(ctx, connect.NewRequest(req)); err != nil {
+			cl, err := s.client(peer.ReplEndpoint)
+			if err != nil {
+				continue // could not dial: retry next pass from the same cursor (no gaps)
+			}
+			if _, err := cl.PushGlobal(ctx, req); err != nil {
 				continue // peer down: retry next pass from the same cursor (no gaps)
 			}
 			last := entries[len(entries)-1].Seq

@@ -2,19 +2,18 @@ package cache
 
 import (
 	"context"
+	"net"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/yannick/wavespan/internal/latencygraph"
 	"github.com/yannick/wavespan/internal/membership"
 	"github.com/yannick/wavespan/internal/recordstore"
-	local "github.com/yannick/wavespan/internal/replication/local"
 	"github.com/yannick/wavespan/internal/storage"
 	"github.com/yannick/wavespan/internal/version"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"google.golang.org/grpc"
 )
 
 func newStoreFor(t *testing.T, member string) *recordstore.Store {
@@ -40,12 +39,18 @@ func TestCacheSubscriptionPropagatesUpdate(t *testing.T) {
 	applyKV(t, rec1, "default", []byte("foo"), []byte("v1"))
 	source := NewSubscriptionSource(rec1)
 
-	mux := http.NewServeMux()
-	ts := httptest.NewServer(mux)
-	t.Cleanup(ts.Close)
-	addr1 := strings.TrimPrefix(ts.URL, "http://")
-	server := local.NewReplicaServer(local.NewReceiver(rec1, "node1", local.NewIdempotency(0)), rec1, "node1", addr1, source)
-	mux.Handle(server.Handler())
+	// Bind first so the holder can advertise its own data addr in the SubscriptionOffer, then serve
+	// the gRPC ReplicationService on that listener.
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr1 := lis.Addr().String()
+	server := &testReplicaServer{rec: rec1, self: "node1", dataAddr: addr1, source: source}
+	gs := grpc.NewServer()
+	wavespanv1.RegisterReplicationServiceServer(gs, server)
+	go func() { _ = gs.Serve(lis) }()
+	t.Cleanup(gs.Stop)
 
 	// subscriber node3
 	rec3 := newStoreFor(t, "node3")

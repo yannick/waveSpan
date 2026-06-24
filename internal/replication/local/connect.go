@@ -13,52 +13,57 @@ import (
 	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
-// ConnectReplicator dials peers' ReplicationService over the Connect protocol (clients cached
-// per data address).
+// ConnectReplicator dials peers' ReplicationService over gRPC (clients cached per data address).
+// The name is retained for call-site compatibility; the transport is now grpc-go over the pooled
+// connections in rpcopts.
 type ConnectReplicator struct {
-	httpClient connect.HTTPClient
-	mu         sync.Mutex
-	clients    map[string]wavespanv1connect.ReplicationServiceClient
+	mu      sync.Mutex
+	clients map[string]wavespanv1.ReplicationServiceClient
 }
 
-// NewConnectReplicator builds a replicator over the given HTTP client (nil uses http.DefaultClient).
-func NewConnectReplicator(hc *http.Client) *ConnectReplicator {
-	var c connect.HTTPClient = rpcopts.H2CClient()
-	if hc != nil {
-		c = hc
-	}
-	return &ConnectReplicator{httpClient: c, clients: map[string]wavespanv1connect.ReplicationServiceClient{}}
+// NewConnectReplicator builds a replicator. The hc argument is retained for call-site compatibility
+// but is unused: peers are now dialled over gRPC via the rpcopts pooled connections.
+func NewConnectReplicator(_ *http.Client) *ConnectReplicator {
+	return &ConnectReplicator{clients: map[string]wavespanv1.ReplicationServiceClient{}}
 }
 
-func (r *ConnectReplicator) client(addr string) wavespanv1connect.ReplicationServiceClient {
+func (r *ConnectReplicator) client(addr string) (wavespanv1.ReplicationServiceClient, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if c, ok := r.clients[addr]; ok {
-		return c
+		return c, nil
 	}
-	c := wavespanv1connect.NewReplicationServiceClient(r.httpClient, "http://"+addr)
+	conn, err := rpcopts.GRPCConn(addr)
+	if err != nil {
+		return nil, err
+	}
+	c := wavespanv1.NewReplicationServiceClient(conn)
 	r.clients[addr] = c
-	return c
+	return c, nil
 }
 
 // StoreReplica sends the request to the target's data address (implements Replicator).
 func (r *ConnectReplicator) StoreReplica(ctx context.Context, target membership.Member, req *wavespanv1.StoreReplicaRequest) (*wavespanv1.StoreReplicaResponse, error) {
-	resp, err := r.client(target.DataAddr).StoreReplica(ctx, connect.NewRequest(req))
+	c, err := r.client(target.DataAddr)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return c.StoreReplica(ctx, req)
 }
 
 // ScanLocal asks a holder to scan its local store over a subrange (routed-eventual scan, M6).
 func (r *ConnectReplicator) ScanLocal(ctx context.Context, target membership.Member, namespace string, start, end []byte, limit int) ([]*wavespanv1.ScanLocalRow, error) {
-	resp, err := r.client(target.DataAddr).ScanLocal(ctx, connect.NewRequest(&wavespanv1.ScanLocalRequest{
-		Namespace: namespace, StartKey: start, EndKey: end, Limit: uint32(limit),
-	}))
+	c, err := r.client(target.DataAddr)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg.GetRows(), nil
+	resp, err := c.ScanLocal(ctx, &wavespanv1.ScanLocalRequest{
+		Namespace: namespace, StartKey: start, EndKey: end, Limit: uint32(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetRows(), nil
 }
 
 // SubscriptionSource pushes cache updates to a key subscriber (implemented by the cache package

@@ -24,7 +24,6 @@ import (
 	"syscall"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/yannick/wavespan/internal/cache"
 	"github.com/yannick/wavespan/internal/collections"
@@ -32,6 +31,7 @@ import (
 	"github.com/yannick/wavespan/internal/conflict"
 	"github.com/yannick/wavespan/internal/cypher"
 	"github.com/yannick/wavespan/internal/graph"
+	"github.com/yannick/wavespan/internal/grpcsrv"
 	"github.com/yannick/wavespan/internal/kv"
 	"github.com/yannick/wavespan/internal/membership"
 	"github.com/yannick/wavespan/internal/observability"
@@ -50,7 +50,7 @@ import (
 	"github.com/yannick/wavespan/internal/vector/quantizer"
 	"github.com/yannick/wavespan/internal/version"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -174,7 +174,6 @@ func run() error {
 	idem := local.NewIdempotency(0)
 	receiver := local.NewReceiver(rstore, cfg.MemberID, idem)
 	subSource := cache.NewSubscriptionSource(rstore)
-	replicaSrv := local.NewReplicaServer(receiver, rstore, cfg.MemberID, self.DataAddr, subSource)
 
 	// Dynamic cache (M5): gossiped holder directory + closest-holder fetch + cache store.
 	nowMs := func() int64 { return time.Now().UnixMilli() }
@@ -398,6 +397,8 @@ func run() error {
 	// per-peer out-log, serve the GlobalReplication API, ship via the sender, reconcile via
 	// anti-entropy. Applied raw vectors route into the local vector store + ANN index (TS-084).
 	var globalSrv *global.Server
+	var globalApplier *global.Applier
+	var globalAE *global.AntiEntropy
 	var startGlobal func()
 	var vectorGlobalTap func(ns string, key []byte, rec *wavespanv1.StoredRecord)
 	if cfg.GlobalReplication.Enabled() {
@@ -417,6 +418,7 @@ func run() error {
 		ae := global.NewAntiEntropy(rstore)
 		gmetrics := global.NewMetrics(metrics.Registry)
 		globalSrv = global.NewServer(applier, ae)
+		globalApplier, globalAE = applier, ae
 		outlog := global.NewOutLog(store, cfg.GlobalReplication.OutLogDiskBudgetBytes)
 		peers := cfg.GlobalReplication.Peers
 		localOnly := cfg.LocalOnlyNamespaces() // "all" namespaces never cross to peer clusters
@@ -462,55 +464,69 @@ func run() error {
 	vectorScatter := cypher.NewVectorScatter(cfg.MemberID, vectorPeers, httpClient)
 
 	// VectorService: SearchLocal fragment + the vector-as-key API (Put/Get/Delete/Search, design/29).
+	// The builder closures are hoisted into vars so BOTH the Connect service (admin/UI port) and the
+	// grpc adapter (data port) are built from identical logic without duplication.
+	vecReplication := func(ctx context.Context, ns string, key, value []byte, collection string, vec []float32) error {
+		// Affinity placement (design/29 Phase 3): target the bucket's HRW ring so a bucket
+		// concentrates on a deterministic node-set (maximally selective routing). Origin+1 is
+		// unchanged. Fall back to latency placement when the collection has no quantizer.
+		if qz, ok := quantSet.For(collection); ok && len(vec) > 0 {
+			ring := vector.Ring(vector.BucketKey(collection, qz.Version(), qz.Bucket(vec)), aliveMemberIDs(svc), cfg.Replication.Target()+1)
+			_, err := coord.PutTo(ctx, ns, key, value, ringCandidates(svc, ring, self.MemberID), "")
+			return err
+		}
+		_, err := coord.Put(ctx, ns, key, value, nil, "")
+		return err
+	}
+	vecScatter := func(ctx context.Context, collection, idx string, q []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
+		return routedVectorScatter(ctx, self, svc, httpClient, quantSet, bucketDir, vmetrics, cfg.Replication.Target()+1, collection, idx, q, k, ef, nprobe, rerank)
+	}
+	vecKVGet := func(ctx context.Context, ns string, key []byte) ([]byte, bool, error) {
+		res, err := reader.Get(ctx, ns, key, true)
+		if err != nil {
+			return nil, false, err
+		}
+		return res.GetValue(), res.GetFound(), nil
+	}
+	vecKVDelete := func(ctx context.Context, ns string, key []byte) error {
+		_, err := coord.Delete(ctx, ns, key, "")
+		return err
+	}
 	vectorSvc := vector.NewService(vstore, newGraphVersion).
 		WithHooks(indexSet.OnWrite, vectorGlobalTap).
-		WithReplication(func(ctx context.Context, ns string, key, value []byte, collection string, vec []float32) error {
-			// Affinity placement (design/29 Phase 3): target the bucket's HRW ring so a bucket
-			// concentrates on a deterministic node-set (maximally selective routing). Origin+1 is
-			// unchanged. Fall back to latency placement when the collection has no quantizer.
-			if qz, ok := quantSet.For(collection); ok && len(vec) > 0 {
-				ring := vector.Ring(vector.BucketKey(collection, qz.Version(), qz.Bucket(vec)), aliveMemberIDs(svc), cfg.Replication.Target()+1)
-				_, err := coord.PutTo(ctx, ns, key, value, ringCandidates(svc, ring, self.MemberID), "")
-				return err
-			}
-			_, err := coord.Put(ctx, ns, key, value, nil, "")
-			return err
-		}, indexSet.CollectionDims).
+		WithReplication(vecReplication, indexSet.CollectionDims).
 		WithSearch(indexSet.Meta, indexSet.Live).
-		WithCoordinator(
-			indexSet.IndexForCollection,
-			func(ctx context.Context, collection, idx string, q []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
-				return routedVectorScatter(ctx, self, svc, httpClient, quantSet, bucketDir, vmetrics, cfg.Replication.Target()+1, collection, idx, q, k, ef, nprobe, rerank)
-			},
-			func(ctx context.Context, ns string, key []byte) ([]byte, bool, error) {
-				res, err := reader.Get(ctx, ns, key, true)
-				if err != nil {
-					return nil, false, err
-				}
-				return res.GetValue(), res.GetFound(), nil
-			},
-			func(ctx context.Context, ns string, key []byte) error {
-				_, err := coord.Delete(ctx, ns, key, "")
-				return err
-			},
-		)
+		WithCoordinator(indexSet.IndexForCollection, vecScatter, vecKVGet, vecKVDelete)
+	grpcVectorSvc := grpcsrv.NewVector(vstore, newGraphVersion).
+		WithHooks(indexSet.OnWrite, vectorGlobalTap).
+		WithReplication(vecReplication, indexSet.CollectionDims).
+		WithSearch(indexSet.Meta, indexSet.Live).
+		WithCoordinator(indexSet.IndexForCollection, vecScatter, vecKVGet, vecKVDelete)
 
 	// Graph + Cypher (M8/M9/M10): plans and executes against the local graph store, with vector search.
 	graphStore := graph.NewStore(store)
+	cypherKV := kv.NewCypherKV(reader, coord)
 	cypherSvc := cypher.NewService(graphStore, cfg.ClusterID, cfg.MemberID, newGraphVersion).
 		WithVector(vstore, indexSet.Meta, indexSet.Live).
 		WithVectorScatter(vectorScatter).
-		WithKV(kv.NewCypherKV(reader, coord))
+		WithKV(cypherKV)
+	grpcCypherSvc := grpcsrv.NewCypher(graphStore, cfg.ClusterID, cfg.MemberID, newGraphVersion).
+		WithVector(vstore, indexSet.Meta, indexSet.Live).
+		WithVectorScatter(vectorScatter).
+		WithKV(cypherKV)
 
-	// Data server on the data port: public KvService + Cypher + Vector + internal ReplicationService.
-	dataMux := http.NewServeMux()
-	dataMux.Handle(kvSvc.Handler())
-	dataMux.Handle(replicaSrv.Handler())
-	dataMux.Handle(observability.NewConfigServer(tun, overrides, cfg.ClusterID, cfg.MemberID).Handler()) // peer-reachable config reads + node-local set
-	dataMux.Handle(cypherSvc.Handler())
-	dataMux.Handle(vectorSvc.Handler())
+	// Data server on the data port: a real grpc.Server (auth + metrics interceptors built in). Public
+	// KvService + Cypher + Vector + internal ReplicationService + ConfigService (+ GlobalReplication
+	// and CollectionService when enabled). The browser/UI Connect services moved to the admin port.
+	dataIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
+	grpcDataSrv := grpcsrv.New(grpcsrv.Options{TLS: serverMTLS, Identity: dataIdentity})
+	wavespanv1.RegisterKvServiceServer(grpcDataSrv, grpcsrv.NewKV(coord, reader, scanner, self))
+	wavespanv1.RegisterReplicationServiceServer(grpcDataSrv, grpcsrv.NewReplication(receiver, rstore, cfg.MemberID, self.DataAddr, subSource))
+	wavespanv1.RegisterConfigServiceServer(grpcDataSrv, grpcsrv.NewConfig(tun, overrides, cfg.ClusterID, cfg.MemberID))
+	wavespanv1.RegisterVectorServiceServer(grpcDataSrv, grpcVectorSvc)
+	wavespanv1.RegisterCypherServer(grpcDataSrv, grpcCypherSvc)
 	if globalSrv != nil {
-		dataMux.Handle(globalSrv.Handler())
+		wavespanv1.RegisterGlobalReplicationServer(grpcDataSrv, grpcsrv.NewGlobalReplication(globalApplier, globalAE))
 	}
 
 	// Replicated collections (design/30): CP consensus tier over a dedicated dragonboat NodeHost that
@@ -590,14 +606,15 @@ func run() error {
 			// has the directory — without blocking startup.
 			collectionsMgr = mgr
 			spotRID := collections.SpotReplicaID(cfg.MemberID)
-			admitter := collections.NewRPCAdmitter(httpClient, peersFn)
+			admitter := collections.NewRPCAdmitter(peersFn)
 			dir := collections.NewRangeDirectory(mgr, collections.MetaShardID)
 			cols := collections.New(mgr, dir).
 				WithDemandFill(collections.NewDemandFiller(mgr, spotRID, raftAddr, admitter)).
-				WithForwarder(collections.NewRPCForwarder(httpClient, peersFn)) // spot nodes never lead; forward all writes
+				WithForwarder(collections.NewRPCForwarder(peersFn)) // spot nodes never lead; forward all writes
 			collectionsSvc = collections.NewService(cols, self).WithTierStatus(mgr, raftAddr, spotRID, false)
-			dataMux.Handle(collectionsSvc.Handler())
-			cypherSvc.WithCollections(collections.NewCypherCollections(cols))
+			cypherCollections := collections.NewCypherCollections(cols)
+			cypherSvc.WithCollections(cypherCollections)
+			grpcCypherSvc.WithCollections(cypherCollections)
 			go func() {
 				if err := collections.EnsureSpotMembership(ctx, mgr, spotRID, raftAddr, admitter, dir); err != nil {
 					logger.Error("collections: spot membership not established", "err", err)
@@ -618,23 +635,23 @@ func run() error {
 				cols := ctrl.Collections()
 				// Demand-fill data shards this node does not host (e.g. ranges split onto other voters),
 				// asking peers over RPC to admit us as a learner.
-				admitter := collections.NewRPCAdmitter(httpClient, peersFn)
+				admitter := collections.NewRPCAdmitter(peersFn)
 				cols.WithDemandFill(collections.NewDemandFiller(mgr, selfReplicaID, raftAddr, admitter))
-				cols.WithForwarder(collections.NewRPCForwarder(httpClient, peersFn)) // forward writes when not this shard's leader
+				cols.WithForwarder(collections.NewRPCForwarder(peersFn)) // forward writes when not this shard's leader
 				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr).
 					WithTierStatus(mgr, raftAddr, selfReplicaID, true)
-				dataMux.Handle(collectionsSvc.Handler())
-				cypherSvc.WithCollections(collections.NewCypherCollections(cols)) // set.*/hash.*/zset.* built-ins
+				cypherCollections := collections.NewCypherCollections(cols) // set.*/hash.*/zset.* built-ins
+				cypherSvc.WithCollections(cypherCollections)
+				grpcCypherSvc.WithCollections(cypherCollections)
 				logger.Info("collections: tier enabled", "raftAddr", raftAddr, "replicaID", selfReplicaID, "voters", len(voters))
 			}
 		}
 	}
 
-	// Authorization (M12): enforce the role/surface matrix at the HTTP layer. In insecureDevMode the
-	// identity middleware grants admin (dev/compose); in production the role comes from the verified
-	// mTLS client certificate.
-	dataIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
-	dataSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Data), Handler: maybeH2C(dataIdentity.EnforceHTTP(dataMux), serverMTLS), ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS, ConnState: connStateGauge(openConns.WithLabelValues("data"))}
+	// CollectionService (design/30): registered on the data grpc server once the tier is up.
+	if collectionsSvc != nil {
+		wavespanv1.RegisterCollectionServiceServer(grpcDataSrv, grpcsrv.NewCollections(collectionsSvc))
+	}
 
 	// Gossip server on the gossip port.
 	gossipMux := http.NewServeMux()
@@ -667,43 +684,47 @@ func run() error {
 		WithSampleDataset(!cfg.Features.DisableSampleDataset, newGraphVersion). // UI "load demo graph" action
 		WithClusterScan(replicator).                                            // cluster-wide Data Browser: fan InspectLocal out to all members
 		WithKvWriter(func(ctx context.Context, target membership.Member, req *wavespanv1.PutRequest) (*wavespanv1.PutResult, error) {
-			// Forward the UI's test write to the chosen coordinator's data port over the shared client.
-			resp, err := wavespanv1connect.NewKvServiceClient(httpClient, "http://"+target.DataAddr).Put(ctx, connect.NewRequest(req))
+			// Forward the UI's test write to the chosen coordinator's data port over grpc.
+			conn, err := rpcopts.GRPCConn(target.DataAddr)
 			if err != nil {
 				return nil, err
 			}
-			return resp.Msg, nil
+			return wavespanv1.NewKvServiceClient(conn).Put(ctx, req)
 		}).
 		WithKvDeleter(func(ctx context.Context, target membership.Member, req *wavespanv1.DeleteRequest) (*wavespanv1.DeleteResult, error) {
-			// Forward the Data Browser delete (tombstone) to the chosen coordinator's data port.
-			resp, err := wavespanv1connect.NewKvServiceClient(httpClient, "http://"+target.DataAddr).Delete(ctx, connect.NewRequest(req))
+			// Forward the Data Browser delete (tombstone) to the chosen coordinator's data port over grpc.
+			conn, err := rpcopts.GRPCConn(target.DataAddr)
 			if err != nil {
 				return nil, err
 			}
-			return resp.Msg, nil
+			return wavespanv1.NewKvServiceClient(conn).Delete(ctx, req)
 		}).
 		WithTunables(tun, overrides,
 			func(ctx context.Context, target membership.Member) (*wavespanv1.NodeConfig, error) {
 				// Read a peer's effective config over its data-port ConfigService (UI Config tab).
-				resp, err := wavespanv1connect.NewConfigServiceClient(httpClient, "http://"+target.DataAddr).GetConfig(ctx, connect.NewRequest(&wavespanv1.GetConfigRequest{}))
+				conn, err := rpcopts.GRPCConn(target.DataAddr)
 				if err != nil {
 					return nil, err
 				}
-				return resp.Msg, nil
+				return wavespanv1.NewConfigServiceClient(conn).GetConfig(ctx, &wavespanv1.GetConfigRequest{})
 			},
 			func(ctx context.Context, target membership.Member, key, value string) (*wavespanv1.SetTunableResponse, error) {
 				// Pin a node-local override on a chosen peer over its data-port ConfigService.
-				resp, err := wavespanv1connect.NewConfigServiceClient(httpClient, "http://"+target.DataAddr).SetTunable(ctx, connect.NewRequest(&wavespanv1.SetTunableRequest{Key: key, Value: value}))
+				conn, err := rpcopts.GRPCConn(target.DataAddr)
 				if err != nil {
 					return nil, err
 				}
-				return resp.Msg, nil
+				return wavespanv1.NewConfigServiceClient(conn).SetTunable(ctx, &wavespanv1.SetTunableRequest{Key: key, Value: value})
 			})
 	adminIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
 	obsPath, obsHandler := obsSvc.Handler()
 	adminMux.Handle(obsPath, adminIdentity.EnforceHTTP(obsHandler)) // ObservabilityService (admin auth)
 	cypherPath, cypherHandler := cypherSvc.Handler()
 	adminMux.Handle(cypherPath, adminIdentity.EnforceHTTP(cypherHandler)) // Cypher console (same origin as the UI)
+	kvPath, kvHandler := kvSvc.Handler()
+	adminMux.Handle(kvPath, adminIdentity.EnforceHTTP(kvHandler)) // KvService over Connect for the browser SPA
+	vecPath, vecHandler := vectorSvc.Handler()
+	adminMux.Handle(vecPath, adminIdentity.EnforceHTTP(vecHandler)) // VectorService over Connect for the browser SPA
 	if collectionsSvc != nil {
 		colPath, colHandler := collectionsSvc.Handler()
 		adminMux.Handle(colPath, adminIdentity.EnforceHTTP(colHandler)) // CollectionService for the UI (same origin)
@@ -716,7 +737,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("gossip listen: %w", err)
 	}
-	dataLn, err := netMetrics.Listen(dataSrv.Addr, "data")
+	dataAddr := fmt.Sprintf(":%d", cfg.Ports.Data)
+	dataLn, err := netMetrics.Listen(dataAddr, "data")
 	if err != nil {
 		return fmt.Errorf("data listen: %w", err)
 	}
@@ -733,8 +755,8 @@ func run() error {
 		}
 	}()
 	go func() {
-		logger.Info("data server listening", "addr", dataSrv.Addr, "tls", dataSrv.TLSConfig != nil)
-		if err := serve(dataSrv, dataLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Info("data grpc server listening", "addr", dataAddr, "tls", serverMTLS != nil)
+		if err := grpcDataSrv.Serve(dataLn); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			errCh <- fmt.Errorf("data server: %w", err)
 		}
 	}()
@@ -818,7 +840,7 @@ func run() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = gossipSrv.Shutdown(shutdownCtx)
-		_ = dataSrv.Shutdown(shutdownCtx)
+		grpcDataSrv.GracefulStop()
 		_ = adminSrv.Shutdown(shutdownCtx)
 		if collectionsMgr != nil {
 			collectionsMgr.Stop() // before the deferred store.Close
@@ -1285,7 +1307,7 @@ func isLowestAlive(svc *membership.Service, self string) bool {
 }
 
 // gatherSamples collects a reservoir sample from this node plus every alive peer (SampleVectors RPC).
-func gatherSamples(ctx context.Context, self membership.Member, svc *membership.Service, hc *http.Client, vstore *vector.Store, collection string, limit int) [][]float32 {
+func gatherSamples(ctx context.Context, self membership.Member, svc *membership.Service, _ *http.Client, vstore *vector.Store, collection string, limit int) [][]float32 {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	all := vector.ReservoirSample(vstore, collection, limit, rng)
 	for _, mv := range svc.Members() {
@@ -1293,12 +1315,15 @@ func gatherSamples(ctx context.Context, self membership.Member, svc *membership.
 		if mv.State != membership.StateAlive || m.MemberID == self.MemberID || m.DataAddr == "" {
 			continue
 		}
-		c := wavespanv1connect.NewVectorServiceClient(hc, "http://"+m.DataAddr)
-		resp, err := c.SampleVectors(ctx, connect.NewRequest(&wavespanv1.SampleVectorsReq{Collection: collection, Limit: uint32(limit)}))
+		conn, err := rpcopts.GRPCConn(m.DataAddr)
 		if err != nil {
 			continue
 		}
-		for _, fv := range resp.Msg.GetVectors() {
+		resp, err := wavespanv1.NewVectorServiceClient(conn).SampleVectors(ctx, &wavespanv1.SampleVectorsReq{Collection: collection, Limit: uint32(limit)})
+		if err != nil {
+			continue
+		}
+		for _, fv := range resp.GetVectors() {
 			all = append(all, fv.GetValues())
 		}
 	}
@@ -1308,7 +1333,7 @@ func gatherSamples(ctx context.Context, self membership.Member, svc *membership.
 // routedVectorScatter queries peer holders for a kNN fragment. With nprobe>0 and routing info
 // available it scatters only to the advertised holders of the query's probed buckets; otherwise it
 // falls back to every alive peer. Self is excluded — the coordinator adds its own local fragment.
-func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, hc *http.Client, qs *vector.QuantSet, dir *vector.BucketDir, vm *vectorMetrics, ringSize int, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
+func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, _ *http.Client, qs *vector.QuantSet, dir *vector.BucketDir, vm *vectorMetrics, ringSize int, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
 	var allow map[string]bool
 	if nprobe > 0 {
 		if qz, ok := qs.For(collection); ok {
@@ -1368,15 +1393,19 @@ func routedVectorScatter(ctx context.Context, self membership.Member, svc *membe
 			continue // routed: skip nodes that don't hold a probed bucket
 		}
 		scattered++
-		c := wavespanv1connect.NewVectorServiceClient(hc, "http://"+m.DataAddr)
-		resp, err := c.SearchLocal(ctx, connect.NewRequest(&wavespanv1.SearchLocalRequest{
-			IndexName: idx, Query: query, K: int32(k), EfSearch: int32(ef), Rerank: rerank,
-		}))
+		conn, err := rpcopts.GRPCConn(m.DataAddr)
 		if err != nil {
 			unreachable++
 			continue
 		}
-		fragments = append(fragments, vectorHitsFromProto(resp.Msg.GetHits()))
+		resp, err := wavespanv1.NewVectorServiceClient(conn).SearchLocal(ctx, &wavespanv1.SearchLocalRequest{
+			IndexName: idx, Query: query, K: int32(k), EfSearch: int32(ef), Rerank: rerank,
+		})
+		if err != nil {
+			unreachable++
+			continue
+		}
+		fragments = append(fragments, vectorHitsFromProto(resp.GetHits()))
 	}
 	if vm != nil {
 		vm.scatterNodes.Observe(float64(scattered))

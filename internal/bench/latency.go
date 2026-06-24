@@ -10,17 +10,27 @@ import (
 	"time"
 
 	"github.com/yannick/wavespan/internal/rpcopts"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
-// KVClient builds an H2C KV client for addr (host:port of a data port).
-func KVClient(addr string) wavespanv1connect.KvServiceClient {
-	return wavespanv1connect.NewKvServiceClient(rpcopts.H2CClient(), "http://"+addr)
+// KVClient builds a gRPC KV client for addr (host:port of a data port). It dials the data port over
+// the rpcopts pooled connections; a dial error panics since the bench harness cannot proceed without
+// a client (grpc.NewClient itself is lazy, so this only fails on a malformed target).
+func KVClient(addr string) wavespanv1.KvServiceClient {
+	conn, err := rpcopts.GRPCConn(addr)
+	if err != nil {
+		panic(err)
+	}
+	return wavespanv1.NewKvServiceClient(conn)
 }
 
-// CypherClient builds an H2C Cypher client for addr.
-func CypherClient(addr string) wavespanv1connect.CypherClient {
-	return wavespanv1connect.NewCypherClient(rpcopts.H2CClient(), "http://"+addr)
+// CypherClient builds a gRPC Cypher client for addr.
+func CypherClient(addr string) wavespanv1.CypherClient {
+	conn, err := rpcopts.GRPCConn(addr)
+	if err != nil {
+		panic(err)
+	}
+	return wavespanv1.NewCypherClient(conn)
 }
 
 // Latencies accumulates op latencies for percentile reporting.

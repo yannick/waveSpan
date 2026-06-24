@@ -5,29 +5,46 @@ import (
 	"errors"
 	"sync"
 
-	"connectrpc.com/connect"
-
+	"github.com/yannick/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // RPCForwarder implements Forwarder by calling ProposeForward on peer nodes until the leader accepts
 // (design/30 §13.13). It caches the last peer that accepted (the likely leader) and tries it first, so
 // steady state is a single hop. Peers returns candidate peer data-port addresses (membership minus
-// self); client is the node's shared mTLS-capable HTTP client.
+// self). Peers are dialled over gRPC via the rpcopts pooled connections; per-address grpc clients are
+// cached.
 type RPCForwarder struct {
-	client connect.HTTPClient
-	peers  func() []string
+	peers func() []string
 
-	mu   sync.Mutex
-	hint string // last peer that accepted (the likely leader)
+	mu      sync.Mutex
+	hint    string // last peer that accepted (the likely leader)
+	clients map[string]wavespanv1.CollectionServiceClient
 }
 
 var _ Forwarder = (*RPCForwarder)(nil)
 
-// NewRPCForwarder builds a forwarder over the given peers and HTTP client.
-func NewRPCForwarder(client connect.HTTPClient, peers func() []string) *RPCForwarder {
-	return &RPCForwarder{client: client, peers: peers}
+// NewRPCForwarder builds a forwarder over the given peers. It dials peer data ports over gRPC.
+func NewRPCForwarder(peers func() []string) *RPCForwarder {
+	return &RPCForwarder{peers: peers, clients: map[string]wavespanv1.CollectionServiceClient{}}
+}
+
+// client returns a cached CollectionService gRPC client for addr, dialling it on first use.
+func (f *RPCForwarder) client(addr string) (wavespanv1.CollectionServiceClient, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if c, ok := f.clients[addr]; ok {
+		return c, nil
+	}
+	conn, err := rpcopts.GRPCConn(addr)
+	if err != nil {
+		return nil, err
+	}
+	c := wavespanv1.NewCollectionServiceClient(conn)
+	f.clients[addr] = c
+	return c, nil
 }
 
 // Forward tries the cached leader first, then the other peers, until one commits the write. Returns the
@@ -49,20 +66,24 @@ func (f *RPCForwarder) Forward(ctx context.Context, ns, coll, cmd []byte) (uint6
 
 	var lastErr error
 	for _, addr := range ordered {
-		c := wavespanv1connect.NewCollectionServiceClient(f.client, "http://"+addr)
-		resp, err := c.ProposeForward(ctx, connect.NewRequest(&wavespanv1.ProposeForwardRequest{
+		c, err := f.client(addr)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		resp, err := c.ProposeForward(ctx, &wavespanv1.ProposeForwardRequest{
 			Namespace: string(ns), Collection: coll, Command: cmd,
-		}))
+		})
 		if err == nil {
 			f.mu.Lock()
 			f.hint = addr
 			f.mu.Unlock()
-			return resp.Msg.GetCount(), resp.Msg.GetData(), nil
+			return resp.GetCount(), resp.GetData(), nil
 		}
-		switch connect.CodeOf(err) {
-		case connect.CodeFailedPrecondition:
+		switch status.Code(err) {
+		case codes.FailedPrecondition:
 			return 0, nil, ErrWrongType // a datatype mismatch is definitive on any node
-		case connect.CodeInvalidArgument:
+		case codes.InvalidArgument:
 			return 0, nil, ErrNotNumber // a non-numeric HIncr field is definitive on any node
 		}
 		lastErr = err

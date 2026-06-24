@@ -4,11 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	"connectrpc.com/connect"
 	"github.com/yannick/wavespan/internal/rpcopts"
 	"github.com/yannick/wavespan/internal/vector"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // Peer is a cluster member a vector query can scatter to.
@@ -25,11 +23,10 @@ type ScatterFunc func(ctx context.Context, indexName string, query []float32, k,
 // (design/08): for each alive peer other than self it calls VectorService.SearchLocal and collects
 // the returned fragment. A peer that errors is counted unreachable, not fatal. peers() is evaluated
 // per query so it tracks live membership; clients are cached per address.
-func NewVectorScatter(self string, peers func() []Peer, hc *http.Client) ScatterFunc {
-	if hc == nil {
-		hc = rpcopts.H2CClient()
-	}
-	clients := map[string]wavespanv1connect.VectorServiceClient{}
+// The hc argument is retained for call-site compatibility but is unused: peer Vector clients are now
+// dialled over gRPC via the rpcopts pooled connections.
+func NewVectorScatter(self string, peers func() []Peer, _ *http.Client) ScatterFunc {
+	clients := map[string]wavespanv1.VectorServiceClient{}
 	return func(ctx context.Context, indexName string, query []float32, k, efSearch int, exact, rerank bool) ([][]vector.Hit, int) {
 		var fragments [][]vector.Hit
 		unreachable := 0
@@ -39,17 +36,22 @@ func NewVectorScatter(self string, peers func() []Peer, hc *http.Client) Scatter
 			}
 			c, ok := clients[p.DataAddr]
 			if !ok {
-				c = wavespanv1connect.NewVectorServiceClient(hc, "http://"+p.DataAddr)
+				conn, err := rpcopts.GRPCConn(p.DataAddr)
+				if err != nil {
+					unreachable++
+					continue
+				}
+				c = wavespanv1.NewVectorServiceClient(conn)
 				clients[p.DataAddr] = c
 			}
-			resp, err := c.SearchLocal(ctx, connect.NewRequest(&wavespanv1.SearchLocalRequest{
+			resp, err := c.SearchLocal(ctx, &wavespanv1.SearchLocalRequest{
 				IndexName: indexName, Query: query, K: int32(k), EfSearch: int32(efSearch), Exact: exact, Rerank: rerank,
-			}))
+			})
 			if err != nil {
 				unreachable++
 				continue
 			}
-			fragments = append(fragments, hitsFromProto(resp.Msg.GetHits()))
+			fragments = append(fragments, hitsFromProto(resp.GetHits()))
 		}
 		return fragments, unreachable
 	}

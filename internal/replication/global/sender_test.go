@@ -2,9 +2,6 @@ package global
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -14,36 +11,25 @@ import (
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
-// receiverFor builds a GlobalReplication httptest server applying into a fresh store for clusterB,
-// gated by an "up" flag so a disconnect can be simulated.
-func receiverFor(t *testing.T) (*httptest.Server, *Applier, *atomic.Bool) {
+// receiverFor builds a GlobalReplication gRPC server applying into a fresh store for clusterB, gated
+// by an "up" flag so a disconnect can be simulated. Returns its host:port endpoint.
+func receiverFor(t *testing.T) (string, *Applier, *atomic.Bool) {
 	t.Helper()
 	bStore := newRecStore(t, "b1")
 	applier := NewApplier(bStore, conflict.NewRegistry(), nil)
-	srv := NewServer(applier, nil)
 	up := &atomic.Bool{}
 	up.Store(true)
-	path, h := srv.Handler()
-	mux := http.NewServeMux()
-	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !up.Load() {
-			http.Error(w, "peer down", http.StatusServiceUnavailable)
-			return
-		}
-		h.ServeHTTP(w, r)
-	}))
-	ts := httptest.NewServer(mux)
-	t.Cleanup(ts.Close)
-	return ts, applier, up
+	addr := serveGlobal(t, &grpcGlobalServer{applier: applier, up: up})
+	return addr, applier, up
 }
 
-func senderTo(t *testing.T, ts *httptest.Server) (*Sender, *OutLog) {
+func senderTo(t *testing.T, endpoint string) (*Sender, *OutLog) {
 	t.Helper()
 	mem := storage.NewMemStore()
 	t.Cleanup(func() { _ = mem.Close() })
 	outlog := NewOutLog(mem, 0)
-	peer := config.ClusterPeer{ClusterID: "test-b", ReplEndpoint: strings.TrimPrefix(ts.URL, "http://")}
-	return NewSender(outlog, []config.ClusterPeer{peer}, ts.Client()), outlog
+	peer := config.ClusterPeer{ClusterID: "test-b", ReplEndpoint: endpoint}
+	return NewSender(outlog, []config.ClusterPeer{peer}, nil), outlog
 }
 
 func TestSenderShipsToReceiverIdempotently(t *testing.T) {

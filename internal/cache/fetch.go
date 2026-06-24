@@ -5,12 +5,10 @@ import (
 	"net/http"
 	"sync"
 
-	"connectrpc.com/connect"
 	"github.com/yannick/wavespan/internal/latencygraph"
 	"github.com/yannick/wavespan/internal/membership"
 	"github.com/yannick/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // Cluster exposes the live roster (satisfied by membership.Service).
@@ -29,33 +27,33 @@ type FetchResult struct {
 // Fetcher resolves the closest holder of a key from the gossiped directory and the latency
 // graph, then FetchReplicas from it (design/05 "Dynamic cache read path"). It never broadcasts.
 type Fetcher struct {
-	self       membership.Member
-	dir        *Directory
-	cluster    Cluster
-	graph      *latencygraph.Graph
-	httpClient connect.HTTPClient
-	mu         sync.Mutex
-	clients    map[string]wavespanv1connect.ReplicationServiceClient
+	self    membership.Member
+	dir     *Directory
+	cluster Cluster
+	graph   *latencygraph.Graph
+	mu      sync.Mutex
+	clients map[string]wavespanv1.ReplicationServiceClient
 }
 
-// NewFetcher wires a fetcher.
-func NewFetcher(self membership.Member, dir *Directory, cluster Cluster, graph *latencygraph.Graph, hc *http.Client) *Fetcher {
-	var c connect.HTTPClient = rpcopts.H2CClient()
-	if hc != nil {
-		c = hc
-	}
-	return &Fetcher{self: self, dir: dir, cluster: cluster, graph: graph, httpClient: c, clients: map[string]wavespanv1connect.ReplicationServiceClient{}}
+// NewFetcher wires a fetcher. The hc argument is retained for call-site compatibility but is unused:
+// internal data-port clients now dial peers over gRPC via the rpcopts pooled connections.
+func NewFetcher(self membership.Member, dir *Directory, cluster Cluster, graph *latencygraph.Graph, _ *http.Client) *Fetcher {
+	return &Fetcher{self: self, dir: dir, cluster: cluster, graph: graph, clients: map[string]wavespanv1.ReplicationServiceClient{}}
 }
 
-func (f *Fetcher) client(addr string) wavespanv1connect.ReplicationServiceClient {
+func (f *Fetcher) client(addr string) (wavespanv1.ReplicationServiceClient, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if c, ok := f.clients[addr]; ok {
-		return c
+		return c, nil
 	}
-	c := wavespanv1connect.NewReplicationServiceClient(f.httpClient, "http://"+addr)
+	conn, err := rpcopts.GRPCConn(addr)
+	if err != nil {
+		return nil, err
+	}
+	c := wavespanv1.NewReplicationServiceClient(conn)
 	f.clients[addr] = c
-	return c
+	return c, nil
 }
 
 // memberByID returns the live member with the given id.
@@ -90,21 +88,29 @@ func (f *Fetcher) orderHoldersByLatency(ids []string) []membership.Member {
 func (f *Fetcher) Fetch(ctx context.Context, namespace string, key []byte) (FetchResult, error) {
 	holderIDs := f.dir.ResolveHolders(namespace, key)
 	candidates := f.orderHoldersByLatency(holderIDs)
-	req := connect.NewRequest(&wavespanv1.FetchReplicaRequest{Namespace: namespace, Key: key, WantSubscriptionOffer: true})
+	req := &wavespanv1.FetchReplicaRequest{Namespace: namespace, Key: key, WantSubscriptionOffer: true}
 
 	for _, m := range candidates {
-		resp, err := f.client(m.DataAddr).FetchReplica(ctx, req)
+		c, err := f.client(m.DataAddr)
+		if err != nil {
+			continue // could not dial this holder
+		}
+		resp, err := c.FetchReplica(ctx, req)
 		if err != nil {
 			continue // try the next holder
 		}
-		if resp.Msg.GetFound() {
-			return FetchResult{Found: true, Record: resp.Msg.GetRecord(), Source: m.MemberID, Offer: resp.Msg.GetSubscriptionOffer()}, nil
+		if resp.GetFound() {
+			return FetchResult{Found: true, Record: resp.GetRecord(), Source: m.MemberID, Offer: resp.GetSubscriptionOffer()}, nil
 		}
 		// holder did not have it: follow alternate holder hints if any
-		for _, alt := range resp.Msg.GetAlternateHolderMemberIds() {
+		for _, alt := range resp.GetAlternateHolderMemberIds() {
 			if am, ok := f.memberByID(alt); ok {
-				if r2, e2 := f.client(am.DataAddr).FetchReplica(ctx, req); e2 == nil && r2.Msg.GetFound() {
-					return FetchResult{Found: true, Record: r2.Msg.GetRecord(), Source: am.MemberID}, nil
+				ac, e := f.client(am.DataAddr)
+				if e != nil {
+					continue
+				}
+				if r2, e2 := ac.FetchReplica(ctx, req); e2 == nil && r2.GetFound() {
+					return FetchResult{Found: true, Record: r2.GetRecord(), Source: am.MemberID}, nil
 				}
 			}
 		}

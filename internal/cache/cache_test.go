@@ -2,9 +2,7 @@ package cache
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
-	"strings"
+	"net"
 	"testing"
 
 	"github.com/yannick/wavespan/internal/latencygraph"
@@ -14,7 +12,60 @@ import (
 	"github.com/yannick/wavespan/internal/storage"
 	"github.com/yannick/wavespan/internal/version"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"google.golang.org/grpc"
 )
+
+// testReplicaServer is a minimal gRPC ReplicationService for the cache tests. It serves only the two
+// methods the cache clients exercise (FetchReplica + SubscribeKey) directly over the record store, so
+// the test does not import grpcsrv (which would create a grpcsrv→kv→cache import cycle).
+type testReplicaServer struct {
+	wavespanv1.UnimplementedReplicationServiceServer
+	rec      *recordstore.Store
+	self     string
+	dataAddr string
+	source   local.SubscriptionSource
+}
+
+func (s *testReplicaServer) FetchReplica(_ context.Context, req *wavespanv1.FetchReplicaRequest) (*wavespanv1.FetchReplicaResponse, error) {
+	rec, found, err := s.rec.GetRecord(req.GetNamespace(), req.GetKey())
+	if err != nil {
+		return nil, err
+	}
+	resp := &wavespanv1.FetchReplicaResponse{Found: found, Record: rec}
+	if found && req.GetWantSubscriptionOffer() {
+		resp.SubscriptionOffer = &wavespanv1.SubscriptionOffer{SourceMemberId: s.self, SourceDataAddr: s.dataAddr}
+	}
+	return resp, nil
+}
+
+func (s *testReplicaServer) SubscribeKey(req *wavespanv1.SubscribeKeyRequest, stream grpc.ServerStreamingServer[wavespanv1.CacheUpdate]) error {
+	if s.source != nil {
+		return s.source.Subscribe(stream.Context(), req, stream.Send)
+	}
+	rec, found, err := s.rec.GetRecord(req.GetNamespace(), req.GetKey())
+	if err != nil {
+		return err
+	}
+	if found {
+		return stream.Send(&wavespanv1.CacheUpdate{Namespace: req.GetNamespace(), Key: req.GetKey(), Record: rec, StreamSequence: 1})
+	}
+	return nil
+}
+
+// serveTestReplication serves the given testReplicaServer on a loopback port and returns its
+// host:port; the server is stopped via t.Cleanup.
+func serveTestReplication(t *testing.T, srv *testReplicaServer) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs := grpc.NewServer()
+	wavespanv1.RegisterReplicationServiceServer(gs, srv)
+	go func() { _ = gs.Serve(lis) }()
+	t.Cleanup(gs.Stop)
+	return lis.Addr().String()
+}
 
 func TestBloomNoFalseNegatives(t *testing.T) {
 	b := NewBloom()
@@ -71,12 +122,7 @@ func TestFetchFromClosestHolder(t *testing.T) {
 	if _, err := rec.Apply(sr, wavespanv1.MutationKind_MUTATION_KIND_PUT); err != nil {
 		t.Fatal(err)
 	}
-	server := local.NewReplicaServer(local.NewReceiver(rec, "node1", local.NewIdempotency(0)), rec, "node1", "", nil)
-	mux := http.NewServeMux()
-	mux.Handle(server.Handler())
-	ts := httptest.NewServer(mux)
-	t.Cleanup(ts.Close)
-	addr := strings.TrimPrefix(ts.URL, "http://")
+	addr := serveTestReplication(t, &testReplicaServer{rec: rec, self: "node1"})
 
 	// node3's directory learns node1 holds foo
 	now := int64(1)
@@ -87,7 +133,7 @@ func TestFetchFromClosestHolder(t *testing.T) {
 
 	self := membership.Member{ClusterID: "dev", MemberID: "node3"}
 	cluster := staticCluster{{Member: membership.Member{MemberID: "node1", DataAddr: addr}, State: membership.StateAlive}}
-	f := NewFetcher(self, dir, cluster, latencygraph.New(latencygraph.DefaultConfig()), http.DefaultClient)
+	f := NewFetcher(self, dir, cluster, latencygraph.New(latencygraph.DefaultConfig()), nil)
 
 	res, err := f.Fetch(context.Background(), "default", []byte("foo"))
 	if err != nil {

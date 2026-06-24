@@ -13,6 +13,7 @@ require (
 	github.com/zeebo/blake3 v0.2.4
 	golang.org/x/net v0.53.0
 	golang.org/x/sys v0.44.0
+	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 	wavesdb v0.0.1
@@ -68,6 +69,7 @@ require (
 	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/exp v0.0.0-20200513190911-00229845015e // indirect
 	golang.org/x/text v0.37.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260622175928-b703f567277d // indirect
 )
 
 replace wavesdb v0.0.1 => ../wavesdb
