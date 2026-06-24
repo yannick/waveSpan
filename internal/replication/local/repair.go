@@ -53,6 +53,10 @@ type RepairEngine struct {
 	mu      sync.Mutex
 	queue   repairQueue
 	pending map[string]bool
+
+	// backfillCursor is the per-namespace resume point for the periodic under-replication sweep.
+	// Touched only by the single Backfill goroutine, so it needs no lock.
+	backfillCursor map[string][]byte
 }
 
 // SetEverywhere installs the predicate selecting namespaces replicated to all nodes (their repair
@@ -88,7 +92,7 @@ func NewRepairEngine(self membership.Member, cluster Cluster, graph *latencygrap
 	return &RepairEngine{
 		self: self, cluster: cluster, graph: graph, replicator: replicator, holders: holders,
 		reader: reader, policy: policy, targetHolders: policy.TargetNearbyReplicas + 1, cfg: cfg,
-		pending: map[string]bool{},
+		pending: map[string]bool{}, backfillCursor: map[string][]byte{},
 	}
 }
 
@@ -249,10 +253,71 @@ func (r *RepairEngine) Drain(ctx context.Context) {
 	}
 }
 
-// Run drains the queue continuously, applying churn backpressure and a simple rate limit.
-func (r *RepairEngine) Run(ctx context.Context, interval time.Duration) {
+// Run drains the queue with `workers` concurrent workers (min 1). Each worker processes queued
+// items back-to-back at full speed; when the queue is empty (or churn is high) it waits one interval
+// before re-checking. So an idle engine costs one poll per interval per worker, while a backlog
+// drains at the full worker concurrency instead of one item per tick.
+func (r *RepairEngine) Run(ctx context.Context, interval time.Duration, workers int) {
 	if interval <= 0 {
 		interval = 50 * time.Millisecond
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			t := time.NewTicker(interval)
+			defer t.Stop()
+			for {
+				if ctx.Err() != nil {
+					return
+				}
+				// Back off on churn, and idle-wait when the queue is empty; otherwise loop
+				// immediately so a backlog drains as fast as the workers can push.
+				if r.cfg.ChurnHigh() || !r.ProcessOne(ctx) {
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.C:
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// BackfillOnce scans up to `batch` of this node's records per namespace from a rolling cursor and
+// enqueues any that are under-replicated. Enqueue is a no-op for keys already at target, so this is
+// a cheap periodic detector that feeds the repair queue for keys that fell short of target at write
+// time (e.g. a peer was briefly unreachable / the cluster was mid-converge) and were never otherwise
+// re-enqueued — without it, the push queue stays empty while keys sit under-replicated forever.
+func (r *RepairEngine) BackfillOnce(ctx context.Context, namespaces []string, batch int) {
+	if batch <= 0 {
+		batch = 1024
+	}
+	for _, ns := range namespaces {
+		if ctx.Err() != nil {
+			return
+		}
+		recs, next, err := r.reader.ScanRecordsFrom(ns, r.backfillCursor[ns], batch)
+		if err != nil {
+			continue
+		}
+		r.backfillCursor[ns] = next // nil => sweep restarts from the top of the namespace
+		for _, rec := range recs {
+			r.Enqueue(RepairItem{Namespace: ns, Key: rec.GetLogicalKey(), Record: rec})
+		}
+	}
+}
+
+// Backfill periodically sweeps the keyspace enqueuing under-replicated keys, until ctx is done.
+func (r *RepairEngine) Backfill(ctx context.Context, namespaces []string, interval time.Duration, batch int) {
+	if interval <= 0 {
+		interval = time.Second
 	}
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -262,9 +327,9 @@ func (r *RepairEngine) Run(ctx context.Context, interval time.Duration) {
 			return
 		case <-t.C:
 			if r.cfg.ChurnHigh() {
-				continue // back off: do not amplify instability
+				continue // don't add repair load while the cluster is unstable
 			}
-			r.ProcessOne(ctx)
+			r.BackfillOnce(ctx, namespaces, batch)
 		}
 	}
 }

@@ -735,7 +735,12 @@ func run() error {
 	}()
 	// Background target-N fanout and repair workers (M4) + dynamic-cache evictor (M5).
 	go fanout.Run(ctx)
-	go repair.Run(ctx, 200*time.Millisecond)
+	// Repair drains with concurrent workers (was 1 item / 200ms — far too slow to clear a backlog),
+	// plus a periodic backfill sweep that enqueues under-replicated keys so the push queue actually
+	// gets fed (otherwise only write-time fanout-overflow + member-dead feed it, and an accumulated
+	// under-replication backlog never drains).
+	go repair.Run(ctx, 50*time.Millisecond, 16)
+	go repair.Backfill(ctx, intraAENamespaces(cfg), time.Second, 2048)
 	go evictor.Run(ctx, time.Minute)
 	go sweeper.Run(ctx, 30*time.Second)
 	go intraAE.Run(ctx, 2*time.Second)
