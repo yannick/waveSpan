@@ -68,15 +68,29 @@ func newProposer(shard asyncShard, window time.Duration, maxOps int) *proposer {
 }
 
 // Propose enqueues an encoded single command for shardID and blocks until it (or its coalesced batch)
-// commits, returning that op's apply result. The cmd bytes are owned by the proposer until the result
-// returns (it copies them into the coalesced entry, then they may be reused).
+// commits, returning that op's apply result.
+//
+// CRITICAL ROBUSTNESS (incident: a pooled encode buffer reused before dragonboat durably copied the
+// proposed bytes corrupted a committed Raft entry → "short command" → all voters crash-looped). The
+// caller may pass a POOLED buffer (collections.go encodeCommandPooled) and release it the instant Propose
+// returns — including when this call returns EARLY on ctx cancellation, while the flusher goroutine still
+// holds the bytes and has not yet proposed/copied them. So the proposer takes its OWN copy of cmd at
+// enqueue: the job, the single-command dispatch, and the coalesced batch all work off proposer-owned
+// bytes, fully decoupling the caller's buffer lifetime from the async propose. Correctness over the alloc.
 func (p *proposer) Propose(ctx context.Context, shardID uint64, cmd []byte) (ProposeResult, error) {
 	q := p.queueFor(shardID)
-	job := &proposeJob{cmd: cmd, ctx: ctx, respCh: make(chan proposeResp, 1)}
+	owned := append([]byte(nil), cmd...) // copy off any pooled/aliased caller buffer before going async
+	job := &proposeJob{cmd: owned, ctx: ctx, respCh: make(chan proposeResp, 1)}
+	// ADMISSION CONTROL (load shedding): the per-shard queue is bounded (proposeQueueDepth). When it is
+	// full the node is already saturated, so enqueue NON-BLOCKING — a full queue fast-rejects with ErrBusy
+	// (mapped to ResourceExhausted) rather than letting callers pile up an unbounded backlog that drives
+	// the node toward OOM/timeout collapse. The flood is shed; the node stays up and keeps serving.
 	select {
 	case q.jobs <- job:
 	case <-ctx.Done():
 		return ProposeResult{}, ctx.Err()
+	default:
+		return ProposeResult{}, ErrBusy
 	}
 	select {
 	case r := <-job.respCh:
@@ -136,14 +150,33 @@ func (p *proposer) flush(q *shardQueue) {
 
 // dispatch proposes one batch of jobs as a single Raft entry and routes per-op results back. A
 // single-job batch uses the plain single-command path (back-compat, no wrapper overhead).
+//
+// ROBUSTNESS under load: a caller that cancels (tight deadline / disconnect) returns from Propose while
+// its job is still queued (the enqueue is buffered). Such an orphan job must NOT be proposed — its
+// already-expired deadline would otherwise poison mergeDeadlines for the WHOLE batch (dragonboat rejects
+// a past deadline with ErrInvalidDeadline), failing healthy co-batched writes. So dispatch first drops
+// every job whose context is already done, replying to it with its own ctx error, and proposes only the
+// live remainder. This keeps one slow/cancelled client from taking down a coalesced batch of good writes.
 func (p *proposer) dispatch(shardID uint64, jobs []*proposeJob) {
+	live := jobs[:0]
+	for _, j := range jobs {
+		if err := j.ctx.Err(); err != nil {
+			j.respCh <- proposeResp{err: err} // orphaned (cancelled) before flush — reject it alone
+			continue
+		}
+		live = append(live, j)
+	}
+	jobs = live
+	if len(jobs) == 0 {
+		return
+	}
 	if len(jobs) == 1 {
 		j := jobs[0]
 		res, err := p.shard.Propose(j.ctx, shardID, j.cmd)
 		j.respCh <- proposeResp{res: res, err: err}
 		return
 	}
-	// Use the earliest deadline among the jobs so no caller waits past its own context.
+	// Use the earliest deadline among the (live) jobs so no caller waits past its own context.
 	ctx, cancel := mergeDeadlines(jobs)
 	defer cancel()
 	cmds := make([][]byte, len(jobs))

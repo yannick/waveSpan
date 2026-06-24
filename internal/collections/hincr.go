@@ -20,7 +20,7 @@ func (u *updateCtx) fieldVal(ek []byte) ([]byte, bool, error) {
 	if v, ok := u.vals[string(ek)]; ok {
 		return v, v != nil, nil // nil = deleted earlier in this batch
 	}
-	v, found, err := u.s.store.Get(storage.CFReplData, ek)
+	v, found, err := u.s.getData(ek)
 	if err != nil || !found {
 		return nil, false, err
 	}
@@ -36,6 +36,9 @@ func (u *updateCtx) setFieldVal(ek, val []byte) {
 // applyHIncrInt applies one HINCRBY. Returns (newFields, encoded-new-value); notNumber data when the
 // existing value isn't a base-10 integer.
 func (u *updateCtx) applyHIncrInt(c command, it item) (int64, []byte, error) {
+	if len(it.Val) < 8 { // corrupt HINCRBY delta (encoder always writes an 8-byte int64) — skip (non-fatal)
+		return 0, nil, errShortCommand
+	}
 	ek := u.s.elemKey(c.NS, c.Coll, it.Key)
 	cur, found, err := u.fieldVal(ek)
 	if err != nil {

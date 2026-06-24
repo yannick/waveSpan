@@ -32,7 +32,7 @@ func (s *shardSM) dedupRingKey(slot uint64) []byte {
 }
 
 func (b *baseSM) readDedupSeq() (uint64, error) {
-	v, found, err := b.store.Get(storage.CFReplData, b.dedupSeqKey())
+	v, found, err := b.getData(b.dedupSeqKey())
 	if err != nil || !found || len(v) != 8 {
 		return 0, err
 	}
@@ -41,7 +41,7 @@ func (b *baseSM) readDedupSeq() (uint64, error) {
 
 // dedupGet returns the cached result (value + data) for an idempotency key, if present.
 func (s *shardSM) dedupGet(key []byte) (uint64, []byte, bool, error) {
-	v, found, err := s.store.Get(storage.CFReplData, s.dedupKey(key))
+	v, found, err := s.getData(s.dedupKey(key))
 	if err != nil || !found || len(v) < 8 {
 		return 0, nil, false, err
 	}
@@ -52,7 +52,7 @@ func (s *shardSM) dedupGet(key []byte) (uint64, []byte, bool, error) {
 func (u *updateCtx) dedupRecord(key []byte, value uint64, data []byte) error {
 	s := u.s
 	slot := u.dedupSeq % dedupRingSize
-	if oldKey, found, err := s.store.Get(storage.CFReplData, s.dedupRingKey(slot)); err != nil {
+	if oldKey, found, err := s.getData(s.dedupRingKey(slot)); err != nil {
 		return err
 	} else if found && len(oldKey) > 0 {
 		u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: s.dedupKey(oldKey), Delete: true})

@@ -39,7 +39,7 @@ func (b *baseSM) loadFrozen() ([]frozenRange, error) {
 	fs := b.frozenSpace()
 	it, err := b.store.Scan(storage.CFReplData, fs, prefixEnd(fs), 0)
 	if err != nil {
-		return nil, err
+		return nil, fatal(err)
 	}
 	defer func() { _ = it.Close() }()
 	var out []frozenRange
@@ -50,7 +50,7 @@ func (b *baseSM) loadFrozen() ([]frozenRange, error) {
 		})
 		it.Next()
 	}
-	return out, it.Err()
+	return out, fatal(it.Err())
 }
 
 func frozenCovers(ranges []frozenRange, key []byte) bool {
