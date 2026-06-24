@@ -31,22 +31,34 @@ type Control struct {
 // a full initial range, and returns a ready Control. metaMembers and dataMembers map ReplicaID ->
 // RaftAddress for each group (identical sets when single-node).
 func Bootstrap(ctx context.Context, mgr *Manager, replicaID uint64, metaMembers, dataMembers map[uint64]string) (*Control, error) {
+	// Start both replicas first — these are fast and recover their persisted state on restart; they do
+	// not require a leader/quorum to be present yet.
 	if err := mgr.StartMetaShard(MetaShardID, replicaID, metaMembers, false); err != nil {
-		return nil, err
-	}
-	dir := NewRangeDirectory(mgr, MetaShardID)
-
-	// Minimal placement driver: ensure the initial full range [-inf,+inf) -> firstDataShard.
-	if err := ensureInitialRange(ctx, mgr, dir); err != nil {
 		return nil, err
 	}
 	if err := mgr.StartShard(firstDataShard, replicaID, dataMembers, false); err != nil {
 		return nil, err
 	}
-	if err := refreshWithRetry(ctx, dir); err != nil {
-		return nil, err
+	dir := NewRangeDirectory(mgr, MetaShardID)
+	ctrl := &Control{mgr: mgr, dir: dir, cols: New(mgr, dir)}
+
+	// Ensure the initial range [-inf,+inf) -> firstDataShard and load the directory. On a healthy or
+	// single-node cluster this completes within the caller's deadline and the tier is ready on return.
+	// CRUCIAL for "never wake to a dysfunctional cluster": if quorum isn't available yet (e.g. a rolling
+	// restart where peers are mid-roll) we must NOT fail and disable the tier — the shards are already
+	// running, so keep retrying in the background until quorum forms and the tier becomes ready.
+	if ensureInitialRange(ctx, mgr, dir) == nil && refreshWithRetry(ctx, dir) == nil {
+		return ctrl, nil
 	}
-	return &Control{mgr: mgr, dir: dir, cols: New(mgr, dir)}, nil
+	go func() {
+		for {
+			if ensureInitialRange(context.Background(), mgr, dir) == nil && refreshWithRetry(context.Background(), dir) == nil {
+				return
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}()
+	return ctrl, nil
 }
 
 // Placement describes a node's role in the consensus tier (design/30 §4, §7). Voter-eligible nodes are
