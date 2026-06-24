@@ -21,8 +21,8 @@ type singleShard struct{ id uint64 }
 // SingleShardDirectory routes every collection to one shard id (M-A single-range mode).
 func SingleShardDirectory(id uint64) Directory { return singleShard{id: id} }
 
-func (s singleShard) ShardFor(_, _ []byte) uint64    { return s.id }
-func (s singleShard) Shards() []uint64               { return []uint64{s.id} }
+func (s singleShard) ShardFor(_, _ []byte) uint64     { return s.id }
+func (s singleShard) Shards() []uint64                { return []uint64{s.id} }
 func (s singleShard) Refresh(_ context.Context) error { return nil }
 
 // HashDirectory statically pre-splits the collection keyspace into N hash-routed data shards (D1,
@@ -51,11 +51,26 @@ func NewHashDirectory(n uint64) *HashDirectory {
 	return &HashDirectory{n: n, shards: shards}
 }
 
-// ShardFor routes a collection to one of the N data shards by hashing its route key.
-func (h *HashDirectory) ShardFor(ns, coll []byte) uint64 {
+// FirstDataShard is the lowest data shard id (data shard ids run [FirstDataShard, FirstDataShard+N)).
+// Exported so a shard-aware client can interpret ShardForKey's result without package internals.
+const FirstDataShard = firstDataShard
+
+// ShardForKey is the canonical hash-routing function shared by server and client: a collection
+// routes to FirstDataShard + (fnv64a(routeKey(ns,coll)) mod dataShards). Exporting it as a pure
+// function lets a shard-aware client compute the owning shard identically to HashDirectory, so the
+// two can never diverge. dataShards < 1 is clamped to 1.
+func ShardForKey(ns, coll []byte, dataShards uint64) uint64 {
+	if dataShards < 1 {
+		dataShards = 1
+	}
 	hsh := fnv.New64a()
 	_, _ = hsh.Write(routeKey(ns, coll))
-	return firstDataShard + (hsh.Sum64() % h.n)
+	return firstDataShard + (hsh.Sum64() % dataShards)
+}
+
+// ShardFor routes a collection to one of the N data shards by hashing its route key.
+func (h *HashDirectory) ShardFor(ns, coll []byte) uint64 {
+	return ShardForKey(ns, coll, h.n)
 }
 
 // Shards returns every data shard id (for cross-shard enumeration, §13.7).

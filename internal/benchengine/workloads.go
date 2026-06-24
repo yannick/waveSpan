@@ -114,19 +114,22 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 		}
 		writeRatio := floatParam(spec.Params, "writeRatio", 0.5)
 		ns := strParam(spec.Params, "namespace", "bench-collections")
-		c := bench.CollectionsClient(cfg.DataAddr)
+		c, err := collWriterFor(cfg)
+		if err != nil {
+			return nil, "", err
+		}
 		op = func(ctx context.Context) error {
 			ctx, cancel := withDeadline(ctx, collOpTimeout) // collection writes need a deadline (Raft propose)
 			defer cancel()
 			coll := []byte(fmt.Sprintf("col/%d", rand.IntN(collections)))
 			member := []byte(fmt.Sprintf("m/%d", rand.IntN(members)))
 			if rand.Float64() < writeRatio {
-				return bench.OpSAdd(ctx, c, ns, coll, member)
+				return c.SAdd(ctx, ns, coll, member)
 			}
 			if rand.Float64() < 0.5 {
-				return bench.OpSIsMember(ctx, c, ns, coll, member)
+				return c.SIsMember(ctx, ns, coll, member)
 			}
-			return bench.OpSCard(ctx, c, ns, coll)
+			return c.SCard(ctx, ns, coll)
 		}
 		return op, "set", nil
 
@@ -144,7 +147,10 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 		ns := strParam(spec.Params, "namespace", "bench-collections")
 		counter := []byte("counter")
 		val := []byte("v")
-		c := bench.CollectionsClient(cfg.DataAddr)
+		c, err := collWriterFor(cfg)
+		if err != nil {
+			return nil, "", err
+		}
 		op = func(ctx context.Context) error {
 			ctx, cancel := withDeadline(ctx, collOpTimeout) // collection writes need a deadline (Raft propose)
 			defer cancel()
@@ -152,11 +158,11 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 			field := []byte(fmt.Sprintf("m/%d", rand.IntN(fields)))
 			if rand.Float64() < writeRatio {
 				if rand.Float64() < counterRatio {
-					return bench.OpHIncrBy(ctx, c, ns, coll, counter, 1)
+					return c.HIncrBy(ctx, ns, coll, counter, 1)
 				}
-				return bench.OpHSet(ctx, c, ns, coll, field, val)
+				return c.HSet(ctx, ns, coll, field, val)
 			}
-			return bench.OpHGet(ctx, c, ns, coll, field)
+			return c.HGet(ctx, ns, coll, field)
 		}
 		return op, "hash", nil
 
@@ -171,16 +177,19 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 		}
 		writeRatio := floatParam(spec.Params, "writeRatio", 0.5)
 		ns := strParam(spec.Params, "namespace", "bench-collections")
-		c := bench.CollectionsClient(cfg.DataAddr)
+		c, err := collWriterFor(cfg)
+		if err != nil {
+			return nil, "", err
+		}
 		op = func(ctx context.Context) error {
 			ctx, cancel := withDeadline(ctx, collOpTimeout) // collection writes need a deadline (Raft propose)
 			defer cancel()
 			coll := []byte(fmt.Sprintf("col/%d", rand.IntN(collections)))
 			member := []byte(fmt.Sprintf("m/%d", rand.IntN(members)))
 			if rand.Float64() < writeRatio {
-				return bench.OpZAdd(ctx, c, ns, coll, member, rand.Float64())
+				return c.ZAdd(ctx, ns, coll, member, rand.Float64())
 			}
-			return bench.OpZScore(ctx, c, ns, coll, member)
+			return c.ZScore(ctx, ns, coll, member)
 		}
 		return op, "zset", nil
 
@@ -196,7 +205,10 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 		ns := strParam(spec.Params, "namespace", "bench-collections")
 		member := []byte(strParam(spec.Params, "member", "doomed"))
 		members := [][]byte{member}
-		c := bench.CollectionsClient(cfg.DataAddr)
+		c, err := collWriterFor(cfg)
+		if err != nil {
+			return nil, "", err
+		}
 		op = func(ctx context.Context) error {
 			ctx, cancel := withDeadline(ctx, collOpTimeout) // batch remove + re-add: all need a deadline (Raft propose)
 			defer cancel()
@@ -204,13 +216,13 @@ func opsFor(spec WorkloadSpec, cfg Config) (op func(context.Context) error, labe
 			for i := range keys {
 				keys[i] = []byte(fmt.Sprintf("col/%d", rand.IntN(collections)))
 			}
-			_, _, err := bench.OpBulkRemove(ctx, c, ns, keys, members)
+			_, _, err := c.BulkRemove(ctx, ns, keys, members)
 			if err != nil {
 				return err
 			}
 			// Re-add the member so the next removal has work to do.
 			for _, k := range keys {
-				if e := bench.OpSAdd(ctx, c, ns, k, member); e != nil {
+				if e := c.SAdd(ctx, ns, k, member); e != nil {
 					return e
 				}
 			}

@@ -78,6 +78,14 @@ type createRunRequest struct {
 	} `json:"workloads"`
 	Concurrency int `json:"concurrency"`
 	DurationMs  int `json:"durationMs"`
+
+	// Optional shard-aware routing for collection workloads (set/hash/zset/bulkremove). Absent =
+	// current behavior (single-address path with the server-side forward hop). When ShardAware is
+	// true, Cores is the ordered list of core data addresses (index i = replicaId i+1) and DataShards
+	// is the hash directory width N.
+	ShardAware bool     `json:"shardAware"`
+	Cores      []string `json:"cores"`
+	DataShards int      `json:"dataShards"`
 }
 
 // runFinished reports whether a run is in a terminal state and can be replaced.
@@ -113,6 +121,9 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		Workloads:   specs,
 		Concurrency: req.Concurrency,
 		Duration:    time.Duration(req.DurationMs) * time.Millisecond,
+		ShardAware:  req.ShardAware,
+		Cores:       req.Cores,
+		DataShards:  req.DataShards,
 	}
 	if hasCypher {
 		cfg.CypherQueries = benchqueries.All()

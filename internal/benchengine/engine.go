@@ -54,6 +54,15 @@ type Config struct {
 	Concurrency   int
 	Duration      time.Duration
 	CypherQueries []benchqueries.Query
+
+	// ShardAware (opt-in, default false) routes collection writes directly to each shard's leader,
+	// eliminating the per-op forward hop. When set, the set/hash/zset/bulkremove workloads use a
+	// bench.ShardAwareClient over Cores instead of the single-address path. Cores is the ordered list
+	// of core data addresses (index i = replicaId i+1); DataShards is the hash directory width N.
+	// Default (false) leaves the existing single-DataAddr path byte-for-byte unchanged.
+	ShardAware bool
+	Cores      []string
+	DataShards int
 }
 
 // pauseGate blocks workers while the run is paused. Pause takes the write lock (in-flight ops
