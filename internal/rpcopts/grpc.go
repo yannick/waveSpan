@@ -2,6 +2,7 @@ package rpcopts
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -28,7 +29,14 @@ func GRPCConn(addr string) (grpc.ClientConnInterface, error) {
 	if c, ok := grpcConnPool[addr]; ok {
 		return c, nil
 	}
-	cc, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Use the passthrough resolver for a plain host:port (already-resolved advertise addr): grpc dials
+	// the address directly via the OS resolver rather than grpc.NewClient's default dns resolver, which
+	// can stall on a dual-stack "localhost" — and skips a needless DNS round-trip for IP addrs.
+	target := addr
+	if !strings.Contains(target, "://") {
+		target = "passthrough:///" + target
+	}
+	cc, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}

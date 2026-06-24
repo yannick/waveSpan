@@ -91,7 +91,15 @@ func Dial(opts Options) (*Client, error) {
 	dialOpts = append(dialOpts, grpc.WithChainStreamInterceptor(metadataStreamInterceptor(opts.Token, ua)))
 	dialOpts = append(dialOpts, opts.DialOptions...)
 
-	conn, err := grpc.NewClient(target, dialOpts...)
+	// Use the passthrough resolver for a plain host:port so grpc dials the address via the OS
+	// resolver (correct IPv4/IPv6 happy-eyeballs for "localhost") instead of the dns resolver that
+	// grpc.NewClient defaults to — the dns resolver can stall indefinitely on localhost's dual-stack
+	// records. A target the caller gave with its own scheme (dns:///, unix:, …) is left untouched.
+	dialTarget := target
+	if !strings.Contains(dialTarget, "://") {
+		dialTarget = "passthrough:///" + dialTarget
+	}
+	conn, err := grpc.NewClient(dialTarget, dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("wavespan: Dial: %w", err)
 	}
