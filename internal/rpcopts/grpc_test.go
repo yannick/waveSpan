@@ -2,10 +2,56 @@ package rpcopts
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"google.golang.org/grpc"
 )
+
+func TestGRPCConnCachesPerAddr(t *testing.T) {
+	c1, err := GRPCConn("127.0.0.1:60001")
+	if err != nil {
+		t.Fatalf("GRPCConn: %v", err)
+	}
+	c2, err := GRPCConn("127.0.0.1:60001")
+	if err != nil {
+		t.Fatalf("GRPCConn: %v", err)
+	}
+	if c1 != c2 {
+		t.Fatal("same addr returned different conns")
+	}
+	c3, err := GRPCConn("127.0.0.1:60002")
+	if err != nil {
+		t.Fatalf("GRPCConn: %v", err)
+	}
+	if c1 == c3 {
+		t.Fatal("different addrs returned the same conn")
+	}
+}
+
+func TestGRPCConnConcurrentRaceClean(t *testing.T) {
+	const addr = "127.0.0.1:60003"
+	var wg sync.WaitGroup
+	conns := make([]grpc.ClientConnInterface, 32)
+	for i := range conns {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			c, err := GRPCConn(addr)
+			if err != nil {
+				t.Errorf("GRPCConn: %v", err)
+				return
+			}
+			conns[i] = c
+		}(i)
+	}
+	wg.Wait()
+	for i := 1; i < len(conns); i++ {
+		if conns[i] != conns[0] {
+			t.Fatalf("conn %d differs from conn 0 for the same addr", i)
+		}
+	}
+}
 
 func TestGRPCMetricsUnaryInterceptorCallsThrough(t *testing.T) {
 	ran := false
