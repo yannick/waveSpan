@@ -590,11 +590,11 @@ func run() error {
 			// has the directory — without blocking startup.
 			collectionsMgr = mgr
 			spotRID := collections.SpotReplicaID(cfg.MemberID)
-			admitter := collections.NewRPCAdmitter(httpClient, peersFn)
+			admitter := collections.NewRPCAdmitter(peersFn)
 			dir := collections.NewRangeDirectory(mgr, collections.MetaShardID)
 			cols := collections.New(mgr, dir).
 				WithDemandFill(collections.NewDemandFiller(mgr, spotRID, raftAddr, admitter)).
-				WithForwarder(collections.NewRPCForwarder(httpClient, peersFn)) // spot nodes never lead; forward all writes
+				WithForwarder(collections.NewRPCForwarder(peersFn)) // spot nodes never lead; forward all writes
 			collectionsSvc = collections.NewService(cols, self).WithTierStatus(mgr, raftAddr, spotRID, false)
 			dataMux.Handle(collectionsSvc.Handler())
 			cypherSvc.WithCollections(collections.NewCypherCollections(cols))
@@ -618,9 +618,9 @@ func run() error {
 				cols := ctrl.Collections()
 				// Demand-fill data shards this node does not host (e.g. ranges split onto other voters),
 				// asking peers over RPC to admit us as a learner.
-				admitter := collections.NewRPCAdmitter(httpClient, peersFn)
+				admitter := collections.NewRPCAdmitter(peersFn)
 				cols.WithDemandFill(collections.NewDemandFiller(mgr, selfReplicaID, raftAddr, admitter))
-				cols.WithForwarder(collections.NewRPCForwarder(httpClient, peersFn)) // forward writes when not this shard's leader
+				cols.WithForwarder(collections.NewRPCForwarder(peersFn)) // forward writes when not this shard's leader
 				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr).
 					WithTierStatus(mgr, raftAddr, selfReplicaID, true)
 				dataMux.Handle(collectionsSvc.Handler())
