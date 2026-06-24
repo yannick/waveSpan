@@ -135,6 +135,7 @@ jobs:
           tags: |
             type=sha,format=long
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=main-{{sha}}-{{date 'X'}},enable={{is_default_branch}}
 
       - name: Build (and push on main) the wavespan-node image, multi-arch
         # Context is the workspace root holding the waveSpan/ and wavesdb/ siblings the
@@ -192,6 +193,7 @@ jobs:
           tags: |
             type=sha,format=long
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=main-{{sha}}-{{date 'X'}},enable={{is_default_branch}}
 
       - name: Build (and push on main) the wavespan-benchui image, multi-arch
         # Context is the workspace root holding the waveSpan/ and wavesdb/ siblings the
