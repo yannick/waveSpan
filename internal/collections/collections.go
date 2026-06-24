@@ -115,6 +115,14 @@ func forwardable(ctx context.Context, err error) bool {
 
 func (c *Collections) read(ctx context.Context, ns, coll []byte, q interface{}, lin bool) (interface{}, error) {
 	shard := c.dir.ShardFor(ns, coll)
+	if shard == 0 {
+		// The in-memory range directory is empty/stale on this node (the bootstrap refresh raced or a
+		// split landed elsewhere). Unlike writes — which forward to the leader — reads resolve locally,
+		// so refresh from the meta shard and re-resolve before failing. Self-heals "shard not found".
+		if rerr := c.dir.Refresh(ctx); rerr == nil {
+			shard = c.dir.ShardFor(ns, coll)
+		}
+	}
 	v, err := c.shard.Read(ctx, shard, q, lin)
 	if err != nil && c.filler != nil && errors.Is(err, ErrNotHosted) {
 		if ferr := c.filler.Fill(ctx, shard); ferr != nil {

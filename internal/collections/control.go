@@ -47,15 +47,20 @@ func Bootstrap(ctx context.Context, mgr *Manager, replicaID uint64, metaMembers,
 	// CRUCIAL for "never wake to a dysfunctional cluster": if quorum isn't available yet (e.g. a rolling
 	// restart where peers are mid-roll) we must NOT fail and disable the tier — the shards are already
 	// running, so keep retrying in the background until quorum forms and the tier becomes ready.
-	if ensureInitialRange(ctx, mgr, dir) == nil && refreshWithRetry(ctx, dir) == nil {
-		return ctrl, nil
-	}
+	synced := ensureInitialRange(ctx, mgr, dir) == nil && refreshWithRetry(ctx, dir) == nil
 	go func() {
-		for {
-			if ensureInitialRange(context.Background(), mgr, dir) == nil && refreshWithRetry(context.Background(), dir) == nil {
-				return
+		// Finish the initial load if the synchronous attempt raced a leaderless window, then keep the
+		// in-memory directory fresh on a ticker so every node re-learns ranges (missed bootstrap load,
+		// later splits) without waiting for a read miss.
+		if !synced {
+			for ensureInitialRange(context.Background(), mgr, dir) != nil || refreshWithRetry(context.Background(), dir) != nil {
+				time.Sleep(2 * time.Second)
 			}
-			time.Sleep(2 * time.Second)
+		}
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for range t.C {
+			_ = dir.Refresh(context.Background())
 		}
 	}()
 	return ctrl, nil
