@@ -1307,7 +1307,7 @@ func isLowestAlive(svc *membership.Service, self string) bool {
 }
 
 // gatherSamples collects a reservoir sample from this node plus every alive peer (SampleVectors RPC).
-func gatherSamples(ctx context.Context, self membership.Member, svc *membership.Service, hc *http.Client, vstore *vector.Store, collection string, limit int) [][]float32 {
+func gatherSamples(ctx context.Context, self membership.Member, svc *membership.Service, _ *http.Client, vstore *vector.Store, collection string, limit int) [][]float32 {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	all := vector.ReservoirSample(vstore, collection, limit, rng)
 	for _, mv := range svc.Members() {
@@ -1333,7 +1333,7 @@ func gatherSamples(ctx context.Context, self membership.Member, svc *membership.
 // routedVectorScatter queries peer holders for a kNN fragment. With nprobe>0 and routing info
 // available it scatters only to the advertised holders of the query's probed buckets; otherwise it
 // falls back to every alive peer. Self is excluded — the coordinator adds its own local fragment.
-func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, hc *http.Client, qs *vector.QuantSet, dir *vector.BucketDir, vm *vectorMetrics, ringSize int, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
+func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, _ *http.Client, qs *vector.QuantSet, dir *vector.BucketDir, vm *vectorMetrics, ringSize int, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
 	var allow map[string]bool
 	if nprobe > 0 {
 		if qz, ok := qs.For(collection); ok {

@@ -57,7 +57,7 @@ func TestGRPCUnaryInterceptor(t *testing.T) {
 			}
 			ran := false
 			var gotRole Role
-			handler := func(ctx context.Context, req any) (any, error) {
+			handler := func(ctx context.Context, _ any) (any, error) {
 				ran = true
 				gotRole = RoleFrom(ctx)
 				return "ok", nil
@@ -97,7 +97,7 @@ func TestGRPCStreamInterceptor(t *testing.T) {
 	// Read method on a streaming RPC: allowed, role injected into wrapped stream ctx.
 	var gotRole Role
 	ran := false
-	handler := func(srv any, stream grpc.ServerStream) error {
+	handler := func(_ any, stream grpc.ServerStream) error {
 		ran = true
 		gotRole = RoleFrom(stream.Context())
 		return nil

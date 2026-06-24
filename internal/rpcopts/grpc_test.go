@@ -55,7 +55,7 @@ func TestGRPCConnConcurrentRaceClean(t *testing.T) {
 
 func TestGRPCMetricsUnaryInterceptorCallsThrough(t *testing.T) {
 	ran := false
-	handler := func(ctx context.Context, req any) (any, error) {
+	handler := func(_ context.Context, _ any) (any, error) {
 		ran = true
 		return "ok", nil
 	}
@@ -74,7 +74,7 @@ func TestGRPCMetricsUnaryInterceptorCallsThrough(t *testing.T) {
 
 func TestGRPCMetricsStreamInterceptorCallsThrough(t *testing.T) {
 	ran := false
-	handler := func(srv any, stream grpc.ServerStream) error {
+	handler := func(_ any, _ grpc.ServerStream) error {
 		ran = true
 		return nil
 	}
