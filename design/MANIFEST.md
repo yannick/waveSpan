@@ -32,6 +32,7 @@
 - `29_vector_kv_search.md`
 - `29_vector_kv_search_plan.md`
 - `30_replicated_collections.md`
+- `31_cluster_data_deletion.md`
 - `README.md`
 - `adr/0001_eventual_consistency.md`
 - `adr/0002_origin_plus_one_write_ack.md`
