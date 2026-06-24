@@ -12,6 +12,11 @@ import (
 // ServiceConfig tunes the membership service.
 type ServiceConfig struct {
 	GossipInterval time.Duration
+	// ReseedInterval re-resolves and re-contacts the configured seeds periodically. Static-seed
+	// discovery only contacts seeds once at startup, so a node that came up isolated (seeds not yet
+	// resolvable — e.g. a simultaneous cold deploy) would stay fragmented forever. Re-seeding lets it
+	// re-discover the cluster. Cheap (a few pings), and a no-op merge when already converged.
+	ReseedInterval time.Duration
 	Liveness       LivenessConfig
 	Gossip         GossipConfig
 	Graph          latencygraph.Config
@@ -21,6 +26,7 @@ type ServiceConfig struct {
 func DefaultServiceConfig() ServiceConfig {
 	return ServiceConfig{
 		GossipInterval: time.Second,
+		ReseedInterval: 30 * time.Second,
 		Liveness:       DefaultLivenessConfig(),
 		Gossip:         DefaultGossipConfig(),
 		Graph:          latencygraph.DefaultConfig(),
@@ -84,6 +90,12 @@ func (s *Service) Run(ctx context.Context) {
 	s.gossip.Join(ctx)
 	t := time.NewTicker(s.cfg.GossipInterval)
 	defer t.Stop()
+	reseed := s.cfg.ReseedInterval
+	if reseed <= 0 {
+		reseed = 30 * time.Second
+	}
+	rt := time.NewTicker(reseed)
+	defer rt.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -91,6 +103,9 @@ func (s *Service) Run(ctx context.Context) {
 		case <-t.C:
 			s.gossip.Tick(ctx)
 			s.graph.Expire(time.Now())
+		case <-rt.C:
+			// Re-resolve + re-contact seeds so an isolated node re-discovers the cluster.
+			s.gossip.Join(ctx)
 		}
 	}
 }

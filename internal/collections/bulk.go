@@ -1,6 +1,14 @@
 package collections
 
-import "context"
+import (
+	"context"
+	"sync"
+)
+
+// bulkRemoveConcurrency bounds how many per-collection removal proposals a single BulkRemove pipelines
+// at once. Each is an independent Raft proposal, so firing them concurrently lets the shard leader
+// batch them instead of paying one round-trip per collection serially.
+const bulkRemoveConcurrency = 64
 
 // BulkRemoveEntry is the per-collection result of a BulkRemove fan-out.
 type BulkRemoveEntry struct {
@@ -44,10 +52,21 @@ func (c *Collections) BulkRemove(ctx context.Context, ns []byte, colls, members 
 		targets = listed
 	}
 	items := itemsFromKeys(members)
-	out := make([]BulkRemoveEntry, 0, len(targets))
-	for _, coll := range targets {
-		removed, err := c.proposeCount(ctx, command{Op: opRemove, NS: ns, Coll: coll, Items: items})
-		out = append(out, BulkRemoveEntry{Collection: coll, Removed: removed, Err: err})
+	// Pipeline the per-collection proposals: results are written by index (no shared-slice mutation),
+	// and a semaphore bounds in-flight proposals to bulkRemoveConcurrency.
+	out := make([]BulkRemoveEntry, len(targets))
+	sem := make(chan struct{}, bulkRemoveConcurrency)
+	var wg sync.WaitGroup
+	for i, coll := range targets {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, coll []byte) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			removed, err := c.proposeCount(ctx, command{Op: opRemove, NS: ns, Coll: coll, Items: items})
+			out[i] = BulkRemoveEntry{Collection: coll, Removed: removed, Err: err}
+		}(i, coll)
 	}
+	wg.Wait()
 	return out, nil
 }
