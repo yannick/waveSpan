@@ -61,6 +61,7 @@ Read in this order:
 32. `30_replicated_collections.md`
 33. `31_cluster_data_deletion.md`
 34. `32_consensus_tier_throughput.md`
+35. `33_consensus_throughput_results_and_hardening.md`
 35. `adr/0001_eventual_consistency.md`
 36. `adr/0002_origin_plus_one_write_ack.md`
 37. `adr/0003_cache_replicas_are_derived.md`
