@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // NamedQuery is a query file's name + body.
@@ -55,7 +55,7 @@ func RunQueries(addr, graph string, queries []NamedQuery, conc int, dur time.Dur
 	return out
 }
 
-func runOneQuery(cy wavespanv1connect.CypherClient, graph string, q NamedQuery, conc int, dur time.Duration) *Latencies {
+func runOneQuery(cy wavespanv1.CypherClient, graph string, q NamedQuery, conc int, dur time.Duration) *Latencies {
 	lat := &Latencies{}
 	ctx, cancel := context.WithTimeout(context.Background(), dur)
 	defer cancel()
