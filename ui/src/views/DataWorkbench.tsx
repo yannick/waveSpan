@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useUrlState } from "../router";
-import { obs } from "../transport";
+import { obs, collections } from "../transport";
 import { Keyspace, type GraphNode, type InspectKey } from "../gen/wavespan/v1/observability_pb";
 import { create } from "@bufbuild/protobuf";
 import { NodeRecordSchema } from "../gen/wavespan/v1/cypher_pb";
@@ -70,10 +70,12 @@ export function DataWorkbench() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // "open by name" inputs for the source kinds with no list RPC.
-  const [collNs, setCollNs] = useState("default");
-  const [collName, setCollName] = useState("");
-  const [collType, setCollType] = useState<CType>("set");
+  // Collections: a namespace is browsable (ListCollections returns name + type); graph/vector have no
+  // list RPC, so they stay "open by name".
+  const [collNs, setCollNs] = useUrlState("collns", "default");
+  const [collList, setCollList] = useState<{ name: string; type: CType }[]>([]);
+  const [collListLoading, setCollListLoading] = useState(false);
+  const [creatingColl, setCreatingColl] = useState(false);
   const [graphId, setGraphId] = useState("g");
   const [vectorName, setVectorName] = useState("");
   const [openColl, setOpenColl] = useState(true);
@@ -94,6 +96,29 @@ export function DataWorkbench() {
   useEffect(() => {
     void loadCluster();
   }, []);
+
+  // List the collections (with their datatype) in the chosen namespace. A linearizable read is used
+  // right after a create so the new collection shows immediately (a stale read can lag the write).
+  const loadCollList = async (namespace: string, linearizable = false) => {
+    setCollListLoading(true);
+    try {
+      const res = await collections.listCollections({ namespace, linearizable });
+      const dec = new TextDecoder();
+      setCollList(
+        res.collections
+          .map((c) => ({ name: dec.decode(c.name), type: (c.type || "set") as CType }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
+    } catch {
+      setCollList([]); // best-effort (tier may be disabled)
+    } finally {
+      setCollListLoading(false);
+    }
+  };
+  useEffect(() => {
+    void loadCollList(collNs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collNs]);
 
   // Stream KV records for the selected namespace.
   const loadKv = async (namespace: string) => {
@@ -145,18 +170,37 @@ export function DataWorkbench() {
 
   const select = (next: Selection) => {
     setSelStr(encodeSel(next));
+    setCreatingColl(false);
     setDrawer(null);
   };
 
   const refresh = () => {
     if (sel?.kind === "kv") void loadKv(sel.namespace);
     else if (sel?.kind === "graph") void loadGraph(sel.graphId);
+    void loadCollList(collNs); // a collection add/remove may have created/emptied one
     void loadCluster();
   };
 
   const onSaved = () => {
     setDrawer(null);
     refresh();
+  };
+
+  // Create a collection by writing its first entry (a collection is created on first write, which also
+  // fixes its datatype). On success, refresh the list and open the new collection for editing.
+  const createCollection = async (name: string, type: CType, entry: { member?: string; field?: string; value?: string; score?: string }) => {
+    const enc = (s: string) => new TextEncoder().encode(s);
+    const coll = enc(name);
+    if (type === "set") {
+      await collections.sAdd({ namespace: collNs, collection: coll, members: [enc(entry.member ?? "")] });
+    } else if (type === "hash") {
+      await collections.hSet({ namespace: collNs, collection: coll, fields: [{ field: enc(entry.field ?? ""), value: enc(entry.value ?? "") }] });
+    } else {
+      await collections.zAdd({ namespace: collNs, collection: coll, members: [{ member: enc(entry.member ?? ""), score: Number(entry.score) || 0 }] });
+    }
+    await loadCollList(collNs, true); // linearizable so the new collection appears immediately
+    setCreatingColl(false);
+    select({ kind: "coll", namespace: collNs, name, ctype: type });
   };
 
   const sectionHead = (label: string, open: boolean, toggle: () => void) => (
@@ -230,18 +274,31 @@ export function DataWorkbench() {
           {openColl && (
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--ws-space-xs)", margin: "var(--ws-space-xs) 0 var(--ws-space-md)" }}>
               <Input value={collNs} onChange={(e) => setCollNs(e.target.value)} placeholder="namespace" mono />
-              <Input value={collName} onChange={(e) => setCollName(e.target.value)} placeholder="collection name" mono />
-              <Select value={collType} onChange={(e) => setCollType(e.target.value as CType)}>
-                <option value="set">set</option>
-                <option value="hash">hash</option>
-                <option value="zset">zset</option>
-              </Select>
-              <Button
-                size="sm"
-                disabled={!collName.trim()}
-                onClick={() => select({ kind: "coll", namespace: collNs, name: collName, ctype: collType })}
-              >
-                Open
+              {collListLoading && <Spinner />}
+              {!collListLoading && collList.length === 0 && (
+                <span className="ws-caption ws-muted">no collections in this namespace</span>
+              )}
+              {collList.map((c) => {
+                const active = sel?.kind === "coll" && sel.namespace === collNs && sel.name === c.name;
+                return (
+                  <button
+                    key={`${c.type}:${c.name}`}
+                    onClick={() => select({ kind: "coll", namespace: collNs, name: c.name, ctype: c.type })}
+                    title={c.name}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--ws-space-xs)",
+                      width: "100%", textAlign: "left", border: "none", borderRadius: "var(--ws-radius-sm)",
+                      padding: "2px var(--ws-space-xs)", cursor: "pointer", color: color.ink,
+                      background: active ? "var(--ws-color-surface-alt)" : "none",
+                    }}
+                  >
+                    <span className="ws-mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: active ? 700 : 400 }}>{c.name}</span>
+                    <Badge tone="olive">{c.type}</Badge>
+                  </button>
+                );
+              })}
+              <Button size="sm" variant="ghost" onClick={() => { setCreatingColl(true); setSelStr(""); }}>
+                + New collection
               </Button>
             </div>
           )}
@@ -337,9 +394,17 @@ export function DataWorkbench() {
             />
           )}
 
-          {!sel && (
+          {creatingColl && (
+            <NewCollectionForm
+              namespace={collNs}
+              onCancel={() => setCreatingColl(false)}
+              onCreate={createCollection}
+            />
+          )}
+
+          {!sel && !creatingColl && (
             <EmptyState title="Pick a source" icon="◧">
-              Choose a KV namespace, or open a collection / graph by name on the left.
+              Choose a KV namespace or a collection on the left (graphs open by id).
             </EmptyState>
           )}
 
@@ -354,6 +419,77 @@ export function DataWorkbench() {
         {drawer && <InspectorDrawer target={drawer} onClose={() => setDrawer(null)} onSaved={onSaved} />}
       </div>
     </div>
+  );
+}
+
+function NewCollectionForm({
+  namespace,
+  onCancel,
+  onCreate,
+}: {
+  namespace: string;
+  onCancel: () => void;
+  onCreate: (name: string, type: CType, entry: { member?: string; field?: string; value?: string; score?: string }) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<CType>("set");
+  const [member, setMember] = useState("");
+  const [field, setField] = useState("");
+  const [value, setValue] = useState("");
+  const [score, setScore] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // A collection is created by its first write, which also fixes its type — so creation needs one entry.
+  const entryReady = type === "hash" ? field.trim() !== "" : member.trim() !== "";
+  const canCreate = name.trim() !== "" && entryReady && !busy;
+
+  const submit = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await onCreate(name.trim(), type, { member, field, value, score });
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const row = { display: "grid", gridTemplateColumns: "90px 1fr", gap: "var(--ws-space-sm)", alignItems: "center" as const };
+  return (
+    <Card flat>
+      <div className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>New collection in <span className="ws-mono">{namespace || "(default)"}</span></div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--ws-space-sm)", maxWidth: 460 }}>
+        <div style={row}><label>Name</label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="collection name" mono /></div>
+        <div style={row}>
+          <label>Type</label>
+          <Select value={type} onChange={(e) => setType(e.target.value as CType)}>
+            <option value="set">set</option>
+            <option value="hash">hash</option>
+            <option value="zset">zset</option>
+          </Select>
+        </div>
+        {type === "hash" ? (
+          <>
+            <div style={row}><label>First field</label><Input value={field} onChange={(e) => setField(e.target.value)} placeholder="field" mono /></div>
+            <div style={row}><label>Value</label><Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" mono /></div>
+          </>
+        ) : (
+          <>
+            <div style={row}><label>First member</label><Input value={member} onChange={(e) => setMember(e.target.value)} placeholder="member" mono /></div>
+            {type === "zset" && <div style={row}><label>Score</label><Input value={score} onChange={(e) => setScore(e.target.value)} placeholder="1.0" mono /></div>}
+          </>
+        )}
+        <p className="ws-caption ws-muted">A collection is created by its first entry, which also sets its datatype.</p>
+        <div style={{ display: "flex", gap: "var(--ws-space-sm)" }}>
+          <Button variant="primary" size="sm" onClick={submit} disabled={!canCreate}>{busy ? "Creating…" : "Create"}</Button>
+          <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>
+          {busy && <Spinner />}
+        </div>
+        {err && <InlineMessage tone="danger"><span className="ws-mono">{err}</span></InlineMessage>}
+      </div>
+    </Card>
   );
 }
 
