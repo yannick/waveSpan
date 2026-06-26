@@ -189,20 +189,26 @@ export function DataWorkbench() {
 
   // Create a collection by writing its first entry (a collection is created on first write, which also
   // fixes its datatype). On success, refresh the list and open the new collection for editing.
-  const createCollection = async (name: string, type: CType, entry: { member?: string; field?: string; value?: string; score?: string }) => {
+  const createCollection = async (ns: string, name: string, type: CType, entry: { member?: string; field?: string; value?: string; score?: string }) => {
     const enc = (s: string) => new TextEncoder().encode(s);
     const coll = enc(name);
     if (type === "set") {
-      await collections.sAdd({ namespace: collNs, collection: coll, members: [enc(entry.member ?? "")] });
+      await collections.sAdd({ namespace: ns, collection: coll, members: [enc(entry.member ?? "")] });
     } else if (type === "hash") {
-      await collections.hSet({ namespace: collNs, collection: coll, fields: [{ field: enc(entry.field ?? ""), value: enc(entry.value ?? "") }] });
+      await collections.hSet({ namespace: ns, collection: coll, fields: [{ field: enc(entry.field ?? ""), value: enc(entry.value ?? "") }] });
     } else {
-      await collections.zAdd({ namespace: collNs, collection: coll, members: [{ member: enc(entry.member ?? ""), score: Number(entry.score) || 0 }] });
+      await collections.zAdd({ namespace: ns, collection: coll, members: [{ member: enc(entry.member ?? ""), score: Number(entry.score) || 0 }] });
     }
-    await loadCollList(collNs, true); // linearizable so the new collection appears immediately
+    setCollNs(ns); // switch the browse namespace to where we just created
+    await loadCollList(ns, true); // linearizable so the new collection appears immediately
     setCreatingColl(false);
-    select({ kind: "coll", namespace: collNs, name, ctype: type });
+    select({ kind: "coll", namespace: ns, name, ctype: type });
   };
+
+  // Namespaces offered in the Collections picker: the gossiped set plus "default" and whatever is
+  // currently selected (so a freshly-created namespace stays selectable). Typing a brand-new one is
+  // done in the New-collection form.
+  const knownNamespaces = Array.from(new Set(["default", collNs, ...namespaces])).sort();
 
   const sectionHead = (label: string, open: boolean, toggle: () => void) => (
     <button
@@ -274,7 +280,11 @@ export function DataWorkbench() {
           {sectionHead("Collections", openColl, () => setOpenColl(!openColl))}
           {openColl && (
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--ws-space-xs)", margin: "var(--ws-space-xs) 0 var(--ws-space-md)" }}>
-              <Input value={collNs} onChange={(e) => setCollNs(e.target.value)} placeholder="namespace" mono />
+              <Select value={collNs} onChange={(e) => setCollNs(e.target.value)} title="namespace">
+                {knownNamespaces.map((ns) => (
+                  <option key={ns} value={ns}>{ns === "" ? "(default)" : ns}</option>
+                ))}
+              </Select>
               {collListLoading && <Spinner />}
               {!collListLoading && collList.length === 0 && (
                 <span className="ws-caption ws-muted">no collections in this namespace</span>
@@ -422,8 +432,9 @@ function NewCollectionForm({
 }: {
   namespace: string;
   onCancel: () => void;
-  onCreate: (name: string, type: CType, entry: { member?: string; field?: string; value?: string; score?: string }) => Promise<void>;
+  onCreate: (ns: string, name: string, type: CType, entry: { member?: string; field?: string; value?: string; score?: string }) => Promise<void>;
 }) {
+  const [ns, setNs] = useState(namespace);
   const [name, setName] = useState("");
   const [type, setType] = useState<CType>("set");
   const [member, setMember] = useState("");
@@ -435,13 +446,13 @@ function NewCollectionForm({
 
   // A collection is created by its first write, which also fixes its type — so creation needs one entry.
   const entryReady = type === "hash" ? field.trim() !== "" : member.trim() !== "";
-  const canCreate = name.trim() !== "" && entryReady && !busy;
+  const canCreate = ns.trim() !== "" && name.trim() !== "" && entryReady && !busy;
 
   const submit = async () => {
     setBusy(true);
     setErr(null);
     try {
-      await onCreate(name.trim(), type, { member, field, value, score });
+      await onCreate(ns.trim(), name.trim(), type, { member, field, value, score });
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
@@ -452,8 +463,9 @@ function NewCollectionForm({
   const row = { display: "grid", gridTemplateColumns: "90px 1fr", gap: "var(--ws-space-sm)", alignItems: "center" as const };
   return (
     <Card flat>
-      <div className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>New collection in <span className="ws-mono">{namespace || "(default)"}</span></div>
+      <div className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>New collection</div>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--ws-space-sm)", maxWidth: 460 }}>
+        <div style={row}><label>Namespace</label><Input value={ns} onChange={(e) => setNs(e.target.value)} placeholder="namespace (type a new one to create it)" mono /></div>
         <div style={row}><label>Name</label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="collection name" mono /></div>
         <div style={row}>
           <label>Type</label>
