@@ -254,6 +254,7 @@ import (
 	"github.com/yannick/wavespan/internal/membership"
 	"github.com/yannick/wavespan/internal/version"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // MemberSource yields the current membership roster (satisfied by *membership.Service).
@@ -328,14 +329,17 @@ func (r *ClusterResolver) ResolveKey(ctx context.Context, ns string, key []byte,
 }
 
 // redact returns rec with its inline value stripped unless reveal is set (and it is not a
-// tombstone). It shallow-copies so the caller's store record is never mutated.
+// tombstone). It deep-copies via proto.Clone so the caller's store record is never mutated.
+// NOTE: never shallow-copy a proto message (`clone := *rec`) — StoredRecord embeds a
+// protoimpl.MessageState containing a sync.Mutex, which trips go vet's copylocks check and
+// breaks `go test` / `make lint`.
 func redact(rec *wavespanv1.StoredRecord, reveal bool) *wavespanv1.StoredRecord {
 	if reveal && !rec.GetTombstone() {
 		return rec
 	}
-	clone := *rec
+	clone := proto.Clone(rec).(*wavespanv1.StoredRecord)
 	clone.Value = nil
-	return &clone
+	return clone
 }
 
 // sortHolders orders by (peer_cluster_id, member_id) so identical requests yield identical lists.
@@ -642,12 +646,15 @@ Add fields `clusterResolver ClusterKeyResolver` and `peerInspector PeerKeyInspec
 
 - [ ] **Step 2: Write the failing handler test**
 
-`internal/observability/inspect_global_test.go` — use a fake `ServerStream` capturing sent rows (mirror the pattern already in `inspect_test.go`), inject fake resolver + peer inspector, and assert:
+`internal/observability/inspect_global_test.go` — follow the **real in-process Connect
+roundtrip** pattern the existing `inspect_test.go` already uses for InspectGlobal (around
+line 211): stand up the `ObservabilityService` Connect handler over `httptest`, build a client,
+call `client.InspectGlobal(ctx, ...)`, and drain rows with `stream.Receive()`. (There is no
+fake `ServerStream` helper in the package — drive the real client.) Construct the `ObsService`
+with fake `clusterResolver` + `peerInspector` seams, and assert on the received rows:
 - holders from both layers appear, sorted; `best` value renders when serving node lacks the key;
 - `PARTIAL` + warnings when either layer is incomplete;
 - with `peerInspector == nil` (or `include_peer_clusters=false`), only Layer 1 holders appear and a Layer-1-complete result is `COMPLETE` (the old stub always returned PARTIAL — regression guard).
-
-(Reuse the existing test's stream fake; assert on the emitted `InspectKey` + trailer.)
 
 - [ ] **Step 3: Run it — FAIL**
 
@@ -773,7 +780,11 @@ Update line ~529:
 ```go
 wavespanv1.RegisterGlobalReplicationServer(grpcDataSrv, grpcsrv.NewGlobalReplication(globalApplier, globalAE, peerHandler))
 ```
-(`peerHandler` is nil-typed when global is disabled — but this registration is already inside the global-enabled branch, so it's set. Confirm the surrounding `if`.)
+This call is guarded by `if globalSrv != nil` (line ~528), **not** lexically inside
+`if cfg.GlobalReplication.Enabled()`. Net behavior is identical: declare `peerHandler` as `nil`
+above (alongside `globalApplier`/`globalSrv`) and assign it inside the
+`if cfg.GlobalReplication.Enabled()` block (line ~404, per Step 2) — so it's non-nil exactly
+when `globalSrv` is, and the registration picks it up.
 
 - [ ] **Step 4: Wire the obs seams**
 
