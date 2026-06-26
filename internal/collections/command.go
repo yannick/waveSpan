@@ -32,6 +32,12 @@ var (
 	// dragonboat reports the system busy / proposal dropped. It is a transient backpressure signal the
 	// client should retry with backoff — mapped to gRPC ResourceExhausted, never a node crash.
 	ErrBusy = errors.New("collections: busy (load shed, retry)")
+	// ErrDiskPressure is returned when a write is shed because the storage volume is low on free space
+	// (design/36). Rejecting the propose BEFORE it reaches Raft stops the LogDB from growing, so pebble
+	// never hits "no space left on device" (which would panic every voter and crash-loop on replay) and
+	// compaction can free space. It is transient — once free space recovers above the resume watermark the
+	// node admits writes again — and maps to gRPC ResourceExhausted so clients back off and retry.
+	ErrDiskPressure = errors.New("collections: disk pressure (write shed, retry)")
 
 	wrongType  = []byte("WRONGTYPE") // Result.Data sentinel set by the state machine
 	frozenMark = []byte("FROZEN")    // Result.Data sentinel: mutation rejected, subrange is migrating

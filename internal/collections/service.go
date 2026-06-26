@@ -81,10 +81,11 @@ func collErr(err error) error {
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	case errors.Is(err, ErrNotNumber):
 		return connect.NewError(connect.CodeInvalidArgument, err)
-	case errors.Is(err, ErrBusy):
-		// Load shed: a transient backpressure signal — the client should retry with backoff. Connect's
-		// ResourceExhausted maps to gRPC ResourceExhausted (codes 8 in both), so the flood is rejected
-		// cleanly without the node ever crashing.
+	case errors.Is(err, ErrBusy), errors.Is(err, ErrDiskPressure):
+		// Load shed (queue full / dragonboat busy) or disk-pressure shed: both are transient backpressure —
+		// the client should retry with backoff. Connect's ResourceExhausted maps to gRPC ResourceExhausted
+		// (codes 8 in both), so the write is rejected cleanly without the node ever crashing or filling its
+		// volume.
 		return connect.NewError(connect.CodeResourceExhausted, err)
 	}
 	return connect.NewError(connect.CodeInternal, err)

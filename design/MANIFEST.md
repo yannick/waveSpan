@@ -35,6 +35,7 @@
 - `31_cluster_data_deletion.md`
 - `32_consensus_tier_throughput.md`
 - `33_consensus_throughput_results_and_hardening.md`
+- `36_disk_pressure_admission.md`
 - `README.md`
 - `adr/0001_eventual_consistency.md`
 - `adr/0002_origin_plus_one_write_ack.md`
