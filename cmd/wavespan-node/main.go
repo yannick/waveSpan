@@ -399,6 +399,7 @@ func run() error {
 	var globalSrv *global.Server
 	var globalApplier *global.Applier
 	var globalAE *global.AntiEntropy
+	var peerHandler grpcsrv.PeerKeyInspector // peer-side InspectKey handler; assigned when global is enabled (Task 7)
 	var startGlobal func()
 	var vectorGlobalTap func(ns string, key []byte, rec *wavespanv1.StoredRecord)
 	if cfg.GlobalReplication.Enabled() {
@@ -526,7 +527,8 @@ func run() error {
 	wavespanv1.RegisterVectorServiceServer(grpcDataSrv, grpcVectorSvc)
 	wavespanv1.RegisterCypherServer(grpcDataSrv, grpcCypherSvc)
 	if globalSrv != nil {
-		wavespanv1.RegisterGlobalReplicationServer(grpcDataSrv, grpcsrv.NewGlobalReplication(globalApplier, globalAE))
+		// peer handler (3rd arg) is wired in the global-enabled block; nil here = InspectKey Unimplemented.
+		wavespanv1.RegisterGlobalReplicationServer(grpcDataSrv, grpcsrv.NewGlobalReplication(globalApplier, globalAE, peerHandler))
 	}
 
 	// Replicated collections (design/30): CP consensus tier over a dedicated dragonboat NodeHost that
