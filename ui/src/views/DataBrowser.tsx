@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useUrlBool, useUrlState } from "../router";
 import { obs } from "../transport";
+import { copyText } from "../lib/clipboard";
 import { Completeness } from "../gen/wavespan/v1/common_pb";
 import { type InspectKey, Keyspace } from "../gen/wavespan/v1/observability_pb";
 import {
@@ -11,11 +12,34 @@ import {
   EmptyState,
   InlineMessage,
   Input,
+  Modal,
   Select,
   Table,
   Toolbar,
   type Tone,
 } from "../components";
+
+// Above this many characters, a value is clamped in the table and gets a "view"
+// affordance that opens the full value in a copyable modal.
+const VALUE_PREVIEW_LIMIT = 40;
+
+// A button that copies `text` and briefly confirms.
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      size="sm"
+      onClick={async () => {
+        if (await copyText(text)) {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }
+      }}
+    >
+      {copied ? "Copied ✓" : "Copy"}
+    </Button>
+  );
+}
 
 // cluster = all nodes in this cluster (default), node = this node only, global = cross-cluster key.
 type Scope = "cluster" | "node" | "global";
@@ -56,6 +80,8 @@ export function DataBrowser() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // The value currently expanded in the full-value modal, or null when closed.
+  const [valueView, setValueView] = useState<{ path: string; text: string } | null>(null);
   // Gossiped cluster-wide namespace list (emptied ones may linger), with a per-namespace delete.
   const [namespaces, setNamespaces] = useState<string[]>([]);
   const [nsBusy, setNsBusy] = useState<string | null>(null);
@@ -76,7 +102,7 @@ export function DataBrowser() {
     const collected: InspectKey[] = [];
     const stream =
       scope === "global"
-        ? obs.inspectGlobal({ keyspace: Keyspace.KV, namespace: ns, key: new TextEncoder().encode(query), includeValue })
+        ? obs.inspectGlobal({ keyspace: Keyspace.KV, namespace: ns, key: new TextEncoder().encode(query), includeValue, includePeerClusters: true })
         : obs.inspectLocal({
             keyspace: Keyspace.KV,
             namespace: ns,
@@ -264,10 +290,33 @@ export function DataBrowser() {
                   <td className="ws-mono">
                     {k.version ? `${k.version.hlcPhysicalMs}.${k.version.hlcLogical}@${k.version.writerMemberId}` : ""}
                   </td>
-                  <td className="ws-mono">{k.holders.map((h) => h.memberId).join(", ")}</td>
+                  <td className="ws-mono">{k.holders.map((h) => (h.peerClusterId ? `${h.memberId}·${h.peerClusterId}` : h.memberId)).join(", ")}</td>
                   <td>{exp ? <Badge tone={exp.tone}>{exp.label}</Badge> : <span className="ws-muted">—</span>}</td>
                   <td>{k.tombstone ? <Badge tone="danger">tombstone</Badge> : <span className="ws-muted">live</span>}</td>
-                  <td className="ws-mono">{k.value.length > 0 ? dec.decode(k.value) : <span className="ws-muted">&lt;redacted&gt;</span>}</td>
+                  <td className="ws-mono">
+                    {k.value.length > 0 ? (
+                      (() => {
+                        const text = dec.decode(k.value);
+                        const overflow = text.length > VALUE_PREVIEW_LIMIT;
+                        return (
+                          <>
+                            <span className="ws-value-cell" title={overflow ? "" : text}>{text}</span>
+                            {overflow && (
+                              <button
+                                className="ws-value-expand"
+                                title={`view full value (${text.length} chars)`}
+                                onClick={() => setValueView({ path: k.logicalPath, text })}
+                              >
+                                ⤢
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()
+                    ) : (
+                      <span className="ws-muted">&lt;redacted&gt;</span>
+                    )}
+                  </td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     {!k.tombstone && (
                       <Button
@@ -291,6 +340,22 @@ export function DataBrowser() {
           Choose a scope and namespace, then search by key prefix.
         </EmptyState>
       )}
+
+      <Modal
+        open={valueView !== null}
+        onClose={() => setValueView(null)}
+        title={<span className="ws-mono">{valueView?.path}</span>}
+        actions={valueView ? <CopyButton text={valueView.text} /> : null}
+      >
+        {valueView && (
+          <>
+            <div className="ws-caption ws-muted" style={{ marginBottom: "var(--ws-space-sm)" }}>
+              {valueView.text.length} chars
+            </div>
+            <pre className="ws-value-full">{valueView.text}</pre>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }
