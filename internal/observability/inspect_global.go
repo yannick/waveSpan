@@ -63,7 +63,7 @@ func (s *ObsService) InspectGlobal(ctx context.Context, req *connect.Request[wav
 			ik.Value = v
 		}
 	}
-	sortInspectHolders(ik.Holders)
+	ik.Holders = dedupAndSortHolders(ik.Holders)
 
 	if err := stream.Send(&wavespanv1.InspectRow{Row: &wavespanv1.InspectRow_Key{Key: ik}}); err != nil {
 		return err
@@ -77,14 +77,32 @@ func (s *ObsService) InspectGlobal(ctx context.Context, req *connect.Request[wav
 	}}})
 }
 
-// sortInspectHolders orders by (peer_cluster_id, member_id) for stable output across requests.
-func sortInspectHolders(hs []*wavespanv1.InspectHolder) {
-	sort.Slice(hs, func(i, j int) bool {
-		if hs[i].GetPeerClusterId() != hs[j].GetPeerClusterId() {
-			return hs[i].GetPeerClusterId() < hs[j].GetPeerClusterId()
+// dedupAndSortHolders collapses duplicate (peer_cluster_id, member_id) holders — which arise when
+// several configured endpoints belong to the SAME peer cluster and each returns that cluster's full
+// holder set — keeping the highest version seen, then orders deterministically by
+// (peer_cluster_id, member_id) so identical requests yield identical lists.
+func dedupAndSortHolders(hs []*wavespanv1.InspectHolder) []*wavespanv1.InspectHolder {
+	type key struct{ cluster, member string }
+	idx := make(map[key]int, len(hs))
+	out := make([]*wavespanv1.InspectHolder, 0, len(hs))
+	for _, h := range hs {
+		k := key{h.GetPeerClusterId(), h.GetMemberId()}
+		if i, ok := idx[k]; ok {
+			if version.FromProto(h.GetVersion()).Compare(version.FromProto(out[i].GetVersion())) > 0 {
+				out[i] = h
+			}
+			continue
 		}
-		return hs[i].GetMemberId() < hs[j].GetMemberId()
+		idx[k] = len(out)
+		out = append(out, h)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].GetPeerClusterId() != out[j].GetPeerClusterId() {
+			return out[i].GetPeerClusterId() < out[j].GetPeerClusterId()
+		}
+		return out[i].GetMemberId() < out[j].GetMemberId()
 	})
+	return out
 }
 
 // Handler returns the mountable ObservabilityService Connect handler for the admin port.

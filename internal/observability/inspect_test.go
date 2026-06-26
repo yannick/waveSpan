@@ -467,3 +467,33 @@ func TestInspectGlobal_NoPeerInspector(t *testing.T) {
 		t.Fatalf("complete L1 without peer inspector must yield COMPLETE, got: %+v", trailer)
 	}
 }
+
+// When several configured endpoints belong to the SAME peer cluster, each returns that cluster's
+// full holder set — so the merged list must dedup by (peer_cluster_id, member_id), keeping the
+// highest version, and stay deterministically ordered.
+func TestDedupAndSortHolders(t *testing.T) {
+	v := func(ms uint64) *wavespanv1.Version { return &wavespanv1.Version{HlcPhysicalMs: ms} }
+	in := []*wavespanv1.InspectHolder{
+		{PeerClusterId: "test-a", MemberId: "a2", Version: v(5)},
+		{PeerClusterId: "", MemberId: "b1", Version: v(3)},
+		{PeerClusterId: "test-a", MemberId: "a1", Version: v(1)},
+		{PeerClusterId: "test-a", MemberId: "a1", Version: v(9)}, // dup a1·test-a, higher version
+		{PeerClusterId: "test-a", MemberId: "a2", Version: v(5)}, // exact dup
+	}
+	out := dedupAndSortHolders(in)
+	if len(out) != 3 {
+		t.Fatalf("want 3 unique holders, got %d: %+v", len(out), out)
+	}
+	if out[0].GetMemberId() != "b1" || out[0].GetPeerClusterId() != "" {
+		t.Errorf("out[0] want b1 (local), got %+v", out[0])
+	}
+	if out[1].GetMemberId() != "a1" || out[1].GetPeerClusterId() != "test-a" {
+		t.Errorf("out[1] want a1·test-a, got %+v", out[1])
+	}
+	if out[1].GetVersion().GetHlcPhysicalMs() != 9 {
+		t.Errorf("dup a1 must keep highest version 9, got %d", out[1].GetVersion().GetHlcPhysicalMs())
+	}
+	if out[2].GetMemberId() != "a2" || out[2].GetPeerClusterId() != "test-a" {
+		t.Errorf("out[2] want a2·test-a, got %+v", out[2])
+	}
+}
