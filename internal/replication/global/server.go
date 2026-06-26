@@ -64,8 +64,10 @@ func (s *Server) FetchRange(_ context.Context, req *connect.Request[wavespanv1.F
 	return nil
 }
 
-// InspectKey is a stub for the Global Data Browser cross-cluster key inspection RPC (design/26).
-// The handler implementation is added in a later task.
+// InspectKey is intentionally unimplemented on this Connect server. The Global Data Browser's
+// cross-cluster InspectKey RPC (design/26) is served by the gRPC adapter that is actually mounted
+// on the data port — see grpcsrv.GlobalReplication.InspectKey. This Connect Server is mirrored but
+// not the served handler post-gRPC-migration; the method exists only to satisfy the interface.
 func (s *Server) InspectKey(_ context.Context, _ *connect.Request[wavespanv1.InspectKeyRequest]) (*connect.Response[wavespanv1.InspectKeyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, nil)
 }
