@@ -28,20 +28,42 @@ it. It is a genuine "never bring it down" gap.
 
 Stop the log from growing **before** the volume fills. A per-node monitor watches free space on the
 storage volume and flips an atomic flag; the write path checks that flag and **sheds new writes at
-admission — before the Raft propose** — returning a transient `ResourceExhausted`. No propose means no
-new log entry; the log stops growing; pebble's own background compaction reclaims space; the flag
-clears; writes resume.
+admission — before the write is proposed OR forwarded** — returning a transient `ResourceExhausted`. No
+propose means no new log entry; the log stops growing; pebble's own background compaction reclaims space;
+the flag clears; writes resume.
 
 Crucially this is gated at the **consensus/admission layer**, never inside the storage engine. We only
 `Statfs` the path. The engine internals (wavesdb/pebble — a separate rewrite) are untouched.
 
+**Gate placement — every node, at the write ENTRY (not just the leader).** Raft is leader-driven, so the
+common client write does not land on the shard leader: it hits a non-leader (or a `wavespan-local` spot)
+which **forwards** the write to the leader. But a forwarding node is itself a **follower/applier** of the
+target shard — the leader's committed entry replicates back to it and grows **its** disk too. So the gate
+must reject on the entry node *before it forwards*, regardless of who leads. The gate therefore sits at:
+
+1. **`Collections.proposeCmd`** — the write entry on every node, **before** the route-or-forward decision.
+   A node under its own pressure sheds here and never forwards. (PRIMARY gate.)
+2. **`Collections.ProposeRaw`** — the *server* side of a forwarded write. A node receiving a forward while
+   under its own pressure (e.g. the pressured leader) sheds here too — it is the applier whose volume grows.
+3. **`Manager.Propose`** — the leader-local backstop, just before the Raft propose (data + meta shards).
+
+A forwarded write that the leader shed comes back over gRPC as `ResourceExhausted`; the **forwarder maps
+that terminal** (it does not retry another peer — backpressure isn't a "wrong leader" signal) to
+`ErrDiskPressure`, so the forwarding node's handler re-maps it to `ResourceExhausted` (not `Internal`).
+
 ```
-client write ──▶ Service ──▶ Collections.proposeCmd ──▶ Manager.Propose
-                                                            │
-                                  diskGate.UnderPressure()? ─┤── yes ─▶ ErrDiskPressure (ResourceExhausted)
-                                                            │
-                                                            no ─▶ proposer / SyncPropose ─▶ pebble LogDB
-reads ─────────▶ Service ──▶ Manager.Read  (never consults the gate)
+client write ─▶ Service ─▶ Collections.proposeCmd ── gate? ──┬─ yes ─▶ ErrDiskPressure (ResourceExhausted)
+   (any node)                                                │
+                                                             no
+                                              ┌──────────────┴───────────────┐
+                                       this node leads?                 not leader
+                                              │                              │
+                                   Manager.Propose ── gate(backstop) ──▶     forwarder.Forward ─▶ peer (leader)
+                                              │                              │   ProposeForward ─▶ Collections.ProposeRaw ── gate? ─▶ shed
+                                       proposer/SyncPropose                  │
+                                              └─▶ pebble LogDB        leader shed ⇒ gRPC ResourceExhausted
+                                                                       ⇒ forwarder maps ⇒ ErrDiskPressure ⇒ ResourceExhausted
+reads ─────────▶ Service ─▶ Manager.Read  (never consults the gate)
 ```
 
 ### What is shed vs allowed

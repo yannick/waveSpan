@@ -85,6 +85,12 @@ func (f *RPCForwarder) Forward(ctx context.Context, ns, coll, cmd []byte) (uint6
 			return 0, nil, ErrWrongType // a datatype mismatch is definitive on any node
 		case codes.InvalidArgument:
 			return 0, nil, ErrNotNumber // a non-numeric HIncr field is definitive on any node
+		case codes.ResourceExhausted:
+			// The leader shed this write (disk pressure / load shed, design/36 + design/33). It is a
+			// transient backpressure signal, NOT a "this node can't lead" signal — trying the next peer would
+			// just spread the flood, and the leader is the right node. Surface it terminally as ErrDiskPressure
+			// so the forwarding node's handler re-maps it to ResourceExhausted (collErr) instead of Internal.
+			return 0, nil, ErrDiskPressure
 		}
 		lastErr = err
 	}
