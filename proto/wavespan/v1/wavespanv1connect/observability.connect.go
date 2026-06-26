@@ -65,6 +65,9 @@ const (
 	// ObservabilityServiceDeleteNamespaceProcedure is the fully-qualified name of the
 	// ObservabilityService's DeleteNamespace RPC.
 	ObservabilityServiceDeleteNamespaceProcedure = "/wavespan.v1.ObservabilityService/DeleteNamespace"
+	// ObservabilityServiceAdminPutGraphProcedure is the fully-qualified name of the
+	// ObservabilityService's AdminPutGraph RPC.
+	ObservabilityServiceAdminPutGraphProcedure = "/wavespan.v1.ObservabilityService/AdminPutGraph"
 	// ObservabilityServiceGetNodeConfigProcedure is the fully-qualified name of the
 	// ObservabilityService's GetNodeConfig RPC.
 	ObservabilityServiceGetNodeConfigProcedure = "/wavespan.v1.ObservabilityService/GetNodeConfig"
@@ -100,6 +103,9 @@ type ObservabilityServiceClient interface {
 	// DeleteNamespace tombstones every live key in a namespace cluster-wide (fan-out scan + coordinated
 	// deletes). The namespace may still appear in the gossiped list afterwards until summaries age out.
 	DeleteNamespace(context.Context, *connect.Request[v1.DeleteNamespaceRequest]) (*connect.Response[v1.DeleteNamespaceResponse], error)
+	// AdminPutGraph upserts (or, with delete=true, tombstones) a single graph node or edge from the
+	// node UI, mirroring AdminPut/AdminDelete for the graph model so editing is symmetric.
+	AdminPutGraph(context.Context, *connect.Request[v1.AdminPutGraphRequest]) (*connect.Response[v1.AdminPutGraphResponse], error)
 	// GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
 	// serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
 	// UI Config tab and cross-node config inspection.
@@ -180,6 +186,12 @@ func NewObservabilityServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(observabilityServiceMethods.ByName("DeleteNamespace")),
 			connect.WithClientOptions(opts...),
 		),
+		adminPutGraph: connect.NewClient[v1.AdminPutGraphRequest, v1.AdminPutGraphResponse](
+			httpClient,
+			baseURL+ObservabilityServiceAdminPutGraphProcedure,
+			connect.WithSchema(observabilityServiceMethods.ByName("AdminPutGraph")),
+			connect.WithClientOptions(opts...),
+		),
 		getNodeConfig: connect.NewClient[v1.GetNodeConfigRequest, v1.NodeConfig](
 			httpClient,
 			baseURL+ObservabilityServiceGetNodeConfigProcedure,
@@ -207,6 +219,7 @@ type observabilityServiceClient struct {
 	adminPut          *connect.Client[v1.AdminPutRequest, v1.AdminPutResponse]
 	adminDelete       *connect.Client[v1.AdminDeleteRequest, v1.AdminDeleteResponse]
 	deleteNamespace   *connect.Client[v1.DeleteNamespaceRequest, v1.DeleteNamespaceResponse]
+	adminPutGraph     *connect.Client[v1.AdminPutGraphRequest, v1.AdminPutGraphResponse]
 	getNodeConfig     *connect.Client[v1.GetNodeConfigRequest, v1.NodeConfig]
 	adminSetTunable   *connect.Client[v1.AdminSetTunableRequest, v1.AdminSetTunableResponse]
 }
@@ -261,6 +274,11 @@ func (c *observabilityServiceClient) DeleteNamespace(ctx context.Context, req *c
 	return c.deleteNamespace.CallUnary(ctx, req)
 }
 
+// AdminPutGraph calls wavespan.v1.ObservabilityService.AdminPutGraph.
+func (c *observabilityServiceClient) AdminPutGraph(ctx context.Context, req *connect.Request[v1.AdminPutGraphRequest]) (*connect.Response[v1.AdminPutGraphResponse], error) {
+	return c.adminPutGraph.CallUnary(ctx, req)
+}
+
 // GetNodeConfig calls wavespan.v1.ObservabilityService.GetNodeConfig.
 func (c *observabilityServiceClient) GetNodeConfig(ctx context.Context, req *connect.Request[v1.GetNodeConfigRequest]) (*connect.Response[v1.NodeConfig], error) {
 	return c.getNodeConfig.CallUnary(ctx, req)
@@ -293,6 +311,9 @@ type ObservabilityServiceHandler interface {
 	// DeleteNamespace tombstones every live key in a namespace cluster-wide (fan-out scan + coordinated
 	// deletes). The namespace may still appear in the gossiped list afterwards until summaries age out.
 	DeleteNamespace(context.Context, *connect.Request[v1.DeleteNamespaceRequest]) (*connect.Response[v1.DeleteNamespaceResponse], error)
+	// AdminPutGraph upserts (or, with delete=true, tombstones) a single graph node or edge from the
+	// node UI, mirroring AdminPut/AdminDelete for the graph model so editing is symmetric.
+	AdminPutGraph(context.Context, *connect.Request[v1.AdminPutGraphRequest]) (*connect.Response[v1.AdminPutGraphResponse], error)
 	// GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
 	// serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
 	// UI Config tab and cross-node config inspection.
@@ -369,6 +390,12 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 		connect.WithSchema(observabilityServiceMethods.ByName("DeleteNamespace")),
 		connect.WithHandlerOptions(opts...),
 	)
+	observabilityServiceAdminPutGraphHandler := connect.NewUnaryHandler(
+		ObservabilityServiceAdminPutGraphProcedure,
+		svc.AdminPutGraph,
+		connect.WithSchema(observabilityServiceMethods.ByName("AdminPutGraph")),
+		connect.WithHandlerOptions(opts...),
+	)
 	observabilityServiceGetNodeConfigHandler := connect.NewUnaryHandler(
 		ObservabilityServiceGetNodeConfigProcedure,
 		svc.GetNodeConfig,
@@ -403,6 +430,8 @@ func NewObservabilityServiceHandler(svc ObservabilityServiceHandler, opts ...con
 			observabilityServiceAdminDeleteHandler.ServeHTTP(w, r)
 		case ObservabilityServiceDeleteNamespaceProcedure:
 			observabilityServiceDeleteNamespaceHandler.ServeHTTP(w, r)
+		case ObservabilityServiceAdminPutGraphProcedure:
+			observabilityServiceAdminPutGraphHandler.ServeHTTP(w, r)
 		case ObservabilityServiceGetNodeConfigProcedure:
 			observabilityServiceGetNodeConfigHandler.ServeHTTP(w, r)
 		case ObservabilityServiceAdminSetTunableProcedure:
@@ -454,6 +483,10 @@ func (UnimplementedObservabilityServiceHandler) AdminDelete(context.Context, *co
 
 func (UnimplementedObservabilityServiceHandler) DeleteNamespace(context.Context, *connect.Request[v1.DeleteNamespaceRequest]) (*connect.Response[v1.DeleteNamespaceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.DeleteNamespace is not implemented"))
+}
+
+func (UnimplementedObservabilityServiceHandler) AdminPutGraph(context.Context, *connect.Request[v1.AdminPutGraphRequest]) (*connect.Response[v1.AdminPutGraphResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ObservabilityService.AdminPutGraph is not implemented"))
 }
 
 func (UnimplementedObservabilityServiceHandler) GetNodeConfig(context.Context, *connect.Request[v1.GetNodeConfigRequest]) (*connect.Response[v1.NodeConfig], error) {
