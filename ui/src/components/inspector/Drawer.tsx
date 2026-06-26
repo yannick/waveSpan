@@ -115,22 +115,46 @@ function Meta({ label, value }: { label: string; value: string }) {
 // view (no portal) for simplicity, owns the header/footer chrome, and dispatches to a body by kind. The
 // Save→diff→confirm and Delete→confirm flows live in the bodies (each type validates differently); the
 // bodies report errors and call onSaved on success.
+// targetKey is a stable identity string for a drawer target, used to key (and thus remount) the body
+// when the inspected item changes.
+function targetKey(target: DrawerTarget): string {
+  switch (target.kind) {
+    case "kv":
+      return `kv:${target.namespace}:${target.keyLabel}`;
+    case "kv-new":
+      return `kv-new:${target.namespace}`;
+    case "collection":
+      return `collection:${target.namespace}:${target.collection}:${target.ctype}`;
+    case "graph-node":
+      return `graph-node:${target.graphId}:${target.record.nodeId}`;
+    case "graph-edge":
+      return `graph-edge:${target.graphId}:${target.record.edgeId}`;
+    case "vector":
+      return `vector:${target.name}`;
+  }
+}
+
 export function InspectorDrawer({ target, onClose, onSaved }: DrawerProps) {
+  // A stable identity for the inspected thing. Used as the body's React key so that switching targets
+  // (e.g. clicking a different node while the drawer stays open) REMOUNTS the body — otherwise the
+  // bodies' useState initializers, which seed the editable form from the target, never re-run and the
+  // form shows the previously-inspected item's values (the header updates but the props don't).
+  const key = targetKey(target);
   let body: ReactNode;
   switch (target.kind) {
     case "kv":
     case "kv-new":
-      body = <KvBody target={target} onSaved={onSaved} />;
+      body = <KvBody key={key} target={target} onSaved={onSaved} />;
       break;
     case "collection":
-      body = <CollectionBody target={target} />;
+      body = <CollectionBody key={key} target={target} />;
       break;
     case "graph-node":
     case "graph-edge":
-      body = <GraphBody target={target} onSaved={onSaved} />;
+      body = <GraphBody key={key} target={target} onSaved={onSaved} />;
       break;
     case "vector":
-      body = <VectorBody target={target} />;
+      body = <VectorBody key={key} target={target} />;
       break;
   }
 
