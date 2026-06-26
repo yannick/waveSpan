@@ -31,3 +31,5 @@ perf-report/
 .env.*
 
 .worktrees/
+
+.superpowers/
