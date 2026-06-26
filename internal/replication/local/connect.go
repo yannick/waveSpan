@@ -51,6 +51,16 @@ func (r *ConnectReplicator) StoreReplica(ctx context.Context, target membership.
 	return c.StoreReplica(ctx, req)
 }
 
+// FetchReplica asks a holder for its local winning record of a single key (design/05). Used by
+// the Global Data Browser to resolve holders within a cluster.
+func (r *ConnectReplicator) FetchReplica(ctx context.Context, target membership.Member, namespace string, key []byte) (*wavespanv1.FetchReplicaResponse, error) {
+	c, err := r.client(target.DataAddr)
+	if err != nil {
+		return nil, err
+	}
+	return c.FetchReplica(ctx, &wavespanv1.FetchReplicaRequest{Namespace: namespace, Key: key})
+}
+
 // ScanLocal asks a holder to scan its local store over a subrange (routed-eventual scan, M6).
 func (r *ConnectReplicator) ScanLocal(ctx context.Context, target membership.Member, namespace string, start, end []byte, limit int) ([]*wavespanv1.ScanLocalRow, error) {
 	c, err := r.client(target.DataAddr)
