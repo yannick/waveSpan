@@ -59,6 +59,9 @@ const (
 	// GlobalReplicationFetchRangeProcedure is the fully-qualified name of the GlobalReplication's
 	// FetchRange RPC.
 	GlobalReplicationFetchRangeProcedure = "/wavespan.v1.GlobalReplication/FetchRange"
+	// GlobalReplicationInspectKeyProcedure is the fully-qualified name of the GlobalReplication's
+	// InspectKey RPC.
+	GlobalReplicationInspectKeyProcedure = "/wavespan.v1.GlobalReplication/InspectKey"
 )
 
 // ReplicationServiceClient is a client for the wavespan.v1.ReplicationService service.
@@ -240,6 +243,7 @@ type GlobalReplicationClient interface {
 	PushGlobal(context.Context, *connect.Request[v1.PushGlobalRequest]) (*connect.Response[v1.PushGlobalAck], error)
 	RangeSummary(context.Context, *connect.Request[v1.RangeSummaryRequest]) (*connect.Response[v1.RangeSummaryResponse], error)
 	FetchRange(context.Context, *connect.Request[v1.FetchRangeRequest]) (*connect.ServerStreamForClient[v1.GlobalMutation], error)
+	InspectKey(context.Context, *connect.Request[v1.InspectKeyRequest]) (*connect.Response[v1.InspectKeyResponse], error)
 }
 
 // NewGlobalReplicationClient constructs a client for the wavespan.v1.GlobalReplication service. By
@@ -271,6 +275,12 @@ func NewGlobalReplicationClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(globalReplicationMethods.ByName("FetchRange")),
 			connect.WithClientOptions(opts...),
 		),
+		inspectKey: connect.NewClient[v1.InspectKeyRequest, v1.InspectKeyResponse](
+			httpClient,
+			baseURL+GlobalReplicationInspectKeyProcedure,
+			connect.WithSchema(globalReplicationMethods.ByName("InspectKey")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -279,6 +289,7 @@ type globalReplicationClient struct {
 	pushGlobal   *connect.Client[v1.PushGlobalRequest, v1.PushGlobalAck]
 	rangeSummary *connect.Client[v1.RangeSummaryRequest, v1.RangeSummaryResponse]
 	fetchRange   *connect.Client[v1.FetchRangeRequest, v1.GlobalMutation]
+	inspectKey   *connect.Client[v1.InspectKeyRequest, v1.InspectKeyResponse]
 }
 
 // PushGlobal calls wavespan.v1.GlobalReplication.PushGlobal.
@@ -296,11 +307,17 @@ func (c *globalReplicationClient) FetchRange(ctx context.Context, req *connect.R
 	return c.fetchRange.CallServerStream(ctx, req)
 }
 
+// InspectKey calls wavespan.v1.GlobalReplication.InspectKey.
+func (c *globalReplicationClient) InspectKey(ctx context.Context, req *connect.Request[v1.InspectKeyRequest]) (*connect.Response[v1.InspectKeyResponse], error) {
+	return c.inspectKey.CallUnary(ctx, req)
+}
+
 // GlobalReplicationHandler is an implementation of the wavespan.v1.GlobalReplication service.
 type GlobalReplicationHandler interface {
 	PushGlobal(context.Context, *connect.Request[v1.PushGlobalRequest]) (*connect.Response[v1.PushGlobalAck], error)
 	RangeSummary(context.Context, *connect.Request[v1.RangeSummaryRequest]) (*connect.Response[v1.RangeSummaryResponse], error)
 	FetchRange(context.Context, *connect.Request[v1.FetchRangeRequest], *connect.ServerStream[v1.GlobalMutation]) error
+	InspectKey(context.Context, *connect.Request[v1.InspectKeyRequest]) (*connect.Response[v1.InspectKeyResponse], error)
 }
 
 // NewGlobalReplicationHandler builds an HTTP handler from the service implementation. It returns
@@ -328,6 +345,12 @@ func NewGlobalReplicationHandler(svc GlobalReplicationHandler, opts ...connect.H
 		connect.WithSchema(globalReplicationMethods.ByName("FetchRange")),
 		connect.WithHandlerOptions(opts...),
 	)
+	globalReplicationInspectKeyHandler := connect.NewUnaryHandler(
+		GlobalReplicationInspectKeyProcedure,
+		svc.InspectKey,
+		connect.WithSchema(globalReplicationMethods.ByName("InspectKey")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.GlobalReplication/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GlobalReplicationPushGlobalProcedure:
@@ -336,6 +359,8 @@ func NewGlobalReplicationHandler(svc GlobalReplicationHandler, opts ...connect.H
 			globalReplicationRangeSummaryHandler.ServeHTTP(w, r)
 		case GlobalReplicationFetchRangeProcedure:
 			globalReplicationFetchRangeHandler.ServeHTTP(w, r)
+		case GlobalReplicationInspectKeyProcedure:
+			globalReplicationInspectKeyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -355,4 +380,8 @@ func (UnimplementedGlobalReplicationHandler) RangeSummary(context.Context, *conn
 
 func (UnimplementedGlobalReplicationHandler) FetchRange(context.Context, *connect.Request[v1.FetchRangeRequest], *connect.ServerStream[v1.GlobalMutation]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.GlobalReplication.FetchRange is not implemented"))
+}
+
+func (UnimplementedGlobalReplicationHandler) InspectKey(context.Context, *connect.Request[v1.InspectKeyRequest]) (*connect.Response[v1.InspectKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.GlobalReplication.InspectKey is not implemented"))
 }
