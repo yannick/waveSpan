@@ -11,6 +11,13 @@ import (
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
+// PeerKeyInspector runs this cluster's within-cluster resolution for one key and returns a
+// peer-facing InspectKey response (holders tagged with this cluster's id). Satisfied by a small
+// adapter over holderinspect.ClusterResolver wired in main.go. nil disables InspectKey.
+type PeerKeyInspector interface {
+	InspectKeyLocal(ctx context.Context, namespace string, key []byte, includeValue bool) (*wavespanv1.InspectKeyResponse, error)
+}
+
 // GlobalReplication is the gRPC GlobalReplication adapter (inter-cluster, data-port). It mirrors the
 // Connect Server in internal/replication/global, delegating to the SAME exported cores: an *Applier
 // for idempotent inbound mutation application and an optional *AntiEntropy for range summaries and
@@ -19,12 +26,14 @@ type GlobalReplication struct {
 	wavespanv1.UnimplementedGlobalReplicationServer
 	applier *global.Applier
 	ae      *global.AntiEntropy
+	peer    PeerKeyInspector
 }
 
 // NewGlobalReplication wires the gRPC GlobalReplication adapter over the same dependencies the Connect
-// Server takes (see global.NewServer). ae may be nil (RangeSummary/FetchRange become no-ops).
-func NewGlobalReplication(applier *global.Applier, ae *global.AntiEntropy) *GlobalReplication {
-	return &GlobalReplication{applier: applier, ae: ae}
+// Server takes (see global.NewServer). ae may be nil (RangeSummary/FetchRange become no-ops); peer
+// may be nil (InspectKey returns Unimplemented).
+func NewGlobalReplication(applier *global.Applier, ae *global.AntiEntropy, peer PeerKeyInspector) *GlobalReplication {
+	return &GlobalReplication{applier: applier, ae: ae, peer: peer}
 }
 
 // PushGlobal applies a batch of inbound mutations from a peer cluster.
@@ -49,6 +58,15 @@ func (s *GlobalReplication) RangeSummary(_ context.Context, m *wavespanv1.RangeS
 		resp.Hashes = s.ae.Summarize(m.GetRanges())
 	}
 	return resp, nil
+}
+
+// InspectKey answers a peer cluster's "who holds this key?" by running this cluster's within-
+// cluster resolution (Layer 1) and tagging holders with this cluster's id.
+func (s *GlobalReplication) InspectKey(ctx context.Context, m *wavespanv1.InspectKeyRequest) (*wavespanv1.InspectKeyResponse, error) {
+	if s.peer == nil {
+		return nil, status.Error(codes.Unimplemented, "peer inspect not configured")
+	}
+	return s.peer.InspectKeyLocal(ctx, m.GetNamespace(), m.GetKey(), m.GetIncludeValue())
 }
 
 // FetchRange streams the local records in a range so a diverged peer can repair. It delegates to the

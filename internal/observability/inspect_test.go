@@ -24,14 +24,14 @@ func (fakeCluster) Graph() *latencygraph.Graph {
 	return latencygraph.New(latencygraph.DefaultConfig())
 }
 
-func newObsServer(t *testing.T, inspector GlobalInspector) (wavespanv1connect.ObservabilityServiceClient, *recordstore.Store) {
+func newObsServer(t *testing.T, resolver ClusterKeyResolver) (wavespanv1connect.ObservabilityServiceClient, *recordstore.Store) {
 	t.Helper()
 	mem := storage.NewMemStore()
 	t.Cleanup(func() { _ = mem.Close() })
 	rs := recordstore.NewStore(mem, "dev", "node1", version.NewClock(nil, 500), version.NewSequencer(0))
 	obs := NewObsService(NewGossipRing(64), fakeCluster{}, membership.Member{ClusterID: "dev", MemberID: "node1"}, rs)
-	if inspector != nil {
-		obs.WithGlobalInspector(inspector)
+	if resolver != nil {
+		obs.WithClusterResolver(resolver)
 	}
 	mux := http.NewServeMux()
 	mux.Handle(obs.Handler())
@@ -195,16 +195,39 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// fakeInspector reports one unreachable holder so completeness is partial.
-type fakeInspector struct{}
+// fakeClusterResolver is a ClusterKeyResolver that returns canned results.
+type fakeClusterResolver struct {
+	holders  []*wavespanv1.InspectHolder
+	best     *wavespanv1.StoredRecord
+	complete bool
+	warnings []string
+}
 
-func (fakeInspector) InspectKey(_ context.Context, _ string, _ []byte, _, _ bool) ([]*wavespanv1.InspectHolder, []string, bool) {
-	return nil, []string{"holder node2 unreachable"}, false
+func (f fakeClusterResolver) ResolveKey(_ context.Context, _ string, _ []byte, _ bool) ([]*wavespanv1.InspectHolder, *wavespanv1.StoredRecord, bool, []string) {
+	return f.holders, f.best, f.complete, f.warnings
+}
+
+// fakePeerInspector is a PeerKeyInspector that returns canned results.
+type fakePeerInspector struct {
+	holders  []*wavespanv1.InspectHolder
+	best     *wavespanv1.StoredRecord
+	complete bool
+	warnings []string
+}
+
+func (f fakePeerInspector) InspectPeers(_ context.Context, _ string, _ []byte, _ bool) ([]*wavespanv1.InspectHolder, *wavespanv1.StoredRecord, bool, []string) {
+	return f.holders, f.best, f.complete, f.warnings
 }
 
 func TestInspectGlobalCompletenessOnMissedHolder(t *testing.T) {
-	client, rs := newObsServer(t, fakeInspector{})
-	seedKV(t, rs, "k1", "v")
+	// Layer 1 resolver returns incomplete with a warning (mimics old fakeInspector behaviour).
+	resolver := fakeClusterResolver{
+		holders:  nil,
+		best:     nil,
+		complete: false,
+		warnings: []string{"holder node2 unreachable"},
+	}
+	client, _ := newObsServer(t, resolver)
 
 	req := connect.NewRequest(&wavespanv1.InspectGlobalRequest{Namespace: "default", Key: []byte("k1")})
 	req.Header().Set("X-WaveSpan-Role", "reader")
@@ -226,5 +249,251 @@ func TestInspectGlobalCompletenessOnMissedHolder(t *testing.T) {
 	}
 	if len(trailer.GetWarnings()) == 0 {
 		t.Fatal("a warning naming the unreachable holder is required")
+	}
+}
+
+// TestInspectGlobal_BothLayersMergedAndSorted verifies that holders from Layer 1 and Layer 2 are
+// merged and sorted by (peer_cluster_id, member_id), and that the best value is taken from
+// whichever layer has the higher version (even when Layer 1 has no record for this key).
+func TestInspectGlobal_BothLayersMergedAndSorted(t *testing.T) {
+	l1version := &wavespanv1.Version{HlcPhysicalMs: 1_000, WriterClusterId: "dev", WriterMemberId: "node-a"}
+	l2version := &wavespanv1.Version{HlcPhysicalMs: 9_000, WriterClusterId: "peer", WriterMemberId: "peer-z"}
+
+	resolver := fakeClusterResolver{
+		holders: []*wavespanv1.InspectHolder{
+			{MemberId: "node-b", HolderClass: wavespanv1.HolderClass_HOLDER_DURABLE, Version: l1version},
+			{MemberId: "node-a", HolderClass: wavespanv1.HolderClass_HOLDER_DURABLE, Version: l1version},
+		},
+		best: &wavespanv1.StoredRecord{
+			Version: l1version,
+			Value:   &wavespanv1.ValueBody{Body: &wavespanv1.ValueBody_Inline{Inline: []byte("l1-value")}},
+		},
+		complete: true,
+		warnings: nil,
+	}
+	peer := fakePeerInspector{
+		holders: []*wavespanv1.InspectHolder{
+			{PeerClusterId: "peer", MemberId: "peer-z", HolderClass: wavespanv1.HolderClass_HOLDER_DURABLE, Version: l2version},
+		},
+		best: &wavespanv1.StoredRecord{
+			Version: l2version,
+			Value:   &wavespanv1.ValueBody{Body: &wavespanv1.ValueBody_Inline{Inline: []byte("peer-value")}},
+		},
+		complete: true,
+		warnings: nil,
+	}
+
+	mem := storage.NewMemStore()
+	t.Cleanup(func() { _ = mem.Close() })
+	rs := recordstore.NewStore(mem, "dev", "node1", version.NewClock(nil, 500), version.NewSequencer(0))
+	obs := NewObsService(NewGossipRing(64), fakeCluster{}, membership.Member{ClusterID: "dev", MemberID: "node1"}, rs).
+		WithClusterResolver(resolver).
+		WithPeerInspector(peer)
+	mux := http.NewServeMux()
+	mux.Handle(obs.Handler())
+	ts := httptest.NewServer(security.Identity{DevMode: true}.EnforceHTTP(mux))
+	t.Cleanup(ts.Close)
+	client := wavespanv1connect.NewObservabilityServiceClient(ts.Client(), ts.URL)
+
+	req := connect.NewRequest(&wavespanv1.InspectGlobalRequest{
+		Namespace:           "default",
+		Key:                 []byte("mykey"),
+		IncludeValue:        true,
+		IncludePeerClusters: true,
+	})
+	req.Header().Set("X-WaveSpan-Role", "admin")
+	stream, err := client.InspectGlobal(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var ik *wavespanv1.InspectKey
+	var trailer *wavespanv1.InspectTrailer
+	for stream.Receive() {
+		if k := stream.Msg().GetKey(); k != nil {
+			ik = k
+		}
+		if tr := stream.Msg().GetTrailer(); tr != nil {
+			trailer = tr
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	// All three holders must appear.
+	if ik == nil {
+		t.Fatal("expected an InspectKey row")
+	}
+	if len(ik.GetHolders()) != 3 {
+		t.Fatalf("expected 3 holders (2 L1 + 1 L2), got %d: %+v", len(ik.GetHolders()), ik.GetHolders())
+	}
+
+	// Sorted: empty peer_cluster_id (L1) first, then "peer" cluster; within each group by member_id.
+	h := ik.GetHolders()
+	if h[0].GetMemberId() != "node-a" || h[0].GetPeerClusterId() != "" {
+		t.Errorf("holder[0] should be node-a (L1), got %+v", h[0])
+	}
+	if h[1].GetMemberId() != "node-b" || h[1].GetPeerClusterId() != "" {
+		t.Errorf("holder[1] should be node-b (L1), got %+v", h[1])
+	}
+	if h[2].GetMemberId() != "peer-z" || h[2].GetPeerClusterId() != "peer" {
+		t.Errorf("holder[2] should be peer-z (L2), got %+v", h[2])
+	}
+
+	// The peer's higher version should win as best.
+	if string(ik.GetValue()) != "peer-value" {
+		t.Errorf("best value should come from the higher-versioned peer, got %q", ik.GetValue())
+	}
+	if ik.GetVersion().GetWriterMemberId() != "peer-z" {
+		t.Errorf("best version writer should be peer-z, got %q", ik.GetVersion().GetWriterMemberId())
+	}
+
+	// Both layers complete => COMPLETE trailer.
+	if trailer == nil || trailer.GetFinalCompleteness() != wavespanv1.Completeness_COMPLETE {
+		t.Fatalf("both layers complete => COMPLETE trailer, got: %+v", trailer)
+	}
+	if trailer.GetRowsReturned() != 1 {
+		t.Errorf("rows_returned should be 1, got %d", trailer.GetRowsReturned())
+	}
+}
+
+// TestInspectGlobal_PartialWhenEitherLayerIncomplete verifies PARTIAL when Layer 2 is incomplete.
+func TestInspectGlobal_PartialWhenEitherLayerIncomplete(t *testing.T) {
+	resolver := fakeClusterResolver{
+		holders:  []*wavespanv1.InspectHolder{{MemberId: "node-a"}},
+		best:     &wavespanv1.StoredRecord{Version: &wavespanv1.Version{HlcPhysicalMs: 1}},
+		complete: true,
+		warnings: nil,
+	}
+	peer := fakePeerInspector{
+		holders:  nil,
+		best:     nil,
+		complete: false,
+		warnings: []string{"peer cluster B unreachable"},
+	}
+
+	mem := storage.NewMemStore()
+	t.Cleanup(func() { _ = mem.Close() })
+	rs := recordstore.NewStore(mem, "dev", "node1", version.NewClock(nil, 500), version.NewSequencer(0))
+	obs := NewObsService(NewGossipRing(64), fakeCluster{}, membership.Member{ClusterID: "dev", MemberID: "node1"}, rs).
+		WithClusterResolver(resolver).
+		WithPeerInspector(peer)
+	mux := http.NewServeMux()
+	mux.Handle(obs.Handler())
+	ts := httptest.NewServer(security.Identity{DevMode: true}.EnforceHTTP(mux))
+	t.Cleanup(ts.Close)
+	client := wavespanv1connect.NewObservabilityServiceClient(ts.Client(), ts.URL)
+
+	req := connect.NewRequest(&wavespanv1.InspectGlobalRequest{
+		Namespace: "default", Key: []byte("k"), IncludePeerClusters: true,
+	})
+	req.Header().Set("X-WaveSpan-Role", "reader")
+	stream, err := client.InspectGlobal(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var trailer *wavespanv1.InspectTrailer
+	for stream.Receive() {
+		if tr := stream.Msg().GetTrailer(); tr != nil {
+			trailer = tr
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if trailer == nil || trailer.GetFinalCompleteness() != wavespanv1.Completeness_PARTIAL {
+		t.Fatalf("Layer 2 incomplete => PARTIAL, got: %+v", trailer)
+	}
+	warnFound := false
+	for _, w := range trailer.GetWarnings() {
+		if w == "peer cluster B unreachable" {
+			warnFound = true
+		}
+	}
+	if !warnFound {
+		t.Errorf("Layer 2 warning not propagated: %v", trailer.GetWarnings())
+	}
+}
+
+// TestInspectGlobal_NoPeerInspector verifies that without a peerInspector only L1 holders appear
+// and a complete L1 result yields COMPLETE (regression guard: old stub always returned PARTIAL).
+func TestInspectGlobal_NoPeerInspector(t *testing.T) {
+	l1version := &wavespanv1.Version{HlcPhysicalMs: 5_000, WriterClusterId: "dev", WriterMemberId: "node-x"}
+	resolver := fakeClusterResolver{
+		holders: []*wavespanv1.InspectHolder{
+			{MemberId: "node-x", HolderClass: wavespanv1.HolderClass_HOLDER_DURABLE, Version: l1version},
+		},
+		best: &wavespanv1.StoredRecord{
+			Version: l1version,
+			Value:   &wavespanv1.ValueBody{Body: &wavespanv1.ValueBody_Inline{Inline: []byte("hello")}},
+		},
+		complete: true,
+		warnings: nil,
+	}
+	client, _ := newObsServer(t, resolver) // no peerInspector wired
+
+	req := connect.NewRequest(&wavespanv1.InspectGlobalRequest{
+		Namespace: "default", Key: []byte("thekey"), IncludeValue: true, IncludePeerClusters: false,
+	})
+	req.Header().Set("X-WaveSpan-Role", "admin")
+	stream, err := client.InspectGlobal(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var ik *wavespanv1.InspectKey
+	var trailer *wavespanv1.InspectTrailer
+	for stream.Receive() {
+		if k := stream.Msg().GetKey(); k != nil {
+			ik = k
+		}
+		if tr := stream.Msg().GetTrailer(); tr != nil {
+			trailer = tr
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	if ik == nil {
+		t.Fatal("expected an InspectKey row")
+	}
+	if len(ik.GetHolders()) != 1 || ik.GetHolders()[0].GetMemberId() != "node-x" {
+		t.Errorf("expected only L1 holder node-x, got %+v", ik.GetHolders())
+	}
+	// Regression guard: complete L1 without peer inspection MUST yield COMPLETE.
+	if trailer == nil || trailer.GetFinalCompleteness() != wavespanv1.Completeness_COMPLETE {
+		t.Fatalf("complete L1 without peer inspector must yield COMPLETE, got: %+v", trailer)
+	}
+}
+
+// When several configured endpoints belong to the SAME peer cluster, each returns that cluster's
+// full holder set — so the merged list must dedup by (peer_cluster_id, member_id), keeping the
+// highest version, and stay deterministically ordered.
+func TestDedupAndSortHolders(t *testing.T) {
+	v := func(ms uint64) *wavespanv1.Version { return &wavespanv1.Version{HlcPhysicalMs: ms} }
+	in := []*wavespanv1.InspectHolder{
+		{PeerClusterId: "test-a", MemberId: "a2", Version: v(5)},
+		{PeerClusterId: "", MemberId: "b1", Version: v(3)},
+		{PeerClusterId: "test-a", MemberId: "a1", Version: v(1)},
+		{PeerClusterId: "test-a", MemberId: "a1", Version: v(9)}, // dup a1·test-a, higher version
+		{PeerClusterId: "test-a", MemberId: "a2", Version: v(5)}, // exact dup
+	}
+	out := dedupAndSortHolders(in)
+	if len(out) != 3 {
+		t.Fatalf("want 3 unique holders, got %d: %+v", len(out), out)
+	}
+	if out[0].GetMemberId() != "b1" || out[0].GetPeerClusterId() != "" {
+		t.Errorf("out[0] want b1 (local), got %+v", out[0])
+	}
+	if out[1].GetMemberId() != "a1" || out[1].GetPeerClusterId() != "test-a" {
+		t.Errorf("out[1] want a1·test-a, got %+v", out[1])
+	}
+	if out[1].GetVersion().GetHlcPhysicalMs() != 9 {
+		t.Errorf("dup a1 must keep highest version 9, got %d", out[1].GetVersion().GetHlcPhysicalMs())
+	}
+	if out[2].GetMemberId() != "a2" || out[2].GetPeerClusterId() != "test-a" {
+		t.Errorf("out[2] want a2·test-a, got %+v", out[2])
 	}
 }

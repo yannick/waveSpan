@@ -33,6 +33,7 @@ import (
 	"github.com/yannick/wavespan/internal/graph"
 	"github.com/yannick/wavespan/internal/grpcsrv"
 	"github.com/yannick/wavespan/internal/health"
+	"github.com/yannick/wavespan/internal/holderinspect"
 	"github.com/yannick/wavespan/internal/kv"
 	"github.com/yannick/wavespan/internal/membership"
 	"github.com/yannick/wavespan/internal/observability"
@@ -220,6 +221,10 @@ func run() error {
 		Geo:                  placement.PreferLocalGeo, AllowSpilloverForDurability: true, ComplianceGeo: self.Geo,
 	}
 	replicator := local.NewConnectReplicator(httpClient)
+
+	// Layer 1 of the Global Data Browser: resolve a single key's holders across this cluster's
+	// alive members (point FetchReplica fan-out), owning the serving node's own holder.
+	clusterResolver := holderinspect.New(self, svc, replicator, rstore.GetRecord)
 
 	// Target-N fanout + repair engine (M4): converge to the target durable-holder count and
 	// restore replicas under spot churn.
@@ -422,6 +427,8 @@ func run() error {
 	var globalSrv *global.Server
 	var globalApplier *global.Applier
 	var globalAE *global.AntiEntropy
+	var peerHandler grpcsrv.PeerKeyInspector // peer-side InspectKey handler; assigned when global is enabled
+	var peerInspector *global.PeerInspector  // Layer 2 client; assigned when global is enabled
 	var startGlobal func()
 	var vectorGlobalTap func(ns string, key []byte, rec *wavespanv1.StoredRecord)
 	if cfg.GlobalReplication.Enabled() {
@@ -444,6 +451,11 @@ func run() error {
 		globalApplier, globalAE = applier, ae
 		outlog := global.NewOutLog(store, cfg.GlobalReplication.OutLogDiskBudgetBytes)
 		peers := cfg.GlobalReplication.Peers
+
+		// Global Data Browser Layer 2: resolve a key across peer clusters (client), and serve peers'
+		// InspectKey by running this cluster's Layer 1 resolution tagged with our cluster id (handler).
+		peerInspector = global.NewPeerInspector(cfg.ClusterID, peers)
+		peerHandler = peerInspectAdapter{selfCluster: cfg.ClusterID, resolver: clusterResolver}
 		localOnly := cfg.LocalOnlyNamespaces() // "all" namespaces never cross to peer clusters
 		appendToPeers := func(ns string, key []byte, rec *wavespanv1.StoredRecord) {
 			if localOnly[ns] {
@@ -549,7 +561,8 @@ func run() error {
 	wavespanv1.RegisterVectorServiceServer(grpcDataSrv, grpcVectorSvc)
 	wavespanv1.RegisterCypherServer(grpcDataSrv, grpcCypherSvc)
 	if globalSrv != nil {
-		wavespanv1.RegisterGlobalReplicationServer(grpcDataSrv, grpcsrv.NewGlobalReplication(globalApplier, globalAE))
+		// peer handler (3rd arg) is wired in the global-enabled block; nil here = InspectKey Unimplemented.
+		wavespanv1.RegisterGlobalReplicationServer(grpcDataSrv, grpcsrv.NewGlobalReplication(globalApplier, globalAE, peerHandler))
 	}
 
 	// Replicated collections (design/30): CP consensus tier over a dedicated dragonboat NodeHost that
@@ -729,6 +742,7 @@ func run() error {
 		WithGraph(graphStore).                                                  // enables the visual node explorer (GraphExplore / GraphSubgraph)
 		WithSampleDataset(!cfg.Features.DisableSampleDataset, newGraphVersion). // UI "load demo graph" action
 		WithClusterScan(replicator).                                            // cluster-wide Data Browser: fan InspectLocal out to all members
+		WithClusterResolver(clusterResolver).                                   // Global Data Browser Layer 1: within-cluster single-key holder resolution
 		WithKvWriter(func(ctx context.Context, target membership.Member, req *wavespanv1.PutRequest) (*wavespanv1.PutResult, error) {
 			// Forward the UI's test write to the chosen coordinator's data port over grpc.
 			conn, err := rpcopts.GRPCConn(target.DataAddr)
@@ -762,6 +776,10 @@ func run() error {
 				}
 				return wavespanv1.NewConfigServiceClient(conn).SetTunable(ctx, &wavespanv1.SetTunableRequest{Key: key, Value: value})
 			})
+	if peerInspector != nil {
+		// Global Data Browser Layer 2 (only when active-active replication is configured).
+		obsSvc = obsSvc.WithPeerInspector(peerInspector)
+	}
 	adminIdentity := security.Identity{DevMode: cfg.Security.InsecureDevMode}
 	obsPath, obsHandler := obsSvc.Handler()
 	adminMux.Handle(obsPath, adminIdentity.EnforceHTTP(obsHandler)) // ObservabilityService (admin auth)
@@ -1565,4 +1583,17 @@ func envDur(key string) time.Duration {
 		return 0
 	}
 	return d
+}
+
+// peerInspectAdapter answers a peer cluster's InspectKey RPC by running this cluster's Layer 1
+// resolution and wrapping it as a peer-facing response tagged with this cluster's id. It satisfies
+// grpcsrv.PeerKeyInspector.
+type peerInspectAdapter struct {
+	selfCluster string
+	resolver    *holderinspect.ClusterResolver
+}
+
+func (a peerInspectAdapter) InspectKeyLocal(ctx context.Context, ns string, key []byte, includeValue bool) (*wavespanv1.InspectKeyResponse, error) {
+	holders, best, complete, warns := a.resolver.ResolveKey(ctx, ns, key, includeValue)
+	return global.BuildPeerResponse(a.selfCluster, holders, best, complete, warns), nil
 }

@@ -10,7 +10,7 @@ import (
 var _ wavespanv1.GlobalReplicationServer = (*GlobalReplication)(nil)
 
 func TestNewGlobalReplicationNonNil(t *testing.T) {
-	a := NewGlobalReplication(nil, nil)
+	a := NewGlobalReplication(nil, nil, nil)
 	if a == nil {
 		t.Fatal("NewGlobalReplication returned nil")
 	}

@@ -8,4 +8,5 @@ export { CodeInline, CodeBlock, Kbd } from "./Code";
 export { StatCard } from "./StatCard";
 export { Sparkline } from "./Sparkline";
 export { Spinner, EmptyState, InlineMessage } from "./Feedback";
+export { Modal } from "./Modal";
 export { ThemeToggle } from "./ThemeToggle";

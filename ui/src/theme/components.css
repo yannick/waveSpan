@@ -486,3 +486,92 @@ select.ws-field {
   margin: 0 0 var(--ws-space-lg);
   max-width: 70ch;
 }
+
+/* =====================================================================
+ * Modal dialog
+ * ===================================================================== */
+.ws-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ws-space-xl);
+  background: rgba(17, 17, 17, 0.45);
+}
+.ws-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(800px, 100%);
+  max-height: min(80vh, 720px);
+  background: var(--ws-color-surface);
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-md);
+  box-shadow: var(--ws-shadow-pop);
+  overflow: hidden;
+}
+.ws-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ws-space-md);
+  padding: var(--ws-space-md) var(--ws-space-lg);
+  background: var(--ws-color-surface-alt);
+  border-bottom: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+}
+.ws-modal__body {
+  padding: var(--ws-space-lg);
+  overflow: auto;
+}
+.ws-modal__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ws-color-ink);
+  background: transparent;
+  border: var(--ws-stroke-regular) solid var(--ws-color-border-strong);
+  border-radius: var(--ws-radius-sm);
+  cursor: pointer;
+}
+.ws-modal__close:hover {
+  background: var(--ws-color-surface);
+}
+
+/* the value cell: clamp to a sensible width and ellipsize overflow */
+.ws-value-cell {
+  display: inline-block;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.ws-value-expand {
+  margin-left: var(--ws-space-xs);
+  padding: 0 var(--ws-space-xs);
+  font-size: var(--ws-text-caption-size, 11px);
+  color: var(--ws-color-ink-muted);
+  background: transparent;
+  border: var(--ws-stroke-regular) solid var(--ws-color-border);
+  border-radius: var(--ws-radius-xs);
+  cursor: pointer;
+}
+.ws-value-expand:hover {
+  color: var(--ws-color-ink);
+  border-color: var(--ws-color-border-strong);
+}
+/* full value, wrapped, inside the modal */
+.ws-value-full {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--ws-font-mono);
+  font-size: var(--ws-text-body-sm-size);
+  line-height: 1.5;
+}
