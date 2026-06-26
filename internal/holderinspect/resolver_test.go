@@ -51,7 +51,7 @@ func TestResolveKey_MergesHoldersLatestWinsPartialOnUnreachable(t *testing.T) {
 		errs: map[string]error{"m3:1": errors.New("dial timeout")},
 	}
 	selfRec := &wavespanv1.StoredRecord{Version: ver(10), Value: inline("old")}
-	r := New(self, members, fetch, func(ns string, key []byte) (*wavespanv1.StoredRecord, bool, error) { return selfRec, true, nil })
+	r := New(self, members, fetch, func(_ string, _ []byte) (*wavespanv1.StoredRecord, bool, error) { return selfRec, true, nil })
 
 	holders, best, complete, warnings := r.ResolveKey(context.Background(), "ns", []byte("k"), true)
 
@@ -79,7 +79,7 @@ func TestResolveKey_CompleteWhenAllAnswer(t *testing.T) {
 	self := membership.Member{MemberID: "self", DataAddr: "self:1"}
 	members := &fakeMembers{views: []membership.MemberView{aliveView("self", "self:1"), aliveView("m2", "m2:1")}}
 	fetch := &fakeFetcher{recs: map[string]*wavespanv1.FetchReplicaResponse{"m2:1": {Found: true, Record: &wavespanv1.StoredRecord{Version: ver(5)}}}}
-	r := New(self, members, fetch, func(ns string, key []byte) (*wavespanv1.StoredRecord, bool, error) {
+	r := New(self, members, fetch, func(_ string, _ []byte) (*wavespanv1.StoredRecord, bool, error) {
 		return &wavespanv1.StoredRecord{Version: ver(7)}, true, nil
 	})
 	_, _, complete, warnings := r.ResolveKey(context.Background(), "ns", []byte("k"), false)
@@ -92,7 +92,7 @@ func TestResolveKey_CompleteWhenAllAnswer(t *testing.T) {
 func TestResolveKey_RedactsWhenNotRevealed(t *testing.T) {
 	self := membership.Member{MemberID: "self", DataAddr: "self:1"}
 	members := &fakeMembers{views: []membership.MemberView{aliveView("self", "self:1")}}
-	r := New(self, members, &fakeFetcher{}, func(ns string, key []byte) (*wavespanv1.StoredRecord, bool, error) {
+	r := New(self, members, &fakeFetcher{}, func(_ string, _ []byte) (*wavespanv1.StoredRecord, bool, error) {
 		return &wavespanv1.StoredRecord{Version: ver(3), Value: inline("secret")}, true, nil
 	})
 	_, best, _, _ := r.ResolveKey(context.Background(), "ns", []byte("k"), false)

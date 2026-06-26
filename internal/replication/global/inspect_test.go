@@ -21,7 +21,7 @@ func (f *fakeGRClient) InspectKey(_ context.Context, _ *wavespanv1.InspectKeyReq
 
 func TestPeerInspector_TagsAndAggregates(t *testing.T) {
 	peers := []config.ClusterPeer{{ClusterID: "test-b", ReplEndpoint: "b1:7800"}}
-	dial := func(endpoint string) (inspectKeyClient, error) {
+	dial := func(_ string) (inspectKeyClient, error) {
 		return &fakeGRClient{resp: &wavespanv1.InspectKeyResponse{
 			Holders:  []*wavespanv1.InspectHolder{{MemberId: "b1", PeerClusterId: "test-b", Version: &wavespanv1.Version{HlcPhysicalMs: 9}}},
 			Best:     &wavespanv1.StoredRecord{Version: &wavespanv1.Version{HlcPhysicalMs: 9}},
@@ -43,7 +43,7 @@ func TestPeerInspector_TagsAndAggregates(t *testing.T) {
 
 func TestPeerInspector_UnreachablePeerPartial(t *testing.T) {
 	peers := []config.ClusterPeer{{ClusterID: "test-b", ReplEndpoint: "b1:7800"}}
-	dial := func(endpoint string) (inspectKeyClient, error) { return &fakeGRClient{err: errors.New("down")}, nil }
+	dial := func(_ string) (inspectKeyClient, error) { return &fakeGRClient{err: errors.New("down")}, nil }
 	pi := newPeerInspectorWithDial("test-a", peers, dial)
 	_, _, complete, warnings := pi.InspectPeers(context.Background(), "ns", []byte("k"), false)
 	if complete || len(warnings) != 1 {
@@ -54,7 +54,7 @@ func TestPeerInspector_UnreachablePeerPartial(t *testing.T) {
 func TestPeerInspector_SkipsSelfClusterAndEmptyEndpoint(t *testing.T) {
 	peers := []config.ClusterPeer{{ClusterID: "test-a", ReplEndpoint: "a2:7800"}, {ClusterID: "test-b", ReplEndpoint: ""}}
 	called := false
-	dial := func(endpoint string) (inspectKeyClient, error) {
+	dial := func(_ string) (inspectKeyClient, error) {
 		called = true
 		return &fakeGRClient{resp: &wavespanv1.InspectKeyResponse{Complete: true}}, nil
 	}

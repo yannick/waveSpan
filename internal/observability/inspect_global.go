@@ -30,7 +30,8 @@ func (s *ObsService) InspectGlobal(ctx context.Context, req *connect.Request[wav
 	}
 
 	ik := &wavespanv1.InspectKey{LogicalPath: ns + "/" + string(key), KeyHash: security.KeyHash(ns, key), LogicalKey: key}
-	complete := true
+	// Both branches below assign complete; it has no meaningful zero-value default.
+	var complete bool
 	var warnings []string
 	var best *wavespanv1.StoredRecord
 
