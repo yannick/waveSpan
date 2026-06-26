@@ -32,6 +32,7 @@ import (
 	"github.com/yannick/wavespan/internal/cypher"
 	"github.com/yannick/wavespan/internal/graph"
 	"github.com/yannick/wavespan/internal/grpcsrv"
+	"github.com/yannick/wavespan/internal/health"
 	"github.com/yannick/wavespan/internal/kv"
 	"github.com/yannick/wavespan/internal/membership"
 	"github.com/yannick/wavespan/internal/observability"
@@ -301,6 +302,28 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	subscriber.SetBaseContext(ctx) // subscriptions live for the node lifetime, not per-request
+
+	// Disk-pressure admission control (design/36): watch free space on the storage volume (the
+	// collections-raft pebble LogDB + wavesdb live under cfg.Storage.Path) and shed WRITES before the
+	// volume fills, so pebble never panics on "no space left on device" and crash-loops the voters.
+	// Reads + control-plane ops are unaffected. Tunables: WAVESPAN_DISK_MIN_FREE_PCT (low watermark, default
+	// 8), WAVESPAN_DISK_RESUME_FREE_PCT (high watermark / hysteresis, default 12), WAVESPAN_DISK_MIN_FREE_BYTES
+	// (absolute floor, default 0/off), WAVESPAN_DISK_CRITICAL_FREE_PCT (default 3), WAVESPAN_DISK_CHECK_INTERVAL
+	// (Go duration, default 5s).
+	diskMetrics := health.NewPromMetrics(metrics.Registry)
+	diskMon := health.NewMonitor(health.Config{
+		Path:            cfg.Storage.Path,
+		MinFreePct:      envFloat("WAVESPAN_DISK_MIN_FREE_PCT"),
+		MinFreeBytes:    envU64("WAVESPAN_DISK_MIN_FREE_BYTES"),
+		ResumeFreePct:   envFloat("WAVESPAN_DISK_RESUME_FREE_PCT"),
+		CriticalFreePct: envFloat("WAVESPAN_DISK_CRITICAL_FREE_PCT"),
+		CheckInterval:   envDur("WAVESPAN_DISK_CHECK_INTERVAL"),
+	}, diskMetrics)
+	diskMon.Start(ctx)
+	defer diskMon.Stop()
+	// Gate the KV write path (it writes records into the same wavesdb volume the consensus tier uses).
+	coord.WithDiskGate(diskMon, diskMetrics.IncShedWrites)
+	logger.Info("disk-pressure admission active", "path", cfg.Storage.Path, "level", diskMon.Level().String())
 
 	// Vector store + indexes (M9/M10): exact + approximate search via the Cypher vector.* procedures;
 	// raw vectors are ingested via VectorService and replicate through the global stream.
@@ -604,6 +627,12 @@ func run() error {
 			dataShards = 4
 		}
 		mgr, err := collections.NewManagerWithOptions(filepath.Join(cfg.Storage.Path, "collections-raft"), raftAddr, store, raftOpts)
+		if mgr != nil {
+			// Disk-pressure admission (design/36): shed consensus-tier writes before they reach Raft when the
+			// volume is low on space, so the pebble LogDB stops growing and never panics on a full disk. Applies
+			// to every role (spot/voter); reads are never gated.
+			mgr.WithDiskGate(diskMon, diskMetrics.IncShedWrites)
+		}
 		switch {
 		case err != nil:
 			logger.Error("collections: NodeHost init failed; tier disabled", "err", err)
@@ -1506,4 +1535,32 @@ func envU64(key string) uint64 {
 		return 0
 	}
 	return n
+}
+
+// envFloat parses a float environment variable, returning 0 (meaning "use the default") when it is
+// unset or invalid. Used for the disk-pressure watermark percentages.
+func envFloat(key string) float64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 0
+	}
+	return f
+}
+
+// envDur parses a Go duration environment variable (e.g. "5s"), returning 0 (meaning "use the default")
+// when it is unset or invalid. Used for the disk-pressure check interval.
+func envDur(key string) time.Duration {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0
+	}
+	return d
 }

@@ -31,6 +31,26 @@ type Manager struct {
 	sweepEvery time.Duration
 	stopCh     chan struct{}
 	doneCh     chan struct{}
+
+	diskGate DiskGate // disk-pressure admission (design/36); nil = no gating
+	onShed   func()   // optional: called once per write shed for disk pressure (metrics counter)
+}
+
+// DiskGate reports whether the storage volume is under disk pressure. When it is, Propose sheds the
+// write before it reaches Raft so the LogDB stops growing and pebble never panics on a full volume
+// (design/36). internal/health.Monitor satisfies this via UnderPressure. Reads never consult the gate.
+type DiskGate interface {
+	UnderPressure() bool
+}
+
+// WithDiskGate installs a disk-pressure admission gate: while gate.UnderPressure() is true, every write
+// Propose (data shards AND the meta shard) is shed with ErrDiskPressure before reaching Raft, and onShed
+// (if non-nil) is called once per shed. Reads (Manager.Read) are never gated. Returns the Manager for
+// chaining. Passing a nil gate disables gating.
+func (m *Manager) WithDiskGate(gate DiskGate, onShed func()) *Manager {
+	m.diskGate = gate
+	m.onShed = onShed
+	return m
 }
 
 type shardReg struct {
@@ -209,6 +229,17 @@ func (m *Manager) StartMetaShard(shardID, replicaID uint64, initialMembers map[u
 // into few large Raft entries; the meta shard (control-plane, low write rate, distinct encoding) uses
 // the un-batched path so its commands are never wrapped in a data-only opBatch.
 func (m *Manager) Propose(ctx context.Context, shardID uint64, cmd []byte) (ProposeResult, error) {
+	// DISK-PRESSURE ADMISSION (design/36): shed every write BEFORE it reaches Raft when the storage volume
+	// is low on free space. This is the choke point for both data-shard writes (proposer) and meta-shard
+	// writes (proposeRaw) — every command that would grow the pebble LogDB passes here — so one check stops
+	// the log from growing, lets compaction free space, and keeps pebble from panicking on a full volume
+	// and crash-looping the voters. Reads go through Manager.Read and are never gated.
+	if m.diskGate != nil && m.diskGate.UnderPressure() {
+		if m.onShed != nil {
+			m.onShed()
+		}
+		return ProposeResult{}, ErrDiskPressure
+	}
 	if shardID == MetaShardID || m.prop == nil || !coalescable(cmd) {
 		return m.proposeRaw(ctx, shardID, cmd)
 	}

@@ -49,8 +49,12 @@ func (s *Service) writeMeta() *wavespanv1.ResponseMeta {
 }
 
 func writeError(err error) error {
-	if errors.Is(err, ErrInsufficientNearbyReplicas) {
+	switch {
+	case errors.Is(err, ErrInsufficientNearbyReplicas):
 		return connect.NewError(connect.CodeUnavailable, err)
+	case errors.Is(err, ErrDiskPressure):
+		// Disk-pressure shed: transient backpressure, retry once compaction frees space. ResourceExhausted.
+		return connect.NewError(connect.CodeResourceExhausted, err)
 	}
 	return connect.NewError(connect.CodeInternal, err)
 }

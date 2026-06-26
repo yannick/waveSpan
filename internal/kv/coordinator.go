@@ -21,6 +21,18 @@ import (
 // is not acknowledged.
 var ErrInsufficientNearbyReplicas = errors.New("kv: insufficient nearby durable replicas for origin+1")
 
+// ErrDiskPressure is returned when a write is shed because the storage volume is low on free space
+// (design/36). The KV tier writes records into the same wavesdb store that backs the consensus tier, so
+// it can grow the volume too; shedding here keeps a KV write burst from filling the disk. Transient —
+// retryable once compaction frees space — and mapped to gRPC ResourceExhausted. Reads are never gated.
+var ErrDiskPressure = errors.New("kv: disk pressure (write shed, retry)")
+
+// DiskGate reports whether the storage volume is under disk pressure (internal/health.Monitor satisfies
+// it). When set on a Coordinator, writes are shed while it reports pressure; reads are unaffected.
+type DiskGate interface {
+	UnderPressure() bool
+}
+
 // Cluster exposes the live roster to the coordinator (satisfied by membership.Service).
 type Cluster interface {
 	Members() []membership.MemberView
@@ -41,6 +53,17 @@ type Coordinator struct {
 	onStored     func(namespace string, key []byte)
 	globalTap    func(namespace string, key []byte, rec *wavespanv1.StoredRecord)
 	writeTimeout time.Duration
+	diskGate     DiskGate // disk-pressure admission (design/36); nil = no gating
+	onShed       func()   // optional: called once per write shed for disk pressure (metrics counter)
+}
+
+// WithDiskGate installs a disk-pressure admission gate: while gate.UnderPressure() is true, KV writes
+// (Put / PutTo / Delete) are shed with ErrDiskPressure before touching the store, and onShed (if non-nil)
+// is called once per shed. Reads are never gated. Returns the Coordinator for chaining.
+func (c *Coordinator) WithDiskGate(gate DiskGate, onShed func()) *Coordinator {
+	c.diskGate = gate
+	c.onShed = onShed
+	return c
 }
 
 // NewCoordinator wires a coordinator. holders and fanout are optional (nil disables holder
@@ -102,8 +125,19 @@ func (c *Coordinator) Delete(ctx context.Context, namespace string, key []byte, 
 func (c *Coordinator) write(ctx context.Context, namespace string, key, value []byte, tombstone bool, ttlMs *int64, idemKey string, candidates []placement.Candidate) (PutOutcome, error) {
 	if idemKey != "" {
 		if v, ok := c.idem.Check(idemKey); ok {
+			// An idempotent replay of an already-applied write adds no new bytes, so serve it even under
+			// pressure (checked before the gate).
 			return PutOutcome{Version: v, AckedNearbyReplicas: c.policy.MinAckNearbyReplicas}, nil
 		}
+	}
+	// DISK-PRESSURE ADMISSION (design/36): shed a NEW write before it touches the store when the volume is
+	// low on free space, so a KV write burst cannot fill the same wavesdb volume the consensus tier depends
+	// on. Transient ResourceExhausted; reads are never gated.
+	if c.diskGate != nil && c.diskGate.UnderPressure() {
+		if c.onShed != nil {
+			c.onShed()
+		}
+		return PutOutcome{}, ErrDiskPressure
 	}
 
 	v := c.store.NextVersion()
