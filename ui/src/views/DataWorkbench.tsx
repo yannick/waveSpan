@@ -18,6 +18,7 @@ import {
 } from "../components";
 import { formatBytes, preview, sniff } from "../lib/valuecodec";
 import { InspectorDrawer, type DrawerTarget } from "../components/inspector/Drawer";
+import { CollectionBody } from "../components/inspector/CollectionBody";
 import { color } from "../theme/tokens";
 
 type Scope = "cluster" | "node";
@@ -356,20 +357,12 @@ export function DataWorkbench() {
 
           {sel?.kind === "coll" && (
             <Card flat>
-              <div className="ws-title-sm">
+              <div className="ws-title-sm" style={{ marginBottom: "var(--ws-space-sm)" }}>
                 {sel.namespace} / {sel.name} <Badge tone="olive">{sel.ctype}</Badge>
               </div>
-              <div style={{ marginTop: "var(--ws-space-sm)" }}>
-                <Button
-                  size="sm"
-                  onClick={() => setDrawer({ kind: "collection", namespace: sel.namespace, collection: sel.name, ctype: sel.ctype })}
-                >
-                  Inspect &amp; edit
-                </Button>
-              </div>
-              <p className="ws-caption ws-muted" style={{ marginTop: "var(--ws-space-sm)" }}>
-                Collection contents open in the drawer (add / remove members).
-              </p>
+              {/* The collection's contents ARE the thing being inspected — edit them directly here, no
+                  intermediate "inspect & edit" hop or drawer. */}
+              <CollectionBody key={`${sel.namespace}:${sel.name}:${sel.ctype}`} target={{ kind: "collection", namespace: sel.namespace, collection: sel.name, ctype: sel.ctype }} />
             </Card>
           )}
 
