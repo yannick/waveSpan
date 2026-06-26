@@ -22,6 +22,9 @@ import {
   Toolbar,
 } from "../components";
 import { categoricalColor } from "../theme/tokens";
+import { create } from "@bufbuild/protobuf";
+import { NodeRecordSchema } from "../gen/wavespan/v1/cypher_pb";
+import { InspectorDrawer, type DrawerTarget } from "../components/inspector/Drawer";
 
 const CANVAS_H = 560;
 
@@ -129,6 +132,7 @@ export function NodeExplorer() {
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
   const [loadMsg, setLoadMsg] = useState<{ tone: "success" | "warning" | "danger"; text: string } | null>(null);
+  const [drawer, setDrawer] = useState<DrawerTarget | null>(null);
 
   const mountRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<ForceGraph3DInstance | null>(null);
@@ -444,7 +448,7 @@ export function NodeExplorer() {
               ) : (
                 <div className="ws-caption">properties require admin</div>
               )}
-              <div style={{ marginTop: "var(--ws-space-md)" }}>
+              <div style={{ marginTop: "var(--ws-space-md)", display: "flex", gap: "var(--ws-space-xs)", flexWrap: "wrap" }}>
                 <Button
                   size="sm"
                   onClick={() => {
@@ -463,12 +467,42 @@ export function NodeExplorer() {
                 >
                   expand from here
                 </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setDrawer({
+                      kind: "graph-node",
+                      graphId,
+                      record: create(NodeRecordSchema, {
+                        graphId,
+                        nodeId: selected.id,
+                        labels: selected.labels,
+                        properties: selected.properties,
+                        tombstone: false,
+                      }),
+                    })
+                  }
+                >
+                  inspect / edit
+                </Button>
               </div>
             </div>
           ) : (
             <div className="ws-caption">click a node to centre on it and see its properties</div>
           )}
         </Card>
+
+        {drawer && (
+          <InspectorDrawer
+            target={drawer}
+            onClose={() => setDrawer(null)}
+            onSaved={() => {
+              setDrawer(null);
+              explore(seed);
+            }}
+          />
+        )}
       </div>
     </div>
   );

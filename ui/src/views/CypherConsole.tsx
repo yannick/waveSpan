@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useUrlState } from "../router";
 import { cypher } from "../transport";
 import { Completeness } from "../gen/wavespan/v1/common_pb";
-import { type QueryMeta, type Value } from "../gen/wavespan/v1/cypher_pb";
+import { create } from "@bufbuild/protobuf";
+import { NodeRecordSchema, type QueryMeta, type Value } from "../gen/wavespan/v1/cypher_pb";
+import { InspectorDrawer, type DrawerTarget } from "../components/inspector/Drawer";
 import {
   Badge,
   Button,
@@ -49,33 +51,42 @@ export function CypherConsole() {
   const [query, setQuery] = useUrlState("q", EXAMPLES[0]);
   const [columns, setColumns] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
+  // Raw Value rows kept in parallel so the "inspect" affordance can recover a node id (a string cell).
+  const [rawRows, setRawRows] = useState<Record<string, Value>[]>([]);
   const [meta, setMeta] = useState<QueryMeta | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
+  const [drawer, setDrawer] = useState<DrawerTarget | null>(null);
 
   const run = async () => {
     setError("");
     setMeta(null);
     setRows([]);
+    setRawRows([]);
     setColumns([]);
     setRunning(true);
     const collected: Record<string, string>[] = [];
+    const collectedRaw: Record<string, Value>[] = [];
     const cols = new Set<string>();
     try {
       for await (const res of cypher.query({ graphId, query, parameters: {} })) {
         if (res.msg.case === "row") {
           const row: Record<string, string> = {};
+          const raw: Record<string, Value> = {};
           for (const [k, v] of Object.entries(res.msg.value.columns)) {
             cols.add(k);
             row[k] = valueToString(v as Value);
+            raw[k] = v as Value;
           }
           collected.push(row);
+          collectedRaw.push(raw);
         } else if (res.msg.case === "meta") {
           setMeta(res.msg.value);
         }
       }
       setColumns([...cols]);
       setRows(collected);
+      setRawRows(collectedRaw);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -85,6 +96,16 @@ export function CypherConsole() {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") run();
+  };
+
+  // Recover a candidate node id from a result row: the first string-valued cell. Cypher rows are
+  // flattened projections, so this is best-effort — it opens the graph-node drawer for that id.
+  const nodeIdOf = (raw: Record<string, Value> | undefined): string | null => {
+    if (!raw) return null;
+    for (const v of Object.values(raw)) {
+      if (v?.value?.case === "stringValue" && v.value.value) return v.value.value;
+    }
+    return null;
   };
 
   return (
@@ -131,25 +152,50 @@ export function CypherConsole() {
       )}
 
       {columns.length > 0 && (
-        <div style={{ marginTop: "var(--ws-space-md)" }}>
-          <Table mono>
-            <thead>
-              <tr>
-                {columns.map((c) => (
-                  <th key={c}>{c}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={i}>
+        <div style={{ marginTop: "var(--ws-space-md)", display: "flex", gap: "var(--ws-space-md)", alignItems: "flex-start" }}>
+          <div style={{ flex: 1, minWidth: 0, overflowX: "auto" }}>
+            <Table mono>
+              <thead>
+                <tr>
                   {columns.map((c) => (
-                    <td key={c}>{r[c] ?? ""}</td>
+                    <th key={c}>{c}</th>
                   ))}
+                  <th aria-label="actions" />
                 </tr>
-              ))}
-            </tbody>
-          </Table>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const nid = nodeIdOf(rawRows[i]);
+                  return (
+                    <tr key={i}>
+                      {columns.map((c) => (
+                        <td key={c}>{r[c] ?? ""}</td>
+                      ))}
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        {nid && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title={`inspect node ${nid}`}
+                            onClick={() =>
+                              setDrawer({
+                                kind: "graph-node",
+                                graphId,
+                                record: create(NodeRecordSchema, { graphId, nodeId: nid, labels: [], properties: {}, tombstone: false }),
+                              })
+                            }
+                          >
+                            inspect
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </div>
+          {drawer && <InspectorDrawer target={drawer} onClose={() => setDrawer(null)} onSaved={() => setDrawer(null)} />}
         </div>
       )}
 

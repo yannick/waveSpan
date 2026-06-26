@@ -6,12 +6,14 @@ import { CypherConsole } from "./views/CypherConsole";
 import { NodeExplorer } from "./views/NodeExplorer";
 import { KvWriter } from "./views/KvWriter";
 import { CollectionsExplorer } from "./views/CollectionsExplorer";
+import { DataWorkbench } from "./views/DataWorkbench";
 import { Config } from "./views/Config";
 import { Documentation } from "./views/Documentation";
 import { Tabs, type TabItem, ThemeToggle } from "./components";
 import { DEFAULT_SCREEN, navigate, useEnsureScreen, useRoute } from "./router";
 
 type Tab =
+  | "workbench"
   | "cypher"
   | "explorer"
   | "gossip"
@@ -24,6 +26,7 @@ type Tab =
   | "docs";
 
 const tabs: TabItem<Tab>[] = [
+  { id: "workbench", label: "Data" },
   { id: "cypher", label: "Cypher Console" },
   { id: "explorer", label: "Node Explorer" },
   { id: "gossip", label: "Gossip Inspector" },
@@ -58,6 +61,7 @@ export function App() {
       <Tabs items={tabs} value={tab} onChange={(t) => navigate(t)} />
 
       <main className="ws-view">
+        {tab === "workbench" && <DataWorkbench />}
         {tab === "cypher" && <CypherConsole />}
         {tab === "explorer" && <NodeExplorer />}
         {tab === "gossip" && <GossipInspector />}
