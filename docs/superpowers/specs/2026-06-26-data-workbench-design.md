@@ -110,8 +110,10 @@ version, TTL, holder count, scope) and **footer** (Delete / Save). Bodies:
   **Hex**. Codec is auto-detected (§4.3) but user-overridable so binary is never
   silently mangled. Shows byte size.
 - **Graph body.** Labels as removable chips; properties as **typed rows** (a
-  `Value`-union type picker: string / int64 / double / bool / bytes / list /
-  map), validated. Edges show start → end + type.
+  `Value`-union type picker), validated. Edges show start → end + type. The
+  picker maps to the proto `Value` oneof field names: `string_value` /
+  `int_value` / `double_value` / `bool_value` / `bytes_value` / `list_value`
+  (`ValueList`) / `map_value` (`ValueMap`), plus the explicit `null` variant.
 - **Vector body.** Dimensions + dtype; the vector rendered as a sparkline / stats
   (read-mostly; raw array editable via paste); metadata as typed rows; payload as
   hex. A **find similar** (k-NN) action.
