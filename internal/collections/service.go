@@ -295,6 +295,21 @@ func (s *Service) BulkRemove(ctx context.Context, req *connect.Request[wavespanv
 	return connect.NewResponse(&wavespanv1.BulkRemoveResult{Meta: s.meta(), Results: out}), nil
 }
 
+// ListCollections enumerates every collection in a namespace with its datatype, gathered best-effort
+// across data shards (design/30 §13.7).
+func (s *Service) ListCollections(ctx context.Context, req *connect.Request[wavespanv1.ListCollectionsRequest]) (*connect.Response[wavespanv1.ListCollectionsResult], error) {
+	m := req.Msg
+	infos, err := s.cols.ListCollectionInfos(ctx, []byte(m.GetNamespace()), m.GetLinearizable())
+	if err != nil {
+		return nil, collErr(err)
+	}
+	out := make([]*wavespanv1.CollectionInfo, len(infos))
+	for i, ci := range infos {
+		out[i] = &wavespanv1.CollectionInfo{Name: ci.Name, Type: ci.Type.String()}
+	}
+	return connect.NewResponse(&wavespanv1.ListCollectionsResult{Meta: s.meta(), Collections: out}), nil
+}
+
 // TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status.
 func (s *Service) TierInfo(_ context.Context, _ *connect.Request[wavespanv1.TierInfoRequest]) (*connect.Response[wavespanv1.TierInfoResult], error) {
 	res := &wavespanv1.TierInfoResult{Meta: s.meta(), Enabled: true}

@@ -73,6 +73,21 @@ const (
 	typeZSet collType = 3
 )
 
+// String maps a collection's datatype to its public wire name ("set"/"hash"/"zset"), or "unknown"
+// for an unrecognised/missing type byte. Used by the ListCollections API surface.
+func (t collType) String() string {
+	switch t {
+	case typeSet:
+		return "set"
+	case typeHash:
+		return "hash"
+	case typeZSet:
+		return "zset"
+	default:
+		return "unknown"
+	}
+}
+
 // typeForOp maps a mutation op to the datatype it requires (0 = type-agnostic, e.g. opExpire).
 func typeForOp(op opKind) collType {
 	switch op {

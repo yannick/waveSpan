@@ -98,3 +98,46 @@ func TestBulkRemoveAcrossCollections(t *testing.T) {
 		t.Fatalf("h1 changed by a named-list remove targeting s1")
 	}
 }
+
+// TestListCollectionInfos covers enumeration with per-collection datatypes: a set, a hash, and a zset
+// in one namespace must each come back with the correct type.
+func TestListCollectionInfos(t *testing.T) {
+	mem := storage.NewMemStore()
+	t.Cleanup(func() { _ = mem.Close() })
+	addr := freeAddr(t)
+	m := newMgr(t, t.TempDir(), addr, mem)
+	if err := m.StartShard(1, 1, map[uint64]string{1: addr}, false); err != nil {
+		t.Fatalf("StartShard: %v", err)
+	}
+	defer m.Stop()
+	c := New(m, SingleShardDirectory(1))
+	waitReady(t, c)
+	ns := []byte("app")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	if _, err := c.SAdd(ctx, ns, []byte("s1"), []byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.HSet(ctx, ns, []byte("h1"), FieldValue{Field: []byte("f"), Value: []byte("v")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ZAdd(ctx, ns, []byte("z1"), ScoredMember{Member: []byte("m"), Score: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	infos, err := c.ListCollectionInfos(ctx, ns, true)
+	if err != nil {
+		t.Fatalf("ListCollectionInfos: %v", err)
+	}
+	got := map[string]string{}
+	for _, ci := range infos {
+		got[string(ci.Name)] = ci.Type.String()
+	}
+	if len(infos) != 3 {
+		t.Fatalf("ListCollectionInfos returned %d collections, want 3: %v", len(infos), got)
+	}
+	if got["s1"] != "set" || got["h1"] != "hash" || got["z1"] != "zset" {
+		t.Fatalf("ListCollectionInfos types = %v want {s1:set, h1:hash, z1:zset}", got)
+	}
+}

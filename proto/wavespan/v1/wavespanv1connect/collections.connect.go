@@ -77,6 +77,9 @@ const (
 	// CollectionServiceBulkRemoveProcedure is the fully-qualified name of the CollectionService's
 	// BulkRemove RPC.
 	CollectionServiceBulkRemoveProcedure = "/wavespan.v1.CollectionService/BulkRemove"
+	// CollectionServiceListCollectionsProcedure is the fully-qualified name of the CollectionService's
+	// ListCollections RPC.
+	CollectionServiceListCollectionsProcedure = "/wavespan.v1.CollectionService/ListCollections"
 	// CollectionServiceTierInfoProcedure is the fully-qualified name of the CollectionService's
 	// TierInfo RPC.
 	CollectionServiceTierInfoProcedure = "/wavespan.v1.CollectionService/TierInfo"
@@ -116,6 +119,9 @@ type CollectionServiceClient interface {
 	// sorted sets) and best-effort: each collection's change is atomic on its shard, the fan-out is
 	// eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
 	BulkRemove(context.Context, *connect.Request[v1.BulkRemoveRequest]) (*connect.Response[v1.BulkRemoveResult], error)
+	// ListCollections enumerates every collection in a namespace, returning each one's name and datatype
+	// ("set"/"hash"/"zset", or "unknown"). Gathered best-effort across data shards (design/30 §13.7).
+	ListCollections(context.Context, *connect.Request[v1.ListCollectionsRequest]) (*connect.Response[v1.ListCollectionsResult], error)
 	// TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status
 	// — a read-only operator view (design/30 §12).
 	TierInfo(context.Context, *connect.Request[v1.TierInfoRequest]) (*connect.Response[v1.TierInfoResult], error)
@@ -249,6 +255,12 @@ func NewCollectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(collectionServiceMethods.ByName("BulkRemove")),
 			connect.WithClientOptions(opts...),
 		),
+		listCollections: connect.NewClient[v1.ListCollectionsRequest, v1.ListCollectionsResult](
+			httpClient,
+			baseURL+CollectionServiceListCollectionsProcedure,
+			connect.WithSchema(collectionServiceMethods.ByName("ListCollections")),
+			connect.WithClientOptions(opts...),
+		),
 		tierInfo: connect.NewClient[v1.TierInfoRequest, v1.TierInfoResult](
 			httpClient,
 			baseURL+CollectionServiceTierInfoProcedure,
@@ -272,27 +284,28 @@ func NewCollectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // collectionServiceClient implements CollectionServiceClient.
 type collectionServiceClient struct {
-	sAdd           *connect.Client[v1.SAddRequest, v1.CountResult]
-	sRem           *connect.Client[v1.KeysRequest, v1.CountResult]
-	sIsMember      *connect.Client[v1.MemberRequest, v1.BoolResult]
-	sCard          *connect.Client[v1.CardRequest, v1.CountResult]
-	sMembers       *connect.Client[v1.RangeRequest, v1.MembersResult]
-	hSet           *connect.Client[v1.HSetRequest, v1.CountResult]
-	hDel           *connect.Client[v1.KeysRequest, v1.CountResult]
-	hGet           *connect.Client[v1.MemberRequest, v1.ValueResult]
-	hLen           *connect.Client[v1.CardRequest, v1.CountResult]
-	hGetAll        *connect.Client[v1.RangeRequest, v1.FieldsResult]
-	hIncrBy        *connect.Client[v1.HIncrByRequest, v1.Int64Result]
-	hIncrByFloat   *connect.Client[v1.HIncrByFloatRequest, v1.DoubleResult]
-	zAdd           *connect.Client[v1.ZAddRequest, v1.CountResult]
-	zRem           *connect.Client[v1.KeysRequest, v1.CountResult]
-	zScore         *connect.Client[v1.MemberRequest, v1.ScoreResult]
-	zCard          *connect.Client[v1.CardRequest, v1.CountResult]
-	zRange         *connect.Client[v1.RangeRequest, v1.ScoredMembersResult]
-	bulkRemove     *connect.Client[v1.BulkRemoveRequest, v1.BulkRemoveResult]
-	tierInfo       *connect.Client[v1.TierInfoRequest, v1.TierInfoResult]
-	admitLearner   *connect.Client[v1.AdmitLearnerRequest, v1.AdmitLearnerResponse]
-	proposeForward *connect.Client[v1.ProposeForwardRequest, v1.CountResult]
+	sAdd            *connect.Client[v1.SAddRequest, v1.CountResult]
+	sRem            *connect.Client[v1.KeysRequest, v1.CountResult]
+	sIsMember       *connect.Client[v1.MemberRequest, v1.BoolResult]
+	sCard           *connect.Client[v1.CardRequest, v1.CountResult]
+	sMembers        *connect.Client[v1.RangeRequest, v1.MembersResult]
+	hSet            *connect.Client[v1.HSetRequest, v1.CountResult]
+	hDel            *connect.Client[v1.KeysRequest, v1.CountResult]
+	hGet            *connect.Client[v1.MemberRequest, v1.ValueResult]
+	hLen            *connect.Client[v1.CardRequest, v1.CountResult]
+	hGetAll         *connect.Client[v1.RangeRequest, v1.FieldsResult]
+	hIncrBy         *connect.Client[v1.HIncrByRequest, v1.Int64Result]
+	hIncrByFloat    *connect.Client[v1.HIncrByFloatRequest, v1.DoubleResult]
+	zAdd            *connect.Client[v1.ZAddRequest, v1.CountResult]
+	zRem            *connect.Client[v1.KeysRequest, v1.CountResult]
+	zScore          *connect.Client[v1.MemberRequest, v1.ScoreResult]
+	zCard           *connect.Client[v1.CardRequest, v1.CountResult]
+	zRange          *connect.Client[v1.RangeRequest, v1.ScoredMembersResult]
+	bulkRemove      *connect.Client[v1.BulkRemoveRequest, v1.BulkRemoveResult]
+	listCollections *connect.Client[v1.ListCollectionsRequest, v1.ListCollectionsResult]
+	tierInfo        *connect.Client[v1.TierInfoRequest, v1.TierInfoResult]
+	admitLearner    *connect.Client[v1.AdmitLearnerRequest, v1.AdmitLearnerResponse]
+	proposeForward  *connect.Client[v1.ProposeForwardRequest, v1.CountResult]
 }
 
 // SAdd calls wavespan.v1.CollectionService.SAdd.
@@ -385,6 +398,11 @@ func (c *collectionServiceClient) BulkRemove(ctx context.Context, req *connect.R
 	return c.bulkRemove.CallUnary(ctx, req)
 }
 
+// ListCollections calls wavespan.v1.CollectionService.ListCollections.
+func (c *collectionServiceClient) ListCollections(ctx context.Context, req *connect.Request[v1.ListCollectionsRequest]) (*connect.Response[v1.ListCollectionsResult], error) {
+	return c.listCollections.CallUnary(ctx, req)
+}
+
 // TierInfo calls wavespan.v1.CollectionService.TierInfo.
 func (c *collectionServiceClient) TierInfo(ctx context.Context, req *connect.Request[v1.TierInfoRequest]) (*connect.Response[v1.TierInfoResult], error) {
 	return c.tierInfo.CallUnary(ctx, req)
@@ -428,6 +446,9 @@ type CollectionServiceHandler interface {
 	// sorted sets) and best-effort: each collection's change is atomic on its shard, the fan-out is
 	// eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
 	BulkRemove(context.Context, *connect.Request[v1.BulkRemoveRequest]) (*connect.Response[v1.BulkRemoveResult], error)
+	// ListCollections enumerates every collection in a namespace, returning each one's name and datatype
+	// ("set"/"hash"/"zset", or "unknown"). Gathered best-effort across data shards (design/30 §13.7).
+	ListCollections(context.Context, *connect.Request[v1.ListCollectionsRequest]) (*connect.Response[v1.ListCollectionsResult], error)
 	// TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status
 	// — a read-only operator view (design/30 §12).
 	TierInfo(context.Context, *connect.Request[v1.TierInfoRequest]) (*connect.Response[v1.TierInfoResult], error)
@@ -557,6 +578,12 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 		connect.WithSchema(collectionServiceMethods.ByName("BulkRemove")),
 		connect.WithHandlerOptions(opts...),
 	)
+	collectionServiceListCollectionsHandler := connect.NewUnaryHandler(
+		CollectionServiceListCollectionsProcedure,
+		svc.ListCollections,
+		connect.WithSchema(collectionServiceMethods.ByName("ListCollections")),
+		connect.WithHandlerOptions(opts...),
+	)
 	collectionServiceTierInfoHandler := connect.NewUnaryHandler(
 		CollectionServiceTierInfoProcedure,
 		svc.TierInfo,
@@ -613,6 +640,8 @@ func NewCollectionServiceHandler(svc CollectionServiceHandler, opts ...connect.H
 			collectionServiceZRangeHandler.ServeHTTP(w, r)
 		case CollectionServiceBulkRemoveProcedure:
 			collectionServiceBulkRemoveHandler.ServeHTTP(w, r)
+		case CollectionServiceListCollectionsProcedure:
+			collectionServiceListCollectionsHandler.ServeHTTP(w, r)
 		case CollectionServiceTierInfoProcedure:
 			collectionServiceTierInfoHandler.ServeHTTP(w, r)
 		case CollectionServiceAdmitLearnerProcedure:
@@ -698,6 +727,10 @@ func (UnimplementedCollectionServiceHandler) ZRange(context.Context, *connect.Re
 
 func (UnimplementedCollectionServiceHandler) BulkRemove(context.Context, *connect.Request[v1.BulkRemoveRequest]) (*connect.Response[v1.BulkRemoveResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.BulkRemove is not implemented"))
+}
+
+func (UnimplementedCollectionServiceHandler) ListCollections(context.Context, *connect.Request[v1.ListCollectionsRequest]) (*connect.Response[v1.ListCollectionsResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.CollectionService.ListCollections is not implemented"))
 }
 
 func (UnimplementedCollectionServiceHandler) TierInfo(context.Context, *connect.Request[v1.TierInfoRequest]) (*connect.Response[v1.TierInfoResult], error) {
