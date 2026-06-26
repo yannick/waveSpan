@@ -229,11 +229,29 @@ func coalescable(cmd []byte) bool {
 	return false
 }
 
+// defaultProposeTimeout bounds a consensus round-trip when the caller supplied no deadline. dragonboat's
+// SyncPropose/SyncRead return ErrDeadlineNotSet for a deadline-less context, so a client that issues a
+// write without a timeout (e.g. the admin-port UI) would otherwise fail spuriously — and, worse, that
+// error is "forwardable", so the write gets bounced to peers instead of committing locally.
+const defaultProposeTimeout = 5 * time.Second
+
+// ensureDeadline returns ctx unchanged if it already carries a deadline; otherwise it derives one with
+// defaultProposeTimeout. The returned cancel must always be called (it is a no-op when ctx was returned
+// as-is).
+func ensureDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultProposeTimeout)
+}
+
 // proposeRaw issues one un-batched synchronous proposal (the engine round-trip the proposer drives).
 // dragonboat's own overload signals (ErrSystemBusy when the proposal pipeline is saturated, ErrShardNotReady
 // when a proposal is dropped) are surfaced as the transient ErrBusy (→ ResourceExhausted) so a flood is
 // shed with a retryable error — never a panic, never a node crash.
 func (m *Manager) proposeRaw(ctx context.Context, shardID uint64, cmd []byte) (ProposeResult, error) {
+	ctx, cancel := ensureDeadline(ctx)
+	defer cancel()
 	res, err := m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
 	if err != nil {
 		if errors.Is(err, dragonboat.ErrSystemBusy) || errors.Is(err, dragonboat.ErrShardNotReady) {
@@ -251,6 +269,8 @@ func (m *Manager) proposeRaw(ctx context.Context, shardID uint64, cmd []byte) (P
 // proto Linearizable flag is false by default, see Service); callers opt into linearizable per call.
 func (m *Manager) Read(ctx context.Context, shardID uint64, query interface{}, linearizable bool) (interface{}, error) {
 	if linearizable {
+		ctx, cancel := ensureDeadline(ctx)
+		defer cancel()
 		return m.nh.SyncRead(ctx, shardID, query)
 	}
 	return m.nh.StaleRead(shardID, query)
