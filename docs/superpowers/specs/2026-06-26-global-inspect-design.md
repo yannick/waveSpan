@@ -51,13 +51,18 @@ InspectGlobal(ns, key, include_peer_clusters)
 
 A focused unit resolves a **single exact key** across this cluster's alive members:
 
-- start from the serving node's own record (`rstore`);
+- start from the serving node's own record (`rstore`). **Layer 1 owns the self-holder
+  entirely:** the existing block in `inspect_global.go` that appends `s.self` from `s.rstore`
+  *before* calling the inspector is removed, so the serving node is listed exactly once (no
+  double-count);
 - for each *other* alive member (`cluster.Members()` where `State == Alive`), issue a point
   `FetchReplica(target, ns, key)` over the existing `ReplicationService`;
 - merge: one `InspectHolder` per member that holds the key, carrying that member's `Version`;
   the surfaced value/version is the **latest** (`version.Compare`) across holders;
-- **deterministic order:** holders sorted by `member_id` (mirroring `inspect_local.go`), so the
-  UI rows never shuffle between identical requests;
+- **deterministic order:** holders sorted by the composite key `(peer_cluster_id, member_id)`
+  uniformly across both layers (within Layer 1 there is no peer id, so this reduces to
+  `member_id`, mirroring `inspect_local.go`), so the UI rows never shuffle between identical
+  requests;
 - **completeness:** `complete = true` only if *every* alive member answered; an unreachable
   member appends a warning and flips `complete = false`. Best-effort — one slow peer never
   fails the whole call.
@@ -102,6 +107,14 @@ The **peer-side handler** runs the peer's *own* Layer 1 resolver, stamps each re
 recurse into peers (no `include_peer_clusters` flag crosses the wire) — single-hop fan-out,
 no cycles.
 
+**Transport note (important for the plan):** the live `GlobalReplication` server is the
+gRPC-go adapter `grpcsrv.NewGlobalReplication(...)` (`internal/grpcsrv/global.go`), registered
+in `main.go` — *not* the Connect `global.Server` (which is mirrored but not the mounted
+handler post-migration). The new `InspectKey` method must be added to the **gRPC adapter**
+(after regenerating the gRPC server interface from the proto), delegating to the
+`PeerInspector`/Layer-1 resolver. Wiring the Connect `global.Server` handler alone would
+compile but never be served.
+
 The **caller** (`PeerInspector`, satisfying `observability.GlobalInspector`):
 
 - skips peer entries whose `ClusterID == self` or with an empty `ReplEndpoint`;
@@ -115,12 +128,13 @@ rule. A peer returns values only when asked with `include_value` true.
 
 ### InspectGlobal orchestration
 
-`inspect_global.go` becomes: emit header → Layer 1 (local cluster) → Layer 2 (peers, if
-requested & enabled) → merge into one `InspectKey` (holders from both layers; value/version =
-latest seen, so a value renders even when the serving node lacks the key) → trailer with merged
-completeness + warnings. The "not configured" branch is removed; when global replication is off
-or no peers are set, Layer 1 alone yields an honest `COMPLETE` for the local cluster (no scary
-warning).
+`inspect_global.go` becomes: emit header → Layer 1 (local cluster, which **owns the
+self-holder** — the current pre-inspector `s.rstore` self-append block is deleted) → Layer 2
+(peers, if requested & enabled) → merge into one `InspectKey` (holders from both layers;
+value/version = latest seen, so a value renders even when the serving node lacks the key) →
+trailer with merged completeness + warnings. The "not configured" branch is removed; when
+global replication is off or no peers are set, Layer 1 alone yields an honest `COMPLETE` for
+the local cluster (no scary warning).
 
 ### Wiring (`cmd/wavespan-node/main.go`)
 
@@ -186,13 +200,14 @@ warning).
 
 | File | Change |
 |------|--------|
-| `proto/wavespan/v1/replication.proto` | add `InspectKey` RPC + request/response messages; regenerate |
-| `internal/holderinspect/resolver.go` (new) | Layer 1 single-key within-cluster resolver |
-| `internal/replication/global/inspect.go` (new) | `PeerInspector` (Layer 2) + peer-side `InspectKey` handler |
-| `internal/observability/inspect_global.go` | orchestrate Layer 1 + Layer 2; drop the stub branch |
-| `internal/observability/obsservice.go` | `GlobalInspector` may already fit; adjust signature if needed |
-| `internal/replication/local/connect.go` | `FetchReplica` client method (gRPC) if not present |
-| `cmd/wavespan-node/main.go` | construct resolvers, register peer handler, `WithGlobalInspector` |
+| `proto/wavespan/v1/replication.proto` | add `InspectKey` RPC + request/response messages; regenerate (incl. gRPC server interface) |
+| `internal/holderinspect/resolver.go` (new) | Layer 1 single-key within-cluster resolver (owns the self-holder) |
+| `internal/replication/global/inspect.go` (new) | `PeerInspector` (Layer 2) + the peer-side `InspectKey` logic |
+| `internal/grpcsrv/global.go` | add the `InspectKey` method to the **gRPC `GlobalReplication` adapter** (the mounted handler), delegating to the peer-side logic |
+| `internal/observability/inspect_global.go` | orchestrate Layer 1 + Layer 2; drop the stub branch **and the pre-inspector self-holder append** |
+| `internal/observability/obsservice.go` | `GlobalInspector` interface already fits; adjust only if the return shape changes |
+| `internal/replication/local/connect.go` | add the `FetchReplica` **client** method (gRPC) — confirmed absent today |
+| `cmd/wavespan-node/main.go` | construct resolvers, register peer handler on the gRPC adapter, `WithGlobalInspector` |
 | `ui/src/views/DataBrowser.tsx` | send `includePeerClusters`; render `peer_cluster_id`; value modal |
 | `ui/src/components/Modal.tsx`, `ui/src/lib/clipboard.ts` (new) | value modal + copy helper |
 | `internal/holderinspect/*_test.go`, `internal/replication/global/inspect_test.go`, `tests/integration/global_inspect_test.go` | tests |
