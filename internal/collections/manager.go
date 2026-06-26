@@ -36,17 +36,12 @@ type Manager struct {
 	onShed   func()   // optional: called once per write shed for disk pressure (metrics counter)
 }
 
-// DiskGate reports whether the storage volume is under disk pressure. When it is, Propose sheds the
-// write before it reaches Raft so the LogDB stops growing and pebble never panics on a full volume
-// (design/36). internal/health.Monitor satisfies this via UnderPressure. Reads never consult the gate.
-type DiskGate interface {
-	UnderPressure() bool
-}
-
-// WithDiskGate installs a disk-pressure admission gate: while gate.UnderPressure() is true, every write
-// Propose (data shards AND the meta shard) is shed with ErrDiskPressure before reaching Raft, and onShed
-// (if non-nil) is called once per shed. Reads (Manager.Read) are never gated. Returns the Manager for
-// chaining. Passing a nil gate disables gating.
+// WithDiskGate installs a disk-pressure admission gate on the Manager: while gate.UnderPressure() is
+// true, every write Propose (data shards AND the meta shard) is shed with ErrDiskPressure before reaching
+// Raft, and onShed (if non-nil) is called once per shed. This is the LEADER-LOCAL BACKSTOP — the primary
+// gate is at the write entry (Collections.WithDiskGate), which sheds on any node before forwarding. Reads
+// (Manager.Read) are never gated. Returns the Manager for chaining. The gate type is DiskGate (declared
+// in collections.go); internal/health.Monitor satisfies it. Passing a nil gate disables gating.
 func (m *Manager) WithDiskGate(gate DiskGate, onShed func()) *Manager {
 	m.diskGate = gate
 	m.onShed = onShed

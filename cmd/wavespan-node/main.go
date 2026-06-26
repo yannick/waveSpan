@@ -652,7 +652,8 @@ func run() error {
 			}
 			cols := collections.New(mgr, dir).
 				WithDemandFill(collections.NewDemandFiller(mgr, spotRID, raftAddr, admitter)).
-				WithForwarder(collections.NewRPCForwarder(peersFn)) // spot nodes never lead; forward all writes
+				WithForwarder(collections.NewRPCForwarder(peersFn)). // spot nodes never lead; forward all writes
+				WithDiskGate(diskMon, diskMetrics.IncShedWrites)     // shed at entry before forwarding (design/36)
 			collectionsSvc = collections.NewService(cols, self).WithTierStatus(mgr, raftAddr, spotRID, false)
 			cypherCollections := collections.NewCypherCollections(cols)
 			cypherSvc.WithCollections(cypherCollections)
@@ -682,6 +683,7 @@ func run() error {
 				admitter := collections.NewRPCAdmitter(peersFn)
 				cols.WithDemandFill(collections.NewDemandFiller(mgr, selfReplicaID, raftAddr, admitter))
 				cols.WithForwarder(collections.NewRPCForwarder(peersFn)) // forward writes when not this shard's leader
+				cols.WithDiskGate(diskMon, diskMetrics.IncShedWrites)    // shed at entry before forwarding (design/36)
 				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr).
 					WithTierStatus(mgr, raftAddr, selfReplicaID, true)
 				cypherCollections := collections.NewCypherCollections(cols) // set.*/hash.*/zset.* built-ins

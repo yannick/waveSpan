@@ -17,6 +17,38 @@ type Collections struct {
 	dir       Directory
 	filler    *DemandFiller // optional: join shards as a learner on a not-hosted read (design/30 §9)
 	forwarder Forwarder     // optional: forward a write to the leader node when not local leader (§13.13)
+	diskGate  DiskGate      // optional: per-node disk-pressure admission at the write entry (design/36)
+	onShed    func()        // optional: called once per write shed for disk pressure (metrics counter)
+}
+
+// DiskGate reports whether this node's storage volume is under disk pressure. When it is, the write
+// ENTRY sheds before routing/forwarding — on EVERY node, not just the shard leader — because a node that
+// forwards is also a follower/applier for the target shard, so the replicated write grows ITS disk too
+// (design/36). internal/health.Monitor satisfies this via UnderPressure.
+type DiskGate interface {
+	UnderPressure() bool
+}
+
+// WithDiskGate installs the per-node disk-pressure admission gate. While gate.UnderPressure() is true,
+// every write (proposeCmd / ProposeRaw) is shed with ErrDiskPressure BEFORE it is proposed or forwarded,
+// and onShed (if non-nil) is called once per shed. Reads are never gated. Returns Collections for
+// chaining. This is the primary gate; the Manager.Propose gate is the leader-local backstop.
+func (c *Collections) WithDiskGate(gate DiskGate, onShed func()) *Collections {
+	c.diskGate = gate
+	c.onShed = onShed
+	return c
+}
+
+// shedForDiskPressure reports disk pressure and (once) bumps the shed counter. Centralised so every
+// write entry sheds identically.
+func (c *Collections) shedForDiskPressure() bool {
+	if c.diskGate == nil || !c.diskGate.UnderPressure() {
+		return false
+	}
+	if c.onShed != nil {
+		c.onShed()
+	}
+	return true
 }
 
 // Forwarder forwards an already-encoded write to a peer when this node is not the owning shard's
@@ -50,6 +82,15 @@ func (c *Collections) WithForwarder(f Forwarder) *Collections {
 // instead of issuing a (blocking) local propose that would just fail; if we believe we're the leader
 // but lose it mid-propose, we fall back to forwarding (design/30 §13.13).
 func (c *Collections) proposeCmd(ctx context.Context, cmd command) (uint64, []byte, error) {
+	// DISK-PRESSURE ADMISSION (design/36): shed at the write ENTRY, before routing or forwarding, on ANY
+	// node under its own disk pressure — not just the shard leader. The common client path hits a non-leader
+	// (or a spot via wavespan-local) that would otherwise FORWARD the write to the leader; but a forwarding
+	// node is itself a follower/applier of the target shard, so the replicated entry grows ITS disk too. So
+	// it must reject here regardless of leadership, with the typed ErrDiskPressure (-> ResourceExhausted),
+	// rather than forward a write that would pressure its own volume.
+	if c.shedForDiskPressure() {
+		return 0, nil, ErrDiskPressure
+	}
 	// Encode into a pooled buffer (A1): Propose/Forward copy the bytes before returning, so the scratch
 	// is reused for the next op — cutting a per-op allocation off the hot, GC-bound consensus path. The
 	// release is deferred so enc stays valid across the frozenMark retry loop in proposeCore.
@@ -77,7 +118,15 @@ func (c *Collections) proposeCount(ctx context.Context, cmd command) (uint64, er
 
 // ProposeRaw applies an already-encoded write locally only (never forwards) — the target a peer's
 // ProposeForward calls. Returns the apply result, or ErrWrongType / ErrFrozen / ErrNotNumber.
+//
+// Disk-pressure shed applies here too (design/36): this is the server side of a forwarded write, so a
+// node receiving a forward while under its OWN disk pressure must reject — it is the leader/applier whose
+// volume the committed entry would grow. The forwarder maps the resulting ResourceExhausted back to
+// ErrDiskPressure and surfaces it (it does not try another peer).
 func (c *Collections) ProposeRaw(ctx context.Context, ns, coll, enc []byte) (uint64, []byte, error) {
+	if c.shedForDiskPressure() {
+		return 0, nil, ErrDiskPressure
+	}
 	return c.proposeCore(ctx, ns, coll, enc)
 }
 
