@@ -3,10 +3,12 @@ package observability
 import (
 	"context"
 	"net/http"
+	"sort"
 
 	"connectrpc.com/connect"
 	"github.com/yannick/wavespan/internal/rpcopts"
 	"github.com/yannick/wavespan/internal/security"
+	"github.com/yannick/wavespan/internal/version"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
@@ -28,37 +30,44 @@ func (s *ObsService) InspectGlobal(ctx context.Context, req *connect.Request[wav
 	}
 
 	ik := &wavespanv1.InspectKey{LogicalPath: ns + "/" + string(key), KeyHash: security.KeyHash(ns, key), LogicalKey: key}
-
-	// the local node's own copy, if present.
 	complete := true
 	var warnings []string
-	if rec, found, err := s.rstore.GetRecord(ns, key); err == nil && found {
-		ik.Version = rec.GetVersion()
-		ik.Tombstone = rec.GetTombstone()
-		if rec.ExpiresAtUnixMs != nil {
-			ik.ExpiresAtUnixMs = rec.ExpiresAtUnixMs
-		}
-		if reveal && !rec.GetTombstone() {
-			ik.Value = rec.GetValue().GetInline()
-		}
-		ik.Holders = append(ik.Holders, &wavespanv1.InspectHolder{MemberId: s.self.MemberID, HolderClass: wavespanv1.HolderClass_HOLDER_DURABLE, Version: rec.GetVersion()})
-	}
+	var best *wavespanv1.StoredRecord
 
-	// cross-holder (and cross-cluster) resolution, when an inspector is wired.
-	if s.globalInspector != nil {
-		holders, w, c := s.globalInspector.InspectKey(ctx, ns, key, m.GetIncludePeerClusters(), reveal)
-		ik.Holders = append(ik.Holders, holders...)
-		warnings = append(warnings, w...)
-		complete = complete && c
-	} else {
+	if s.clusterResolver == nil {
 		complete = false
 		warnings = append(warnings, "global holder resolution not configured on this node")
+	} else {
+		holders, b, c, w := s.clusterResolver.ResolveKey(ctx, ns, key, reveal)
+		ik.Holders = append(ik.Holders, holders...)
+		best, complete, warnings = b, c, w
+
+		if m.GetIncludePeerClusters() && s.peerInspector != nil {
+			ph, pb, pc, pw := s.peerInspector.InspectPeers(ctx, ns, key, reveal)
+			ik.Holders = append(ik.Holders, ph...)
+			warnings = append(warnings, pw...)
+			complete = complete && pc
+			if pb != nil && (best == nil || version.FromProto(pb.GetVersion()).Compare(version.FromProto(best.GetVersion())) > 0) {
+				best = pb
+			}
+		}
 	}
+
+	if best != nil {
+		ik.Version = best.GetVersion()
+		ik.Tombstone = best.GetTombstone()
+		if best.ExpiresAtUnixMs != nil {
+			ik.ExpiresAtUnixMs = best.ExpiresAtUnixMs
+		}
+		if v := best.GetValue().GetInline(); len(v) > 0 {
+			ik.Value = v
+		}
+	}
+	sortInspectHolders(ik.Holders)
 
 	if err := stream.Send(&wavespanv1.InspectRow{Row: &wavespanv1.InspectRow_Key{Key: ik}}); err != nil {
 		return err
 	}
-
 	completeness := wavespanv1.Completeness_COMPLETE
 	if !complete {
 		completeness = wavespanv1.Completeness_PARTIAL
@@ -66,6 +75,16 @@ func (s *ObsService) InspectGlobal(ctx context.Context, req *connect.Request[wav
 	return stream.Send(&wavespanv1.InspectRow{Row: &wavespanv1.InspectRow_Trailer{Trailer: &wavespanv1.InspectTrailer{
 		RowsReturned: 1, FinalCompleteness: completeness, Warnings: warnings,
 	}}})
+}
+
+// sortInspectHolders orders by (peer_cluster_id, member_id) for stable output across requests.
+func sortInspectHolders(hs []*wavespanv1.InspectHolder) {
+	sort.Slice(hs, func(i, j int) bool {
+		if hs[i].GetPeerClusterId() != hs[j].GetPeerClusterId() {
+			return hs[i].GetPeerClusterId() < hs[j].GetPeerClusterId()
+		}
+		return hs[i].GetMemberId() < hs[j].GetMemberId()
+	})
 }
 
 // Handler returns the mountable ObservabilityService Connect handler for the admin port.

@@ -18,10 +18,14 @@ type ClusterSource interface {
 	Graph() *latencygraph.Graph
 }
 
-// GlobalInspector resolves a key's holders across the cluster (and peer clusters) for InspectGlobal
-// (implemented in M13.B). It is best-effort/eventual.
-type GlobalInspector interface {
-	InspectKey(ctx context.Context, namespace string, key []byte, includePeerClusters, includeValue bool) (holders []*wavespanv1.InspectHolder, warnings []string, complete bool)
+// ClusterKeyResolver resolves a key's holders within THIS cluster (Layer 1). nil disables Global.
+type ClusterKeyResolver interface {
+	ResolveKey(ctx context.Context, ns string, key []byte, reveal bool) (holders []*wavespanv1.InspectHolder, best *wavespanv1.StoredRecord, complete bool, warnings []string)
+}
+
+// PeerKeyInspector resolves a key across peer clusters (Layer 2). nil => local-cluster only.
+type PeerKeyInspector interface {
+	InspectPeers(ctx context.Context, ns string, key []byte, reveal bool) (holders []*wavespanv1.InspectHolder, best *wavespanv1.StoredRecord, complete bool, warnings []string)
 }
 
 // holderScanner scans a remote member's local store over a subrange — the same fan-out the routed KV
@@ -45,8 +49,10 @@ type ObsService struct {
 	// gossiped namespace union. nil omits these from the response.
 	keyStats func() (local, replicas, distinct uint64, namespaces []string)
 
-	// InspectGlobal support (M13.B); nil disables cross-cluster resolution.
-	globalInspector GlobalInspector
+	// InspectGlobal support: Layer 1 within-cluster resolver (nil disables Global entirely)
+	// and optional Layer 2 peer-cluster inspector (nil => local-cluster only).
+	clusterResolver ClusterKeyResolver
+	peerInspector   PeerKeyInspector
 	// Visual node explorer support; nil disables GraphExplore.
 	graph *graph.Store
 	// Cluster-wide InspectLocal fan-out; nil disables cluster_wide (falls back to local-only).
@@ -99,11 +105,11 @@ func (s *ObsService) WithKeyStats(fn func() (local, replicas, distinct uint64, n
 	return s
 }
 
-// WithGlobalInspector enables InspectGlobal cross-holder resolution.
-func (s *ObsService) WithGlobalInspector(g GlobalInspector) *ObsService {
-	s.globalInspector = g
-	return s
-}
+// WithClusterResolver enables Global (Layer 1 within-cluster key resolution).
+func (s *ObsService) WithClusterResolver(r ClusterKeyResolver) *ObsService { s.clusterResolver = r; return s }
+
+// WithPeerInspector adds Layer 2 cross-cluster resolution to Global.
+func (s *ObsService) WithPeerInspector(p PeerKeyInspector) *ObsService { s.peerInspector = p; return s }
 
 // WithClusterScan enables cluster-wide InspectLocal: a fan-out scan over every alive member so the
 // Data Browser shows the whole cluster's KV, not just this node's.
