@@ -39,6 +39,19 @@ var (
 	// node admits writes again — and maps to gRPC ResourceExhausted so clients back off and retry.
 	ErrDiskPressure = errors.New("collections: disk pressure (write shed, retry)")
 
+	// LeasedBudget (design/35) typed errors, surfaced by the BudgetDefine/Grant/Report/Return API.
+	// ErrNoCapacity is returned when a STRICT pool cannot allocate any (>0) quantity for a grant.
+	ErrNoCapacity = errors.New("collections: budget has no capacity to grant")
+	// ErrBudgetExists is returned when BudgetDefine targets a pool that already exists.
+	ErrBudgetExists = errors.New("collections: budget already exists")
+	// ErrBudgetNotFound is returned when a grant/report/return targets a pool that was never defined (B9).
+	ErrBudgetNotFound = errors.New("collections: budget not found")
+	// ErrLeaseUnknown is returned when report/return names a lease that does not exist (or was returned).
+	ErrLeaseUnknown = errors.New("collections: lease unknown")
+	// ErrUnsupportedMode is returned when BudgetDefine asks for a non-STRICT mode or an invalid cap (B3/B4);
+	// Stage 1 ships STRICT only.
+	ErrUnsupportedMode = errors.New("collections: budget mode not supported in stage 1")
+
 	wrongType  = []byte("WRONGTYPE") // Result.Data sentinel set by the state machine
 	frozenMark = []byte("FROZEN")    // Result.Data sentinel: mutation rejected, subrange is migrating
 	notNumber  = []byte("NOTNUM")    // Result.Data sentinel: HIncr* on a non-numeric field

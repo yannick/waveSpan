@@ -362,6 +362,96 @@ func (c *Collections) CardCheck(ctx context.Context, ns, coll []byte, linearizab
 	return cc, nil
 }
 
+// --- Leased budget (design/35, Stage 1: single-cluster STRICT escrow) ---
+
+// BudgetDefine creates a STRICT escrow pool with the given cap (int64 micro-units). Stage 1 is
+// STRICT-only: a non-STRICT mode or a negative cap returns ErrUnsupportedMode; defining an existing pool
+// returns ErrBudgetExists. The whole define is one Raft entry. rate/burst are reserved for Stage-2 pacing
+// (rate=0, burst=cap here).
+func (c *Collections) BudgetDefine(ctx context.Context, ns, coll []byte, cap int64, mode uint8) error {
+	k := make([]byte, 1+8*3)
+	k[0] = mode
+	putI64(k[1:], cap)  // cap
+	putI64(k[9:], 0)    // rate (Stage 1: none)
+	putI64(k[17:], cap) // burst = cap
+	_, data, err := c.proposeCmd(ctx, command{Op: opBudInit, NS: ns, Coll: coll, Items: []item{{Key: k}}})
+	if err != nil {
+		return err
+	}
+	switch string(data) {
+	case string(budExists):
+		return ErrBudgetExists
+	case string(budBadMode): // B3/B4: non-STRICT mode or invalid cap
+		return ErrUnsupportedMode
+	}
+	return nil
+}
+
+// BudgetGrant atomically leases min(amount, available) from the pool and returns the granted quantity.
+// leaseID makes the grant idempotent for the lease's lifetime (a retry returns the same amount, never
+// re-debits) — it rides in Items[0].Key, with Idem left empty so it is not routed through the dedup ring.
+// A grant against an undefined pool returns ErrBudgetNotFound; a pool with nothing left returns
+// ErrNoCapacity. Stage-1 contract: a lease_id is single-use-forever — never reuse one after BudgetReturn.
+func (c *Collections) BudgetGrant(ctx context.Context, ns, coll, holder []byte, amount int64, leaseID []byte) (int64, error) {
+	v := make([]byte, 8+len(holder))
+	putI64(v, amount)
+	copy(v[8:], holder)
+	n, data, err := c.proposeCmd(ctx, command{Op: opBudGrant, NS: ns, Coll: coll, Items: []item{{Key: leaseID, Val: v}}})
+	if err != nil {
+		return 0, err
+	}
+	switch string(data) {
+	case string(budNoCapacity):
+		return 0, ErrNoCapacity
+	case string(budNoBudget):
+		return 0, ErrBudgetNotFound // B9: budget pool does not exist
+	case string(budNoLease):
+		return 0, ErrLeaseUnknown
+	}
+	return int64(n), nil
+}
+
+// BudgetReport folds a cumulative-per-lease spent total into the pool (idempotent max fold: a stale or
+// duplicate cumulative is a no-op). An unknown lease returns ErrLeaseUnknown.
+func (c *Collections) BudgetReport(ctx context.Context, ns, coll, leaseID []byte, spentCumulative int64) error {
+	v := make([]byte, 8)
+	putI64(v, spentCumulative)
+	_, data, err := c.proposeCmd(ctx, command{Op: opBudReport, NS: ns, Coll: coll, Items: []item{{Key: leaseID, Val: v}}})
+	if err != nil {
+		return err
+	}
+	if string(data) == string(budNoLease) {
+		return ErrLeaseUnknown
+	}
+	return nil
+}
+
+// BudgetReturn folds a final cumulative spent, releases the lease's unspent remainder back to available,
+// and deletes the lease row. An unknown/already-returned lease returns ErrLeaseUnknown.
+func (c *Collections) BudgetReturn(ctx context.Context, ns, coll, leaseID []byte, finalSpent int64) error {
+	v := make([]byte, 8)
+	putI64(v, finalSpent)
+	_, data, err := c.proposeCmd(ctx, command{Op: opBudReturn, NS: ns, Coll: coll, Items: []item{{Key: leaseID, Val: v}}})
+	if err != nil {
+		return err
+	}
+	if string(data) == string(budNoLease) {
+		return ErrLeaseUnknown
+	}
+	return nil
+}
+
+// BudgetStat reads the pool accounting (cap/available/leasedOut/spent/epoch/mode). It is a bounded-stale
+// local read unless linearizable is set.
+func (c *Collections) BudgetStat(ctx context.Context, ns, coll []byte, linearizable bool) (budStat, error) {
+	v, err := c.read(ctx, ns, coll, budStatQuery{NS: ns, Coll: coll}, linearizable)
+	if err != nil {
+		return budStat{}, err
+	}
+	st, _ := v.(budStat)
+	return st, nil
+}
+
 // --- shared ---
 
 func (c *Collections) card(ctx context.Context, ns, coll []byte, linearizable bool) (uint64, error) {

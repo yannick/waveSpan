@@ -1,8 +1,10 @@
 package collections
 
 import (
+	"context"
 	"encoding/binary"
 	"testing"
+	"time"
 
 	"github.com/yannick/wavespan/internal/storage"
 )
@@ -317,5 +319,42 @@ func TestBudCheckQuery(t *testing.T) {
 	chk := res.(budCheck)
 	if !chk.OK {
 		t.Fatalf("invariant probe failed: %+v", chk)
+	}
+}
+
+// --- Task 8: typed API integration (real Manager + shard, mirrors hincr_test.go setup) ---
+
+func TestBudgetEndToEnd(t *testing.T) {
+	mem := storage.NewMemStore()
+	t.Cleanup(func() { _ = mem.Close() })
+	addr := freeAddr(t)
+	m := newMgr(t, t.TempDir(), addr, mem)
+	if err := m.StartShard(2, 1, map[uint64]string{1: addr}, false); err != nil {
+		t.Fatalf("StartShard: %v", err)
+	}
+	defer m.Stop()
+	c := New(m, SingleShardDirectory(2))
+	waitReady(t, c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	ns, coll := []byte("pacing"), []byte("li/42/total")
+
+	if err := c.BudgetDefine(ctx, ns, coll, 1000, modeStrict); err != nil {
+		t.Fatalf("define: %v", err)
+	}
+	g, err := c.BudgetGrant(ctx, ns, coll, []byte("node-A"), 600, []byte("lease-A1"))
+	if err != nil || g != 600 {
+		t.Fatalf("grant = %d, %v want 600", g, err)
+	}
+	if err := c.BudgetReport(ctx, ns, coll, []byte("lease-A1"), 250); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	st, err := c.BudgetStat(ctx, ns, coll, true)
+	if err != nil || st.Available != 400 || st.LeasedOut != 350 || st.Spent != 250 {
+		t.Fatalf("stat = %+v, %v want avail400 leased350 spent250", st, err)
+	}
+	if st.Available+st.LeasedOut+st.Spent != st.Cap {
+		t.Fatalf("INV violated through Raft: %+v", st)
 	}
 }
