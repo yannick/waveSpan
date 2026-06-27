@@ -1,6 +1,7 @@
 package collections
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"testing"
@@ -299,9 +300,9 @@ func TestBudStatQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
-	st := res.(budStat)
+	st := res.(BudStat)
 	if st.Cap != 1000 || st.Available != 400 || st.LeasedOut != 600 {
-		t.Fatalf("budStat = %+v, want cap1000 avail400 leased600", st)
+		t.Fatalf("BudStat = %+v, want cap1000 avail400 leased600", st)
 	}
 }
 
@@ -356,5 +357,159 @@ func TestBudgetEndToEnd(t *testing.T) {
 	}
 	if st.Available+st.LeasedOut+st.Spent != st.Cap {
 		t.Fatalf("INV violated through Raft: %+v", st)
+	}
+}
+
+// --- Task 11: Stage-1 verification gate ---
+
+// detRand is a tiny deterministic xorshift64 PRNG. Seeded from a constant so the fuzz interleaving is
+// reproducible — we deliberately do NOT use math/rand seeded from the clock (a money datatype's
+// invariant test must replay identically on every run and in CI).
+type detRand struct{ s uint64 }
+
+func newDetRand(seed uint64) *detRand {
+	if seed == 0 {
+		seed = 0x9E3779B97F4A7C15 // avoid the xorshift fixed point at 0
+	}
+	return &detRand{s: seed}
+}
+
+func (r *detRand) next() uint64 {
+	r.s ^= r.s << 13
+	r.s ^= r.s >> 7
+	r.s ^= r.s << 17
+	return r.s
+}
+
+// intn returns a non-negative pseudo-random int in [0, n).
+func (r *detRand) intn(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	return int(r.next() % uint64(n))
+}
+
+// TestBudgetConservationFuzz interleaves grant/report/return across several leaseIDs with random
+// amounts — INCLUDING negative and oversized values to exercise the B4 guards and the STRICT
+// saturation/clamp paths — and asserts INV-LOCAL (cap == available+leasedOut+spent), Spent <= Cap, and
+// every bucket >= 0 after EVERY op. Deterministically seeded; replays identically.
+func TestBudgetConservationFuzz(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	const capUnits = int64(10_000)
+	if _, err := u.applyBudInit(initCmd(ns, coll, capUnits)); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	r := newDetRand(12345)
+	// A small fixed pool of leaseIDs so grant/report/return frequently target live leases, while random
+	// targeting also hits absent/returned leases (budNoLease / budNoBudget paths).
+	leaseIDs := []string{"L0", "L1", "L2", "L3", "L4", "L5", "L6", "L7"}
+
+	checkInv := func(step int, op string) {
+		p, found, err := u.getPool(ns, coll)
+		if err != nil || !found {
+			t.Fatalf("step %d (%s): getPool found=%v err=%v", step, op, found, err)
+		}
+		assertInv(t, p) // cap == avail+leased+spent AND avail>=0, leased>=0, spent<=cap
+		if p.Spent > p.Cap {
+			t.Fatalf("step %d (%s): Spent %d > Cap %d", step, op, p.Spent, p.Cap)
+		}
+		if p.Available < 0 || p.LeasedOut < 0 || p.Spent < 0 {
+			t.Fatalf("step %d (%s): bucket < 0: %+v", step, op, p)
+		}
+	}
+
+	for i := 0; i < 5000; i++ {
+		lease := leaseIDs[r.intn(len(leaseIDs))]
+		// amounts span [-2000, 12999]: negatives exercise the B4 negative-draw guard, values > available
+		// exercise STRICT saturation / over-report clamp.
+		amt := int64(r.intn(15000) - 2000)
+		switch r.intn(4) {
+		case 0, 1: // grant (weighted higher so leases exist to report/return against)
+			if _, err := u.applyBudGrant(grantCmd(ns, coll, lease, amt)); err != nil {
+				t.Fatalf("step %d grant: %v", i, err)
+			}
+			checkInv(i, "grant")
+		case 2: // report a (possibly negative/oversized/stale) cumulative spent
+			if _, err := u.applyBudReport(reportCmd(ns, coll, lease, amt)); err != nil {
+				t.Fatalf("step %d report: %v", i, err)
+			}
+			checkInv(i, "report")
+		case 3: // return, folding a (possibly negative/oversized) final cumulative
+			if _, err := u.applyBudReturn(returnCmd(ns, coll, lease, amt)); err != nil {
+				t.Fatalf("step %d return: %v", i, err)
+			}
+			checkInv(i, "return")
+		}
+	}
+}
+
+// TestGrantAfterReturnReusesIdRegrantsFreshQuantity pins the documented Stage-1 hazard (B5): after a
+// BudgetReturn deletes the lease row, re-granting the SAME leaseID grants FRESH quantity — there is no
+// settled-lease tombstone yet (Stage 3). This asserts the limitation so it can never be mistaken for
+// idempotency; conservation still holds, it's the single-use-lease_id CALLER contract that's at stake.
+func TestGrantAfterReturnReusesIdRegrantsFreshQuantity(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmd(ns, coll, 1000))
+	_, _ = u.applyBudGrant(grantCmd(ns, coll, "A", 600))
+	_, _ = u.applyBudReturn(returnCmd(ns, coll, "A", 0)) // unspent 600 returns; lease row deleted
+	r, _ := u.applyBudGrant(grantCmd(ns, coll, "A", 600)) // SAME id -> fresh grant (the hazard)
+	if decodeGrant(r.Data) != 600 {
+		t.Fatalf("expected fresh re-grant of 600 (Stage-1 limitation), got %d", decodeGrant(r.Data))
+	}
+	p, _, _ := u.getPool(ns, coll)
+	assertInv(t, p) // conservation holds; the single-use-id contract is the caller's responsibility
+	if p.Available != 400 || p.LeasedOut != 600 {
+		t.Fatalf("after re-grant: avail=%d leased=%d, want 400/600", p.Available, p.LeasedOut)
+	}
+}
+
+// snapshotRoundTrip exercises the REAL base_sm.go snapshot path: PrepareSnapshot -> SaveSnapshot streams
+// every key under the shard prefix into a buffer; a FRESH shardSM (same shardID, so identical prefix)
+// installs it via RecoverFromSnapshot (clear + replay). Mirrors how the chaos snapshot tests drive
+// SaveSnapshot/RecoverFromSnapshot, minus the network transport.
+func snapshotRoundTrip(t *testing.T, src *shardSM) *shardSM {
+	t.Helper()
+	ctx, err := src.PrepareSnapshot()
+	if err != nil {
+		t.Fatalf("PrepareSnapshot: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := src.SaveSnapshot(ctx, &buf, nil); err != nil {
+		t.Fatalf("SaveSnapshot: %v", err)
+	}
+	dst := newTestSM(t) // same shardID=2 => same 8-byte prefix, so recovered keys land identically
+	if err := dst.RecoverFromSnapshot(&buf, nil); err != nil {
+		t.Fatalf("RecoverFromSnapshot: %v", err)
+	}
+	return dst
+}
+
+// TestBudgetSurvivesSnapshotRestore proves budget state (it's money) survives snapshot/restore: base_sm
+// snapshots the whole shard prefix, so the pool record + lease rows ride along. After a real
+// round-trip the conservation probe must still hold and the buckets must be intact (B8).
+func TestBudgetSurvivesSnapshotRestore(t *testing.T) {
+	sm := newTestSM(t)
+	ns, coll := []byte("pacing"), []byte("li/1")
+	mustApply(t, sm, initCmd(ns, coll, 1000))
+	mustApply(t, sm, grantCmd(ns, coll, "A", 600))
+
+	restored := snapshotRoundTrip(t, sm)
+
+	res, err := restored.Lookup(budCheckQuery{NS: ns, Coll: coll})
+	if err != nil {
+		t.Fatalf("post-restore Lookup: %v", err)
+	}
+	chk := res.(budCheck)
+	if !chk.Exists || !chk.OK || chk.Available != 400 || chk.LeasedOut != 600 {
+		t.Fatalf("post-restore budCheck = %+v, want exists/OK avail400 leased600", chk)
+	}
+	// The lease row must survive too: a report against it folds normally (proves it's not just the pool).
+	mustApply(t, restored, reportCmd(ns, coll, "A", 250))
+	res2, _ := restored.Lookup(budStatQuery{NS: ns, Coll: coll})
+	st := res2.(BudStat)
+	if st.Spent != 250 || st.LeasedOut != 350 {
+		t.Fatalf("post-restore report fold: spent=%d leased=%d, want 250/350", st.Spent, st.LeasedOut)
 	}
 }

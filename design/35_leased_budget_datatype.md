@@ -823,6 +823,18 @@ New `tests/harness/workloads/budget/` + `checker/budget.go`:
 
 ### 14.1 Staging
 
+> **Implementation status (2026-06-27): Stage 1 IMPLEMENTED** per
+> `docs/superpowers/plans/2026-06-25-leased-budget-stage1.md` (the plan's Stage 1 is the single-cluster
+> STRICT escrow core: `BudgetDefine`/`Grant`/`Report`/`Return`/`Stat`, idempotent and conservation-checked,
+> in `internal/collections/budget.go`). Two refinements landed versus the original sketch below:
+> - **3-term conservation shipped.** Stage 1 enforces `cap == available + leasedOut + spent`, where
+>   `leasedOut` is the *unspent* quantity held in outstanding leases. The 5-term form (adding
+>   `pendingReclaim`) only becomes necessary with emergency recall, which arrives in **Stage 3**.
+> - **Combined pool record.** The config and accounting fields live in ONE append-extensible `poolRec`
+>   at sub-scope `0x05` (not the separate `scopeBudCfg`/`scopeBudState` split sketched below); the lease
+>   table is at `0x06`. `decodePool` tolerates trailing bytes so later stages append fields with no
+>   snapshot migration. Pacing, expiry, recall, hierarchy, and RELAXED remain unimplemented (Stages 2–4).
+
 **Stage 1 — minimal atomic conditional-deduct primitive.** Add `opLeaseGrant` as a `compare-and-decrement` on a single budget field (check `available ≥ amount && epoch == current`, decrement, emit lease) committed in one Raft entry — reusing `applyHIncrInt`'s shape and the existing dedup. No hierarchy, no pacing, no recall: just exact, idempotent, leader-routed escrow draws within one cluster. This alone replaces the hot-counter `HIncrBy` for single-cluster pacing #2 and is independently shippable/testable.
 
 **Stage 2 — full datatype, single cluster.** Promote to the full `typeBudget` with `scopeBudState`/`scopeBudLease`/`scopeBudExp`/`scopeBudTomb`, token-bucket pacing, lease-expiry sweep, RECALL/FREEZE with `pendingReclaim`, settled tombstones, cumulative-per-lease reporting, the node lease cache, and `BudgetWatch`.

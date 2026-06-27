@@ -359,7 +359,7 @@ func (s *Service) TierInfo(_ context.Context, _ *connect.Request[wavespanv1.Tier
 // --- Leased budget (design/35, Stage 1) ---
 
 // budStatResult builds a BudgetStatResult from the pool accounting plus this node's ResponseMeta.
-func (s *Service) budStatResult(st budStat) *wavespanv1.BudgetStatResult {
+func (s *Service) budStatResult(st BudStat) *wavespanv1.BudgetStatResult {
 	return &wavespanv1.BudgetStatResult{
 		Meta:           s.meta(),
 		Exists:         st.Exists,

@@ -368,12 +368,12 @@ func (c *Collections) CardCheck(ctx context.Context, ns, coll []byte, linearizab
 // STRICT-only: a non-STRICT mode or a negative cap returns ErrUnsupportedMode; defining an existing pool
 // returns ErrBudgetExists. The whole define is one Raft entry. rate/burst are reserved for Stage-2 pacing
 // (rate=0, burst=cap here).
-func (c *Collections) BudgetDefine(ctx context.Context, ns, coll []byte, cap int64, mode uint8) error {
+func (c *Collections) BudgetDefine(ctx context.Context, ns, coll []byte, capUnits int64, mode uint8) error {
 	k := make([]byte, 1+8*3)
 	k[0] = mode
-	putI64(k[1:], cap)  // cap
-	putI64(k[9:], 0)    // rate (Stage 1: none)
-	putI64(k[17:], cap) // burst = cap
+	putI64(k[1:], capUnits)  // cap
+	putI64(k[9:], 0)         // rate (Stage 1: none)
+	putI64(k[17:], capUnits) // burst = cap
 	_, data, err := c.proposeCmd(ctx, command{Op: opBudInit, NS: ns, Coll: coll, Items: []item{{Key: k}}})
 	if err != nil {
 		return err
@@ -443,12 +443,12 @@ func (c *Collections) BudgetReturn(ctx context.Context, ns, coll, leaseID []byte
 
 // BudgetStat reads the pool accounting (cap/available/leasedOut/spent/epoch/mode). It is a bounded-stale
 // local read unless linearizable is set.
-func (c *Collections) BudgetStat(ctx context.Context, ns, coll []byte, linearizable bool) (budStat, error) {
+func (c *Collections) BudgetStat(ctx context.Context, ns, coll []byte, linearizable bool) (BudStat, error) {
 	v, err := c.read(ctx, ns, coll, budStatQuery{NS: ns, Coll: coll}, linearizable)
 	if err != nil {
-		return budStat{}, err
+		return BudStat{}, err
 	}
-	st, _ := v.(budStat)
+	st, _ := v.(BudStat)
 	return st, nil
 }
 

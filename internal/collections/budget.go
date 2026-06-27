@@ -336,7 +336,8 @@ func encodeGrant(amount int64) []byte { b := make([]byte, 8); putI64(b, amount);
 
 type budStatQuery struct{ NS, Coll []byte }
 
-type budStat struct {
+// BudStat is the read-side snapshot of a budget pool's accounting, returned by Collections.BudgetStat.
+type BudStat struct {
 	Exists                           bool
 	Cap, Available, LeasedOut, Spent int64
 	Epoch                            uint64
@@ -346,16 +347,16 @@ type budStat struct {
 // lookupBudStat reads the pool from a snapshot (called by shardSM.Lookup).
 // Reads directly from the snapshot exactly like snapCard / hGetQuery: snap.Get(storage.CFReplData, key)
 // -> (value, found, err). There is NO getDataSnap helper.
-func (s *shardSM) lookupBudStat(snap storage.Snapshot, q budStatQuery) (budStat, error) {
+func (s *shardSM) lookupBudStat(snap storage.Snapshot, q budStatQuery) (BudStat, error) {
 	v, found, err := snap.Get(storage.CFReplData, s.budPoolKey(q.NS, q.Coll))
 	if err != nil || !found {
-		return budStat{Exists: false}, err
+		return BudStat{Exists: false}, err
 	}
 	p, err := decodePool(v)
 	if err != nil {
-		return budStat{}, err
+		return BudStat{}, err
 	}
-	return budStat{Exists: true, Cap: p.Cap, Available: p.Available, LeasedOut: p.LeasedOut, Spent: p.Spent, Epoch: p.Epoch, Mode: p.Mode}, nil
+	return BudStat{Exists: true, Cap: p.Cap, Available: p.Available, LeasedOut: p.LeasedOut, Spent: p.Spent, Epoch: p.Epoch, Mode: p.Mode}, nil
 }
 
 // --- B2: conservation-invariant probe (design §6.8) ---

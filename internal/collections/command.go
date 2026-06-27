@@ -39,8 +39,8 @@ var (
 	// node admits writes again — and maps to gRPC ResourceExhausted so clients back off and retry.
 	ErrDiskPressure = errors.New("collections: disk pressure (write shed, retry)")
 
-	// LeasedBudget (design/35) typed errors, surfaced by the BudgetDefine/Grant/Report/Return API.
 	// ErrNoCapacity is returned when a STRICT pool cannot allocate any (>0) quantity for a grant.
+	// (LeasedBudget, design/35; these typed errors surface through the BudgetDefine/Grant/Report/Return API.)
 	ErrNoCapacity = errors.New("collections: budget has no capacity to grant")
 	// ErrBudgetExists is returned when BudgetDefine targets a pool that already exists.
 	ErrBudgetExists = errors.New("collections: budget already exists")
