@@ -707,9 +707,11 @@ func run() error {
 		}
 	}
 
-	// CollectionService (design/30): registered on the data grpc server once the tier is up.
+	// CollectionService (design/30) + BudgetService (design/35): registered on the data grpc server once
+	// the tier is up. The budget escrow API shares the same collections service core.
 	if collectionsSvc != nil {
 		wavespanv1.RegisterCollectionServiceServer(grpcDataSrv, grpcsrv.NewCollections(collectionsSvc))
+		wavespanv1.RegisterBudgetServiceServer(grpcDataSrv, grpcsrv.NewBudget(collectionsSvc))
 	}
 
 	// Gossip server on the gossip port.
@@ -792,6 +794,8 @@ func run() error {
 	if collectionsSvc != nil {
 		colPath, colHandler := collectionsSvc.Handler()
 		adminMux.Handle(colPath, adminIdentity.EnforceHTTP(colHandler)) // CollectionService for the UI (same origin)
+		budPath, budHandler := collectionsSvc.BudgetHandler()
+		adminMux.Handle(budPath, adminIdentity.EnforceHTTP(budHandler)) // BudgetService for the UI (design/35)
 	}
 	adminMux.Handle("/", adminIdentity.EnforceHTTP(ui.NewServer().Handler())) // SPA at root (health/metrics take precedence)
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: adminTLS, ConnState: connStateGauge(openConns.WithLabelValues("admin"))}

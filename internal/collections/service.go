@@ -64,6 +64,13 @@ func (s *Service) Handler() (string, http.Handler) {
 	return wavespanv1connect.NewCollectionServiceHandler(s, rpcopts.Handler()...)
 }
 
+// BudgetHandler returns the mountable Connect handler (path, handler) for the LeasedBudget escrow API
+// (design/35). The same *Service backs both CollectionService and BudgetService — one engine, one error
+// mapper (collErr) — so budget RPCs reuse the leader-routing, WRONGTYPE, and ResponseMeta plumbing.
+func (s *Service) BudgetHandler() (string, http.Handler) {
+	return wavespanv1connect.NewBudgetServiceHandler(s, rpcopts.Handler()...)
+}
+
 func (s *Service) meta() *wavespanv1.ResponseMeta {
 	return &wavespanv1.ResponseMeta{
 		ServedByClusterId: s.self.ClusterID,
@@ -87,6 +94,17 @@ func collErr(err error) error {
 		// (codes 8 in both), so the write is rejected cleanly without the node ever crashing or filling its
 		// volume.
 		return connect.NewError(connect.CodeResourceExhausted, err)
+	case errors.Is(err, ErrNoCapacity):
+		// LeasedBudget (design/35): a STRICT pool with nothing left to grant — the caller asked for more
+		// than exists. ResourceExhausted mirrors the load-shed semantics: the resource (budget) is depleted.
+		return connect.NewError(connect.CodeResourceExhausted, err)
+	case errors.Is(err, ErrBudgetExists), errors.Is(err, ErrBudgetNotFound), errors.Is(err, ErrLeaseUnknown):
+		// Precondition violations: defining an existing pool, or grant/report/return against a missing
+		// pool/lease (B9). FailedPrecondition, like WRONGTYPE.
+		return connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, ErrUnsupportedMode):
+		// B3/B4: a non-STRICT mode or an invalid cap at define time — a bad argument, not a transient fault.
+		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return connect.NewError(connect.CodeInternal, err)
 }
@@ -336,6 +354,88 @@ func (s *Service) TierInfo(_ context.Context, _ *connect.Request[wavespanv1.Tier
 		})
 	}
 	return connect.NewResponse(res), nil
+}
+
+// --- Leased budget (design/35, Stage 1) ---
+
+// budStatResult builds a BudgetStatResult from the pool accounting plus this node's ResponseMeta.
+func (s *Service) budStatResult(st budStat) *wavespanv1.BudgetStatResult {
+	return &wavespanv1.BudgetStatResult{
+		Meta:           s.meta(),
+		Exists:         st.Exists,
+		CapUnits:       st.Cap,
+		AvailableUnits: st.Available,
+		LeasedOutUnits: st.LeasedOut,
+		SpentUnits:     st.Spent,
+		Epoch:          st.Epoch,
+		Mode:           wavespanv1.BudgetMode(st.Mode),
+	}
+}
+
+// BudgetDefine creates a STRICT escrow pool and returns the resulting pool accounting.
+func (s *Service) BudgetDefine(ctx context.Context, req *connect.Request[wavespanv1.BudgetDefineRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
+	m := req.Msg
+	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
+	if err := s.cols.BudgetDefine(ctx, ns, coll, m.GetCapUnits(), uint8(m.GetMode())); err != nil {
+		return nil, collErr(err)
+	}
+	st, err := s.cols.BudgetStat(ctx, ns, coll, false)
+	if err != nil {
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(s.budStatResult(st)), nil
+}
+
+// BudgetGrant atomically leases up to amount_units. A depleted STRICT pool is reported as a normal
+// result with no_capacity set (not an error), so callers can distinguish "nothing right now" from a fault.
+func (s *Service) BudgetGrant(ctx context.Context, req *connect.Request[wavespanv1.BudgetGrantRequest]) (*connect.Response[wavespanv1.BudgetGrantResult], error) {
+	m := req.Msg
+	n, err := s.cols.BudgetGrant(ctx, []byte(m.GetNamespace()), m.GetBudget(), []byte(m.GetHolderId()), m.GetAmountUnits(), m.GetLeaseId())
+	if err != nil {
+		if errors.Is(err, ErrNoCapacity) {
+			return connect.NewResponse(&wavespanv1.BudgetGrantResult{Meta: s.meta(), NoCapacity: true}), nil
+		}
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(&wavespanv1.BudgetGrantResult{Meta: s.meta(), GrantedUnits: n, Partial: n < m.GetAmountUnits()}), nil
+}
+
+// BudgetReport folds a cumulative-per-lease spent total and returns the pool accounting.
+func (s *Service) BudgetReport(ctx context.Context, req *connect.Request[wavespanv1.BudgetReportRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
+	m := req.Msg
+	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
+	if err := s.cols.BudgetReport(ctx, ns, coll, m.GetLeaseId(), m.GetSpentCumulative()); err != nil {
+		return nil, collErr(err)
+	}
+	st, err := s.cols.BudgetStat(ctx, ns, coll, false)
+	if err != nil {
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(s.budStatResult(st)), nil
+}
+
+// BudgetReturn releases a lease's unspent remainder and returns the pool accounting.
+func (s *Service) BudgetReturn(ctx context.Context, req *connect.Request[wavespanv1.BudgetReturnRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
+	m := req.Msg
+	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
+	if err := s.cols.BudgetReturn(ctx, ns, coll, m.GetLeaseId(), m.GetSpentCumulative()); err != nil {
+		return nil, collErr(err)
+	}
+	st, err := s.cols.BudgetStat(ctx, ns, coll, false)
+	if err != nil {
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(s.budStatResult(st)), nil
+}
+
+// BudgetStat reads the pool accounting (bounded-stale unless linearizable).
+func (s *Service) BudgetStat(ctx context.Context, req *connect.Request[wavespanv1.BudgetStatRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
+	m := req.Msg
+	st, err := s.cols.BudgetStat(ctx, []byte(m.GetNamespace()), m.GetBudget(), m.GetLinearizable())
+	if err != nil {
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(s.budStatResult(st)), nil
 }
 
 // ProposeForward applies a write forwarded by a peer that was not the shard's leader (node-side leader
