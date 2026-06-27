@@ -63,6 +63,10 @@ const (
 	opHIncrByFloat opKind = 13 // hash: atomic float increment of a field (HINCRBYFLOAT)
 	opRemove       opKind = 14 // type-agnostic element removal (bulk cross-collection delete, §13.7)
 	opBatch        opKind = 15 // QW2: a coalesced batch of single commands carried in one Raft entry
+	opBudInit      opKind = 16 // leased-budget: create pool (cap, mode); epoch=1
+	opBudGrant     opKind = 17 // leased-budget: atomic lease grant (create-if-absent by Idem)
+	opBudReport    opKind = 18 // leased-budget: cumulative-per-lease spent fold (max)
+	opBudReturn    opKind = 19 // leased-budget: release unspent; book spent
 )
 
 // mutates reports whether an op changes element state (and so must respect a subrange freeze).
@@ -74,9 +78,10 @@ func mutates(op opKind) bool {
 type collType byte
 
 const (
-	typeSet  collType = 1
-	typeHash collType = 2
-	typeZSet collType = 3
+	typeSet    collType = 1
+	typeHash   collType = 2
+	typeZSet   collType = 3
+	typeBudget collType = 4
 )
 
 // String maps a collection's datatype to its public wire name ("set"/"hash"/"zset"), or "unknown"
@@ -103,6 +108,8 @@ func typeForOp(op opKind) collType {
 		return typeHash
 	case opZAdd, opZRem:
 		return typeZSet
+	case opBudInit, opBudGrant, opBudReport, opBudReturn:
+		return typeBudget
 	}
 	return 0
 }
