@@ -83,7 +83,14 @@ type zRangeQuery struct {
 	NS, Coll []byte
 	Limit    int
 }
-type collectionsQuery struct{ NS []byte } // list collection names in a namespace (design/30 §13.7)
+type collectionsQuery struct{ NS []byte }     // list collection names in a namespace (design/30 §13.7)
+type collectionInfosQuery struct{ NS []byte } // list collection names + their datatype in a namespace
+
+// CollInfo is a collection's name paired with its datatype (set/hash/zset), as recorded in its header.
+type CollInfo struct {
+	Name []byte
+	Type collType
+}
 
 // CardCheck reports the stored cardinality counter against the actual element count, read from one
 // consistent snapshot. They must always be equal — an internal invariant probe for tests/ops.
@@ -560,6 +567,26 @@ func (s *shardSM) Lookup(query interface{}) (interface{}, error) {
 			rest := it.Key()[len(prefix):] // chunk(coll) || scope-suffix
 			if coll, suffix, terr := takeChunk(rest); terr == nil && len(suffix) == 1 && suffix[0] == scopeType {
 				out = append(out, append([]byte(nil), coll...))
+			}
+			it.Next()
+		}
+		return out, it.Err()
+	case collectionInfosQuery:
+		prefix := appendChunk(s.dataSpace(), q.NS) // dataSpace || chunk(ns)
+		it, err := snap.Scan(storage.CFReplData, prefix, prefixEnd(prefix), 0)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = it.Close() }()
+		var out []CollInfo
+		for it.Valid() {
+			rest := it.Key()[len(prefix):] // chunk(coll) || scope-suffix
+			if coll, suffix, terr := takeChunk(rest); terr == nil && len(suffix) == 1 && suffix[0] == scopeType {
+				var ct collType // 0 = unknown if the type byte is missing
+				if v := it.Value(); len(v) >= 1 {
+					ct = collType(v[0])
+				}
+				out = append(out, CollInfo{Name: append([]byte(nil), coll...), Type: ct})
 			}
 			it.Next()
 		}

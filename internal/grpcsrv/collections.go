@@ -194,6 +194,15 @@ func (s *Collections) BulkRemove(ctx context.Context, m *wavespanv1.BulkRemoveRe
 	return res.Msg, nil
 }
 
+// ListCollections implements the CollectionServiceServer gRPC method by delegating to the Connect service.
+func (s *Collections) ListCollections(ctx context.Context, m *wavespanv1.ListCollectionsRequest) (*wavespanv1.ListCollectionsResult, error) {
+	res, err := s.svc.ListCollections(ctx, connect.NewRequest(m))
+	if err != nil {
+		return nil, connectToGRPC(err)
+	}
+	return res.Msg, nil
+}
+
 // TierInfo implements the CollectionServiceServer gRPC method by delegating to the Connect service.
 func (s *Collections) TierInfo(ctx context.Context, m *wavespanv1.TierInfoRequest) (*wavespanv1.TierInfoResult, error) {
 	res, err := s.svc.TierInfo(ctx, connect.NewRequest(m))

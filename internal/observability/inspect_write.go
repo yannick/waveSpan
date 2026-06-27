@@ -109,6 +109,52 @@ func (s *ObsService) DeleteNamespace(ctx context.Context, req *connect.Request[w
 	return connect.NewResponse(&wavespanv1.DeleteNamespaceResponse{Ok: true, DeletedKeys: deleted}), nil
 }
 
+// AdminPutGraph upserts (or, on delete, tombstones) a single graph node or edge from the node UI,
+// mirroring AdminPut/AdminDelete so graph editing is symmetric with the other models. The record is
+// version-stamped via newGraphVersion (the same stamping the sample-dataset loader uses) and written
+// through the local graph store's atomic Batch (PutNode/PutEdge + Commit).
+//
+// v1 CAVEAT: this writes to THIS node's LOCAL graph store only — graph mutations are not yet
+// coordinator-forwarded/replicated like KV (target_member_id is accepted but not used to forward).
+// This matches the existing graph write path (LoadSampleDataset), which also applies locally.
+// Failures are reported in the response body (ok=false, error) so the UI can show them inline rather
+// than as transport errors.
+func (s *ObsService) AdminPutGraph(_ context.Context, req *connect.Request[wavespanv1.AdminPutGraphRequest]) (*connect.Response[wavespanv1.AdminPutGraphResponse], error) {
+	m := req.Msg
+	if s.graph == nil || s.newGraphVersion == nil {
+		return connect.NewResponse(&wavespanv1.AdminPutGraphResponse{Error: "graph write not enabled"}), nil
+	}
+	if m.GetGraphId() == "" {
+		return connect.NewResponse(&wavespanv1.AdminPutGraphResponse{Error: "graph_id is required"}), nil
+	}
+	node, edge := m.GetNode(), m.GetEdge()
+	if (node == nil) == (edge == nil) {
+		return connect.NewResponse(&wavespanv1.AdminPutGraphResponse{Error: "exactly one of node or edge must be set"}), nil
+	}
+
+	v := s.newGraphVersion()
+	b := s.graph.NewBatch()
+	if node != nil {
+		node.GraphId = m.GetGraphId()
+		node.Version = v
+		node.Tombstone = m.GetDelete()
+		if err := b.PutNode(node); err != nil {
+			return connect.NewResponse(&wavespanv1.AdminPutGraphResponse{Error: err.Error()}), nil
+		}
+	} else {
+		edge.GraphId = m.GetGraphId()
+		edge.Version = v
+		edge.Tombstone = m.GetDelete()
+		if err := b.PutEdge(edge); err != nil {
+			return connect.NewResponse(&wavespanv1.AdminPutGraphResponse{Error: err.Error()}), nil
+		}
+	}
+	if err := b.Commit(s.graph); err != nil {
+		return connect.NewResponse(&wavespanv1.AdminPutGraphResponse{Error: err.Error()}), nil
+	}
+	return connect.NewResponse(&wavespanv1.AdminPutGraphResponse{Ok: true, Version: v}), nil
+}
+
 // resolveTarget maps a requested member id to a member: empty or self resolves to this node;
 // otherwise it must be a current cluster member.
 func (s *ObsService) resolveTarget(id string) (membership.Member, bool) {

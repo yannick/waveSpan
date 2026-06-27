@@ -37,6 +37,27 @@ func (c *Collections) ListCollections(ctx context.Context, ns []byte, linearizab
 	return out, nil
 }
 
+// ListCollectionInfos returns each collection's name and datatype in a namespace, gathered across every
+// data shard (best-effort: a shard this node can't read is skipped), de-duped by name with the first
+// type seen winning. Mirrors ListCollections but carries the per-collection type header (design/30 §13.7).
+func (c *Collections) ListCollectionInfos(ctx context.Context, ns []byte, linearizable bool) ([]CollInfo, error) {
+	seen := map[string]bool{}
+	var out []CollInfo
+	for _, shard := range c.dir.Shards() {
+		v, err := c.shard.Read(ctx, shard, collectionInfosQuery{NS: ns}, linearizable)
+		if err != nil {
+			continue // best-effort across shards
+		}
+		for _, ci := range v.([]CollInfo) {
+			if !seen[string(ci.Name)] {
+				seen[string(ci.Name)] = true
+				out = append(out, ci)
+			}
+		}
+	}
+	return out, nil
+}
+
 // BulkRemove removes the given members from each target collection (design/30 §13.7). When colls is
 // empty, every collection in the namespace is targeted. The removal is type-agnostic — each
 // collection's actual type (set/hash/zset) is honored — and best-effort: each collection's change is
