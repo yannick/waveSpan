@@ -3,6 +3,8 @@ package collections
 import (
 	"encoding/binary"
 	"errors"
+
+	"github.com/yannick/wavespan/internal/storage"
 )
 
 // Budget sub-scope bytes. Existing collScope sub-scopes are 0x00..0x04 (scopeCard/Elem/ZPtr/Type in
@@ -116,4 +118,268 @@ func decodeLease(b []byte) (leaseRec, error) {
 	}
 	l.Holder = append([]byte{}, holder...)
 	return l, nil
+}
+
+// --- Task 3: overlay-aware budget helpers (mirror fieldVal/setFieldVal in hincr.go) ---
+//
+// Writes go to u.ops AND the in-batch overlay (u.vals, keyed by the full storage key) so two budget ops
+// coalesced into one Update batch compose. Reads honor the overlay first, then fall back to u.s.getData.
+
+// getPool returns the pool record honoring the in-batch overlay.
+func (u *updateCtx) getPool(ns, coll []byte) (poolRec, bool, error) {
+	k := u.s.budPoolKey(ns, coll)
+	if v, ok := u.vals[string(k)]; ok {
+		if v == nil {
+			return poolRec{}, false, nil
+		}
+		p, err := decodePool(v)
+		return p, err == nil, err
+	}
+	v, found, err := u.s.getData(k)
+	if err != nil || !found {
+		return poolRec{}, false, err
+	}
+	p, err := decodePool(v)
+	return p, err == nil, err
+}
+
+func (u *updateCtx) setPool(ns, coll []byte, p poolRec) {
+	k := u.s.budPoolKey(ns, coll)
+	enc := encodePool(p)
+	u.vals[string(k)] = enc
+	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: k, Value: enc})
+}
+
+func (u *updateCtx) getLease(ns, coll, id []byte) (leaseRec, bool, error) {
+	k := u.s.budLeaseKey(ns, coll, id)
+	if v, ok := u.vals[string(k)]; ok {
+		if v == nil {
+			return leaseRec{}, false, nil
+		}
+		l, err := decodeLease(v)
+		return l, err == nil, err
+	}
+	v, found, err := u.s.getData(k)
+	if err != nil || !found {
+		return leaseRec{}, false, err
+	}
+	l, err := decodeLease(v)
+	return l, err == nil, err
+}
+
+func (u *updateCtx) setLease(ns, coll, id []byte, l leaseRec) {
+	k := u.s.budLeaseKey(ns, coll, id)
+	enc := encodeLease(l)
+	u.vals[string(k)] = enc
+	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: k, Value: enc})
+}
+
+func (u *updateCtx) delLease(ns, coll, id []byte) {
+	k := u.s.budLeaseKey(ns, coll, id)
+	u.vals[string(k)] = nil
+	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: k, Delete: true})
+}
+
+// --- Task 4: apply logic — init / grant / report / return ---
+//
+// Each runs inside applyOne under the deterministic overlay and must preserve INV-LOCAL
+// (cap == available + leasedOut + spent). They return (ProposeResult, error) directly; benign failures
+// return a sentinel in Data, never an error (errors are reserved for storage faults / corrupt entries).
+// Quantities assigned to ProposeResult.Value are uint64-cast.
+
+// applyBudInit creates a pool. Returns budExists if one already exists, or budBadMode for a non-STRICT
+// mode / invalid cap (B3, B4) — both are sentinels in Data, not errors.
+func (u *updateCtx) applyBudInit(c command) (ProposeResult, error) {
+	if len(c.Items) == 0 || len(c.Items[0].Key) < 25 {
+		return ProposeResult{}, errShortCommand
+	}
+	k := c.Items[0].Key
+	mode := k[0]
+	capacity := getI64(k[1:])
+	rate := getI64(k[9:])
+	burst := getI64(k[17:])
+	// B3: Stage 1 only supports STRICT. B4: reject negative cap/rate/burst (admission-validates at the SM
+	// too, since the in-process API and direct proposers bypass the CRD layer; apply is deterministic).
+	if mode != modeStrict || capacity < 0 || rate < 0 || burst < 0 {
+		return ProposeResult{Data: budBadMode}, nil
+	}
+	if _, found, err := u.getPool(c.NS, c.Coll); err != nil {
+		return ProposeResult{}, err
+	} else if found {
+		return ProposeResult{Data: budExists}, nil
+	}
+	p := poolRec{Cap: capacity, Available: capacity, LeasedOut: 0, Spent: 0, Epoch: 1, Mode: mode, Rate: rate, Burst: burst}
+	u.setPool(c.NS, c.Coll, p)
+	return ProposeResult{Value: 1}, nil
+}
+
+// applyBudGrant atomically allocates min(requested, available) and emits a lease.
+// Idempotent for the lease's lifetime: a retry with the same leaseID (Items[0].Key) returns the existing
+// lease, never re-debits. leaseID + Idem are NOT routed through the dedup ring (see idempotency design).
+// B6: `holder` is recorded on the lease but NOT validated on later Report/Return — in Stage 1 the lease_id
+// is the bearer capability. Holder binding/auth is Stage 3+ (design open Q6).
+func (u *updateCtx) applyBudGrant(c command) (ProposeResult, error) {
+	if len(c.Items) == 0 || len(c.Items[0].Key) == 0 || len(c.Items[0].Val) < 8 {
+		return ProposeResult{}, errShortCommand
+	}
+	leaseID := c.Items[0].Key
+	amount := getI64(c.Items[0].Val[0:8])
+	holder := c.Items[0].Val[8:]
+	if amount < 0 { // B4: reject a negative draw (deterministic guard; never trust the caller)
+		return ProposeResult{Data: budNoCapacity}, nil
+	}
+	// idempotency: existing lease row for this leaseID -> return its amount.
+	if l, found, err := u.getLease(c.NS, c.Coll, leaseID); err != nil {
+		return ProposeResult{}, err
+	} else if found {
+		return ProposeResult{Value: uint64(l.Amount), Data: encodeGrant(l.Amount)}, nil
+	}
+	p, found, err := u.getPool(c.NS, c.Coll)
+	if err != nil {
+		return ProposeResult{}, err
+	}
+	if !found {
+		return ProposeResult{Data: budNoBudget}, nil // B9: budget pool does not exist (distinct from budNoLease)
+	}
+	grant := amount
+	if grant > p.Available {
+		grant = p.Available
+	}
+	if grant <= 0 { // STRICT: nothing to give
+		return ProposeResult{Data: budNoCapacity}, nil
+	}
+	p.Available -= grant
+	p.LeasedOut += grant
+	u.setPool(c.NS, c.Coll, p)
+	u.setLease(c.NS, c.Coll, leaseID, leaseRec{Holder: append([]byte{}, holder...), Amount: grant, Spent: 0, Epoch: p.Epoch})
+	return ProposeResult{Value: uint64(grant), Data: encodeGrant(grant)}, nil
+}
+
+// applyBudReport folds a cumulative-per-lease spent total (max), moving the delta leasedOut->spent.
+func (u *updateCtx) applyBudReport(c command) (ProposeResult, error) {
+	if len(c.Items) == 0 || len(c.Items[0].Key) == 0 || len(c.Items[0].Val) < 8 {
+		return ProposeResult{}, errShortCommand
+	}
+	leaseID := c.Items[0].Key
+	l, found, err := u.getLease(c.NS, c.Coll, leaseID)
+	if err != nil {
+		return ProposeResult{}, err
+	}
+	if !found {
+		return ProposeResult{Data: budNoLease}, nil
+	}
+	reported := getI64(c.Items[0].Val)
+	if reported <= l.Spent { // stale/duplicate -> no-op (max fold)
+		return ProposeResult{Value: uint64(l.Amount - l.Spent)}, nil
+	}
+	if reported > l.Amount { // clamp: a lease cannot spend more than granted (STRICT)
+		reported = l.Amount
+	}
+	delta := reported - l.Spent
+	l.Spent = reported
+	p, _, err := u.getPool(c.NS, c.Coll)
+	if err != nil {
+		return ProposeResult{}, err
+	}
+	p.LeasedOut -= delta
+	p.Spent += delta
+	u.setPool(c.NS, c.Coll, p)
+	u.setLease(c.NS, c.Coll, leaseID, l)
+	return ProposeResult{Value: uint64(l.Amount - l.Spent)}, nil
+}
+
+// applyBudReturn folds the final spent, returns the unspent remainder to available, deletes the lease.
+func (u *updateCtx) applyBudReturn(c command) (ProposeResult, error) {
+	if len(c.Items) == 0 || len(c.Items[0].Key) == 0 {
+		return ProposeResult{}, errShortCommand
+	}
+	leaseID := c.Items[0].Key
+	l, found, err := u.getLease(c.NS, c.Coll, leaseID)
+	if err != nil {
+		return ProposeResult{}, err
+	}
+	if !found {
+		return ProposeResult{Data: budNoLease}, nil // already returned / unknown
+	}
+	// fold final report if present and larger
+	if len(c.Items[0].Val) >= 8 {
+		if reported := getI64(c.Items[0].Val); reported > l.Spent {
+			if reported > l.Amount {
+				reported = l.Amount
+			}
+			delta := reported - l.Spent
+			l.Spent = reported
+			p, _, err := u.getPool(c.NS, c.Coll)
+			if err != nil {
+				return ProposeResult{}, err
+			}
+			p.LeasedOut -= delta
+			p.Spent += delta
+			u.setPool(c.NS, c.Coll, p)
+		}
+	}
+	rem := l.Amount - l.Spent
+	p, _, err := u.getPool(c.NS, c.Coll)
+	if err != nil {
+		return ProposeResult{}, err
+	}
+	p.Available += rem
+	p.LeasedOut -= rem
+	u.setPool(c.NS, c.Coll, p)
+	u.delLease(c.NS, c.Coll, leaseID)
+	return ProposeResult{Value: uint64(rem)}, nil
+}
+
+func encodeGrant(amount int64) []byte { b := make([]byte, 8); putI64(b, amount); return b }
+
+// --- Task 6: read path — budStatQuery + budCheckQuery Lookups ---
+
+type budStatQuery struct{ NS, Coll []byte }
+
+type budStat struct {
+	Exists                           bool
+	Cap, Available, LeasedOut, Spent int64
+	Epoch                            uint64
+	Mode                             uint8
+}
+
+// lookupBudStat reads the pool from a snapshot (called by shardSM.Lookup).
+// Reads directly from the snapshot exactly like snapCard / hGetQuery: snap.Get(storage.CFReplData, key)
+// -> (value, found, err). There is NO getDataSnap helper.
+func (s *shardSM) lookupBudStat(snap storage.Snapshot, q budStatQuery) (budStat, error) {
+	v, found, err := snap.Get(storage.CFReplData, s.budPoolKey(q.NS, q.Coll))
+	if err != nil || !found {
+		return budStat{Exists: false}, err
+	}
+	p, err := decodePool(v)
+	if err != nil {
+		return budStat{}, err
+	}
+	return budStat{Exists: true, Cap: p.Cap, Available: p.Available, LeasedOut: p.LeasedOut, Spent: p.Spent, Epoch: p.Epoch, Mode: p.Mode}, nil
+}
+
+// --- B2: conservation-invariant probe (design §6.8) ---
+type budCheckQuery struct{ NS, Coll []byte }
+
+// budCheck reports whether INV-LOCAL holds for the pool, with the buckets for diagnostics.
+type budCheck struct {
+	Exists                           bool
+	OK                               bool // available+leasedOut+spent == cap AND spent <= cap AND no bucket < 0
+	Cap, Available, LeasedOut, Spent int64
+}
+
+// lookupBudCheck reads ONE consistent snapshot and asserts the conservation invariant. Read-only; the
+// caller (BudgetStat-style API + the metrics StrictBudgetInvariantViolated alert) decides how to react.
+func (s *shardSM) lookupBudCheck(snap storage.Snapshot, q budCheckQuery) (budCheck, error) {
+	v, found, err := snap.Get(storage.CFReplData, s.budPoolKey(q.NS, q.Coll))
+	if err != nil || !found {
+		return budCheck{Exists: false}, err
+	}
+	p, err := decodePool(v)
+	if err != nil {
+		return budCheck{}, err
+	}
+	ok := p.Available+p.LeasedOut+p.Spent == p.Cap &&
+		p.Spent <= p.Cap && p.Available >= 0 && p.LeasedOut >= 0 && p.Spent >= 0
+	return budCheck{Exists: true, OK: ok, Cap: p.Cap, Available: p.Available, LeasedOut: p.LeasedOut, Spent: p.Spent}, nil
 }
