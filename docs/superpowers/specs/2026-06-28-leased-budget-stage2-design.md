@@ -80,19 +80,29 @@ observed gap since the last spend exceeds `maxPauseBudgetMs` (VM migrate / long 
 it treats the lease as presumed-dead, drops `cur`/`next`, and re-draws — *before* serving.
 
 **Why this is safe.** Three clocks are involved (grant-leader, reclaim-leader, holder), each pairwise offset
-bounded by `skew`. The holder stops by, in grant-leader time, `grantedMs + F + ttl − self_guard` where the
-freshness gate bounds `F ≤ self_guard` (and a receiver clock *behind* the leader only makes the measured
-transit smaller — the gate is one-sided, so it never falsely rejects). The grantor cannot reclaim before, in
-grant-leader time, `grantedMs + ttl + 3*skew + maxPause` minus up to `skew` of reclaim-leader offset. The gap
-between "holder has stopped" and "earliest possible reclaim" is therefore
-`≥ (ttl + 3*skew + maxPause − skew) − (ttl + F − self_guard) = 2*skew + maxPause + self_guard − F ≥ 2*skew + maxPause > 0`
-(using `F ≤ self_guard`). The windows are **provably non-overlapping** for skew+pause within budget;
-self-fencing (on the suspend-aware clock) covers pauses beyond budget. The `3*skew` term (vs `2*skew`) is
-exactly what absorbs the third clock a leader-change introduces (§16 H-S1): because the reclaim threshold is
-the **replicated** `reclaimNotBeforeMs` — not a live clock and not recomputed from the split-copied
-`GrantedMs` — a new leader with a different wall clock uses the identical threshold, so leader change / split
-(which copies lease bytes verbatim, `migrate.go`) cannot shorten the guard. Lease disjointness is preserved ⇒
-the Stage-1 STRICT conservation proof carries over unchanged.
+bounded by `skew`. The holder stops by, in grant-leader time, `grantedMs + trueF + ttl − self_guard`. The
+freshness gate measures transit on the holder's *wall* clock, which may lag the grant-leader by up to `skew`,
+so passing the gate (`measuredF ≤ self_guard`) bounds the **true** in-flight time only by
+`trueF ≤ self_guard + skew`. The grantor cannot reclaim before, in grant-leader time,
+`grantedMs + ttl + 3*skew + maxPause` minus up to `skew` of reclaim-leader offset. The gap between "holder has
+stopped" and "earliest possible reclaim" is therefore
+`≥ (ttl + 3*skew + maxPause − skew) − (ttl + trueF − self_guard) = 2*skew + maxPause + self_guard − trueF`,
+and substituting `trueF ≤ self_guard + skew` gives `≥ skew + maxPause > 0`. The windows are **provably
+non-overlapping** for skew+pause within budget; self-fencing (on the suspend-aware clock) covers pauses beyond
+budget.
+
+**The `3*skew` is load-bearing, not slack (do NOT optimize to `2*skew`).** One `skew` absorbs the
+reclaim-leader offset, one absorbs the freshness-gate clock slack just derived, and one is the margin a
+*third* clock (a new leader after re-election, §16 H-S1) introduces. Because the reclaim threshold is the
+**replicated** `reclaimNotBeforeMs` — not a live clock, and not recomputed from the split-copied `GrantedMs` —
+a new leader with a different wall clock uses the identical threshold, so leader change / split (which copies
+lease bytes verbatim, `migrate.go`) cannot shorten the guard; a leaderless freeze only *delays* reclaim (safe
+direction). Cutting `3*skew→2*skew` would erase the headroom and re-open H-S1. Lease disjointness is preserved
+⇒ the Stage-1 STRICT conservation proof carries over unchanged.
+
+(The freshness gate is one-sided: a holder clock *behind* the leader under-measures transit and still passes
+— covered by the `+skew` above; a holder clock *ahead* by up to `skew` may *falsely reject* a genuinely fresh
+grant and re-draw — a liveness cost in the safe direction, never an overspend.)
 
 ---
 
@@ -101,7 +111,11 @@ the Stage-1 STRICT conservation proof carries over unchanged.
 ### 3.1 `poolRec` extension (append-only — migration-free)
 Append two fields to the combined pool record (the Stage-1 `decodePool` already tolerates trailing bytes):
 `lastRefillMs int64`, `tokens int64` (micro-unit token bucket, integer-exact). `decodePool` returns them as
-0 for Stage-1 records (no pacing) — correct default.
+0 for Stage-1 records (no pacing) — correct default. **Initialization (M-3):** a Stage-2 `BudgetDefine` with
+`rate > 0` seeds `tokens = burst` (a standard token bucket starts FULL, allowing an immediate burst up to
+`burst` at delivery start) and leaves `lastRefillMs = 0` (lazy-init on the first paced grant, §3.2). With
+`rate == 0` pacing is off and `tokens` is ignored. (If product wants no initial burst, set `burst` small; the
+bucket is never seeded above `burst`.)
 
 ### 3.2 Token-bucket pacing in `applyBudGrant`
 Grant is gated by **both** capacity and accrued pace tokens, using the **leader-stamped `grantedMs`**
@@ -120,8 +134,11 @@ lastRefillMs= max(lastRefillMs, grantedMs)               // monotone forward onl
 grant       = min(amount, tokens, available)             // STRICT: paced AND capacity-bounded
 tokens     -= grant
 ```
-`maxElapsedMs` is chosen so `rate*maxElapsedMs` stays < 2^62 for any admissible `rate` (e.g. cap accrual to a
-full `burst` needs only `burst/rate` seconds; clamp to a few multiples of that). `rate == 0` ⇒ pacing disabled
+`maxElapsedMs` is computed **per-budget** as `k * (burst/rate) * 1000` (a few multiples `k` of the time to
+refill a full burst). Then `rate * maxElapsedMs = k * burst * 1000` — **rate-independent** — so with `burst`
+admission-bounded (`burst < 2^62/(1000k)`) the product can never overflow int64 regardless of how large
+`rate` is. (A single GLOBAL `maxElapsedMs` constant would NOT bound the product for arbitrary `rate`, M-2 —
+alternatively compute `accrued` through a 128-bit intermediate.) `rate == 0` ⇒ pacing disabled
 (Stage-1 behavior preserved: `tokens` ignored, grant = `min(amount, available)`). No wall-clock in apply. The
 grant is still one Raft entry; idempotent retry returns the existing lease.
 
@@ -188,7 +205,10 @@ settle + delete row + delete expiry-index entry + write tombstone, all in one en
 holder-ATTESTED** — the holder folds its authoritative final cumulative spent and explicitly relinquishes the
 lease — so it is safe to **credit** the true remainder back: `rem = lr.Amount − finalSpent;
 available += rem; leasedOut −= rem`. This is the *only* settlement path that returns quantity to `available`;
-forced expiry (§3.5, un-attested) debits instead. A late return after an expiry is a tombstone no-op; an
+forced expiry (§3.5, un-attested) debits instead. **Trust boundary:** graceful credit assumes the holder's
+final report is honest (the lease_id is the bearer capability; holder authentication is explicitly deferred to
+Stage 3+, design open Q6 / Stage-1 B6). A Byzantine holder that under-reports on Return then re-acquires is a
+holder-auth concern out of scope for Stage 2's non-Byzantine failure model — not a Stage-2 overspend path. A late return after an expiry is a tombstone no-op; an
 expiry after a return is a tombstone no-op. (Closes the Stage-1 B5 single-use window for the *timed* path — a
 returned/expired lease can no longer be re-granted fresh because the tombstone is retained ≥ the replay
 window; the grant idempotency check gains a tombstone branch.)
@@ -219,16 +239,19 @@ func (b *Budget) Return(ctx) error                  // graceful shutdown: return
 `now := nowMono()` reads the **suspend-aware** clock (`CLOCK_BOOTTIME`, §2 C1) — re-read **under the lock,
 immediately before the decrement** (§16 #6/#B; not latched earlier). Under the cell lock:
 (a) **self-fence** — if `lastSeenMon != 0 && now − lastSeenMon > maxPauseNs`, the lease may have been
-reclaimed during a suspend/pause: fire a **best-effort async final report** of the lease's cumulative spent
-(so the non-crash case recovers its real spend instead of being force-debited), then drop `cur`/`next`; set
-`lastSeenMon = now`. (b) **pacing gate** — local token bucket: if `tokens < n` → `ErrPacingThrottled`.
+reclaimed during a suspend/pause: **drop `cur`/`next`** (serve nothing from them) and set `lastSeenMon = now`.
+(b) **pacing gate** — local token bucket: if `tokens < n` → `ErrPacingThrottled`.
 (c) drop `cur` if `now ≥ cur.deadlineMon`. (d) if `cur.remaining ≥ n`: decrement, `tokens -= n`, and if below
 the low watermark trigger an off-path single-flight refill; return nil. (e) STRICT empty → trigger refill,
 return `ErrBudgetUnavailable` (caller serves a no-budget fallback; underspend OK, overspend never).
 
-Note the report-before-drop is **best-effort only** — it is NOT relied on for safety (a hard crash skips it).
-Safety rests entirely on forced expiry's debit (§3.5); the report-before-drop merely narrows the stranded-
-underspend window in the common (survived-the-pause) case.
+**No report on self-fence (I-1).** Stage 2 deliberately does NOT emit a report before dropping the lease.
+Because forced expiry debits the *entire* remainder unconditionally (§3.5), an extra report would only shift
+`leasedOut↔spent` and **never** touches `available` — so it yields **zero** Stage-2 stranding benefit while
+costing an RPC, and it would tempt a future "credit the report-covered portion on expiry" change that
+re-introduces C2. Accurate end-of-lease reporting is reintroduced only by the deferred §9-q3 Σ-acked
+reconciliation (where it can safely re-credit) — not here. Safety rests entirely on the §3.5 debit; nothing
+depends on a report arriving.
 
 ### 4.2 Refill (single-flight, double-buffer)
 At the low watermark, one in-flight `Draw` (stable `leaseID` per logical refill; retries reuse it →
@@ -265,8 +288,13 @@ On `BudgetDefine`/grant: `default_lease_ttl_ms` (seconds-scale), `self_guard_ms`
 tombstone must outlive the longest possible *retried* `Draw` for that `leaseID`, or a retry arriving after the
 row is gone re-grants fresh money (reopens B5/H1). Replay latency is an RPC property (client retry budget +
 queueing), NOT a clock property — so retention `≥ max(RPC_retry_budget, skew + maxPause)`, i.e. the
-design-§6.1 ~30s order, **not** the ~2.5s `skew+maxPause`. Make it `dedup_retry_window_ms`, default 30s,
-admission-validated `≥ maxClockSkew + maxPause`.
+design-§6.1 ~30s order, **not** the ~2.5s `skew+maxPause`. Make it `dedup_retry_window_ms`, **default 30s**.
+**Admission caveat (I-2):** the SM can only mechanically check the *clock* floor `≥ maxClockSkew + maxPause`
+(~2.5s); the dominant RPC-retry-budget leg (~30s) is a client-transport property the server cannot see. So
+admission MUST reject below a configured `minDedupRetryWindowMs` (defaulted to the cluster's known client
+retry budget, ~30s) — NOT merely below `skew+maxPause`, or an operator could set 3s, pass admission, and a
+25s-late retry would re-grant fresh money. Document loudly: `dedup_retry_window_ms ≥ client retry budget` is a
+correctness requirement, and the default is sized to it.
 
 **Tombstone GC (M3).** Tombstones are swept by a `ttl.go`-style due-index entry at
 `reclaimNotBeforeMs + dedup_retry_window_ms` (reuse the existing TTL sweeper machinery), so they don't
