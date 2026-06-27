@@ -12,7 +12,7 @@ import (
 const (
 	scopeBudPool  byte = 0x05 // the pool record (combined cfg+state; append-extensible)
 	scopeBudLease byte = 0x06 // <leaseID> -> leaseRec
-	// reserved (NOT used in Stage 1): 0x07 lease-expiry index (Stage 2), 0x08 settled tombstone (Stage 3)
+	// reserved (NOT used in Stage 1): 0x07 lease-expiry index, 0x08 settled tombstone (both Stage 2)
 )
 
 // Budget modes (Stage 1 ships STRICT only; modeRelaxed reserved for Stage 4 and rejected at init here).
