@@ -321,20 +321,13 @@ func (u *updateCtx) applyOne(cmd []byte, frozen []frozenRange, scratch []item) (
 	// max-fold for report, lease-absence for return), so they are not routed through the dedup ring above.
 	switch c.Op {
 	case opBudInit, opBudGrant, opBudReport, opBudReturn:
-		// Type guard: opBudInit creates the type; the others require it but must not create it. WRONGTYPE
-		// is only for a budget op hitting a set/hash/zset collection (B9: grant-before-define -> budNoBudget).
-		if c.Op == opBudInit {
-			if ok, err := u.ensureType(c.NS, c.Coll, typeBudget); err != nil {
-				return ProposeResult{}, err
-			} else if !ok {
-				return ProposeResult{Data: wrongType}, nil
-			}
-		} else {
-			if tp, err := u.typeOf(c.NS, c.Coll); err != nil {
-				return ProposeResult{}, err
-			} else if tp != 0 && tp != typeBudget {
-				return ProposeResult{Data: wrongType}, nil
-			}
+		// Type guard (non-creating): WRONGTYPE only for a budget op hitting a set/hash/zset collection.
+		// opBudInit creates the typeBudget header ITSELF, but only after its own validation passes (see
+		// applyBudInit) — so a rejected init leaves no orphaned header and grant-before-define -> budNoBudget.
+		if tp, err := u.typeOf(c.NS, c.Coll); err != nil {
+			return ProposeResult{}, err
+		} else if tp != 0 && tp != typeBudget {
+			return ProposeResult{Data: wrongType}, nil
 		}
 		switch c.Op {
 		case opBudInit:

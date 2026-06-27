@@ -289,6 +289,23 @@ func TestApplyOneBudgetDispatchAndWrongType(t *testing.T) {
 	}
 }
 
+// A rejected init (bad mode / negative cap) via the dispatch path must NOT leave an orphaned typeBudget
+// header behind — otherwise the collection would wrongly appear to exist and block other datatypes.
+func TestApplyOneBudInitRejectedLeavesNoType(t *testing.T) {
+	sm := newTestSM(t)
+	ns, coll := []byte("pacing"), []byte("li/x")
+	bad := initCmd(ns, coll, 1000)
+	bad.Items[0].Key[0] = modeRelaxed // non-STRICT -> rejected with budBadMode
+	if r := mustApply(t, sm, bad); string(r.Data) != string(budBadMode) {
+		t.Fatalf("rejected init Data = %q, want BUDBADMODE", r.Data)
+	}
+	// No orphaned typeBudget header: an HSet on the SAME collection must succeed (not WRONGTYPE).
+	r := mustApply(t, sm, command{Op: opHSet, NS: ns, Coll: coll, Items: []item{{Key: []byte("f"), Val: []byte("1")}}})
+	if string(r.Data) == string(wrongType) {
+		t.Fatalf("rejected init left an orphaned typeBudget header (HSet got WRONGTYPE)")
+	}
+}
+
 // --- Task 6: read path ---
 
 func TestBudStatQuery(t *testing.T) {

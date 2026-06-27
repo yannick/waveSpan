@@ -31,8 +31,9 @@ var (
 )
 
 var (
-	errShortPool  = errors.New("collections: short budget pool record")
-	errShortLease = errors.New("collections: short budget lease record")
+	errShortPool   = errors.New("collections: short budget pool record")
+	errShortLease  = errors.New("collections: short budget lease record")
+	errMissingPool = errors.New("collections: budget lease without a pool (corrupt state)")
 )
 
 // poolRec is the budget pool. Quantities are int64 micro-units.
@@ -208,6 +209,15 @@ func (u *updateCtx) applyBudInit(c command) (ProposeResult, error) {
 	} else if found {
 		return ProposeResult{Data: budExists}, nil
 	}
+	// Create the typeBudget header here — only AFTER validation passed — so a rejected init (bad mode or
+	// negative cap) leaves NO orphaned type header behind (keeps grant-before-define and collection
+	// listings clean). The dispatch type guard already rejected a conflicting existing type, so ensureType
+	// sees absent-or-budget and writes the header iff absent.
+	if ok, err := u.ensureType(c.NS, c.Coll, typeBudget); err != nil {
+		return ProposeResult{}, err
+	} else if !ok {
+		return ProposeResult{Data: wrongType}, nil
+	}
 	p := poolRec{Cap: capacity, Available: capacity, LeasedOut: 0, Spent: 0, Epoch: 1, Mode: mode, Rate: rate, Burst: burst}
 	u.setPool(c.NS, c.Coll, p)
 	return ProposeResult{Value: 1}, nil
@@ -277,9 +287,12 @@ func (u *updateCtx) applyBudReport(c command) (ProposeResult, error) {
 	}
 	delta := reported - l.Spent
 	l.Spent = reported
-	p, _, err := u.getPool(c.NS, c.Coll)
+	p, found, err := u.getPool(c.NS, c.Coll)
 	if err != nil {
 		return ProposeResult{}, err
+	}
+	if !found { // a lease implies a pool in Stage 1 (pools are never deleted) — guard corruption loudly
+		return ProposeResult{}, errMissingPool
 	}
 	p.LeasedOut -= delta
 	p.Spent += delta
@@ -309,9 +322,12 @@ func (u *updateCtx) applyBudReturn(c command) (ProposeResult, error) {
 			}
 			delta := reported - l.Spent
 			l.Spent = reported
-			p, _, err := u.getPool(c.NS, c.Coll)
+			p, found, err := u.getPool(c.NS, c.Coll)
 			if err != nil {
 				return ProposeResult{}, err
+			}
+			if !found {
+				return ProposeResult{}, errMissingPool
 			}
 			p.LeasedOut -= delta
 			p.Spent += delta
@@ -319,9 +335,12 @@ func (u *updateCtx) applyBudReturn(c command) (ProposeResult, error) {
 		}
 	}
 	rem := l.Amount - l.Spent
-	p, _, err := u.getPool(c.NS, c.Coll)
+	p, found, err := u.getPool(c.NS, c.Coll)
 	if err != nil {
 		return ProposeResult{}, err
+	}
+	if !found { // a lease implies a pool in Stage 1 — fail loud on corruption rather than write a bad bucket
+		return ProposeResult{}, errMissingPool
 	}
 	p.Available += rem
 	p.LeasedOut -= rem

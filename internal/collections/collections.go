@@ -405,8 +405,6 @@ func (c *Collections) BudgetGrant(ctx context.Context, ns, coll, holder []byte, 
 		return 0, ErrNoCapacity
 	case string(budNoBudget):
 		return 0, ErrBudgetNotFound // B9: budget pool does not exist
-	case string(budNoLease):
-		return 0, ErrLeaseUnknown
 	}
 	return int64(n), nil
 }
