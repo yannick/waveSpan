@@ -45,14 +45,18 @@ to S3 and reconstitutes/clones clusters from there**.
 Two planes, one shared manifest:
 
 - **Logical plane (portable backbone).** Record-level, HLC-versioned export of opaque
-  `(cf, key, value, hlc_version)` triplets. Re-shardable, partial-capable, incremental by HLC
-  range. The only plane that can clone into a different shape or extract a single tenant.
+  `(cf, key, value, hlc_version)` triplets. Re-shardable, partial-capable, incremental by
+  seq/arrival (like the physical plane). The only plane that can clone into a different shape,
+  extract a single tenant, or clone to a new cluster identity.
 - **Physical plane (same-shape DR fast path).** Per-node wavesdb SSTables streamed to S3 via
   the engine's `ObjectStore` mode. Incremental is near-free because SSTables are immutable
   (upload only new file-ids). Topology-bound: restore maps source node → target node by
   ordinal and calls `PromoteToPrimary()`.
 - Both planes write into one `cluster.manifest`. A backup may carry logical + physical
-  artifacts; restore picks the cheaper valid path for the target shape.
+  artifacts; restore picks the cheaper valid path based on **target shape *and* intent** — the
+  physical fast path is used only for **DR of the same cluster identity** at matching shape;
+  any **clone** (new cluster identity), shape change, or partial restore uses the logical path
+  (§7). Physical never imports a source node's identity into a different cluster.
 
 ## 1. Consistency — global cut via HLC frontier
 
@@ -87,7 +91,7 @@ optional best-effort anti-entropy pull on owners just before seal can tighten th
 **Version extraction without parsing values (invariant A, §3).** The cut and incrementals need
 each record's HLC version, but the backup *core* never parses `value` bytes. The version is
 supplied by the record's **contributor** via `VersionOf` (§3.B): for KV it is read directly
-from the byte-comparable version **key suffix** (`recordstore/encode.go`); for graph/vector it
+from the byte-comparable version **key suffix** (`internal/recordstore/encode.go`); for graph/vector it
 is unmarshalled from the value proto's version field by *that datatype's* registered extractor
 (`NodeRecord`/`EdgeRecord` in `cypher.proto`, `VectorRecord.version` in `vector.proto`).
 Datatype-specific knowledge thus lives in the registered plug, not the core.
@@ -201,7 +205,7 @@ discovery — not a new API. Restore-side physical reuses the existing `Open{Rea
 | Contributor | Owned CFs | Consistency | Version source (`VersionOf`) | `OwnerOf` (dedup) | Rebuild hook |
 |---|---|---|---|---|---|
 | System/config | `CFSys` (config/namespace snapshots only) | SeqSnapshot | n/a (`ok=false`) | meta-shard leader (single copy) | — |
-| KV | `CFKVData`, `CFKVMeta` | HLCCeiling | version **key suffix** (`recordstore/encode.go`) | placement/holder-dir → one live holder; all-export fallback | — |
+| KV | `CFKVData`, `CFKVMeta` | HLCCeiling | version **key suffix** (`internal/recordstore/encode.go`) | placement/holder-dir → one live holder; all-export fallback | — |
 | Collections | `CFReplData` | SeqSnapshot (raft index) | n/a | shard's raft leader (1 logical copy per shard) | — |
 | Graph | `CFGraphData` (auth), `CFGraphIndex` (derived) | HLCCeiling | `Version` field in `NodeRecord`/`EdgeRecord` value proto | holder-dir | `graph.(*Store).RebuildIndexes(graph)` |
 | Vector | `CFVectorRaw` (auth), `CFVectorIndex` (derived) | HLCCeiling | `VectorRecord.version` (field 8) in value proto | holder-dir | `vector.RebuildLiveIndex()` |
@@ -213,7 +217,7 @@ a row here and nothing else.
 7 CFs `{CFSys, CFKVData, CFKVMeta, CFGraphData, CFGraphIndex, CFVectorRaw, CFVectorIndex}`. The
 registry above owns the same authoritative data plus `CFReplData` (collections — not in the old
 codec) and **splits `CFSys`**: cluster/namespace **config** is backed up and restored, but
-**node-local identity** (storage UUID, member metadata in `storage/identity.go`) is
+**node-local identity** (storage UUID, member metadata in `internal/storage/identity.go`) is
 **excluded from logical export and never written by logical restore** — identity is per-node
 and regenerated on first start, so importing a source node's UUID would corrupt the target.
 The derived index CFs (`CFGraphIndex`, `CFVectorIndex`) are exported by neither plane's logical
@@ -248,9 +252,14 @@ must use the logical path — see §7.)
 Restore reads `cluster.manifest`, reconstructs namespace configs + collection inventory +
 source topology, then picks a path per the **target** shape:
 
-- **Same shape + physical present → physical fast path.** Map source `storageUUID` → target
-  node by ordinal, drop SSTables into each data dir, `Open{ReadOnly}` + `PromoteToPrimary()`.
-  No re-replication (each node already holds its shard).
+- **DR of the same cluster, same shape, physical present → physical fast path.** Map source
+  `storageUUID` → target node by ordinal, drop SSTables into each data dir, `Open{ReadOnly}` +
+  `PromoteToPrimary()`. No re-replication (each node already holds its shard). **This path is
+  gated on intent = DR, not just shape**: it intentionally carries node identity (storage UUID,
+  member metadata) from `CFSys`, which is correct only when restoring *the same logical
+  cluster*. The CLI's `restore` (DR) may use it; `clone` (new cluster identity) must **not** —
+  even at matching shape — because importing the source identity would corrupt the new cluster.
+  `clone` always takes the logical path below, which excludes node-local identity (§5).
 - **Different shape (or logical-only) → re-shard logical path.** Stream chunks back; KV →
   normal coordinator write path (re-routes via generic `route()`, re-replicates to target-N,
   repair fills). Collections re-shard at **whole-collection granularity**: routing hashes
@@ -271,14 +280,17 @@ s3://<bucket>/<clusterID>/backups/<backupID>/
                           #   namespace/collection inventory, per-node submanifest pointers,
                           #   per-object sha256, status (COMPLETE|PARTIAL + gap list)
   nodes/<storageUUID>/
-    node.manifest.json     # assignments, GlobalSeq, object list, counts
+    node.manifest.json     # assignments, per-CF GlobalSeq watermarks (for seq incrementals),
+                          #   object list, counts
     logical/<cf>/<namespace>/part-NNNNN.chunk   # zstd, length-prefixed (cf,key,value,version)
     physical/<cf>/<sstID>.{klog,vlog}           # immutable SSTable files (checkpoint)
   shards/<shardID>/part-NNNNN.chunk             # collections per-shard logical (raft-index consistent)
 ```
-- **Incremental:** `parent` in the manifest; logical uploads only `T_prev < Version ≤ T`;
-  physical uploads only SSTable file-ids absent from the parent manifest. Restore walks the
-  parent chain.
+- **Incremental:** `parent` in the manifest. Both planes are **seq-based**: logical uploads
+  records from SSTables whose `MaxSeq` exceeds the parent's per-CF watermark (`SSTablesSince`),
+  under the `≤ T` ceiling for AP tiers; physical uploads only SSTable file-ids absent from the
+  parent manifest. (Seq-based, not HLC-range — see §1/§6 — so late-replicated older writes are
+  captured.) Restore walks the parent chain.
 - **Integrity:** every object has a sha256 in the manifest, verified on restore; the manifest
   is itself checksummed.
 
