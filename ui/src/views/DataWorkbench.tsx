@@ -34,22 +34,27 @@ type Selection =
   | { kind: "graph"; graphId: string }
   | null;
 
+// Each segment is percent-encoded so values containing the ":" delimiter (e.g. a collection named
+// "user:100", a colon-bearing namespace, or a graph id) round-trip through the URL intact.
+const seg = (v: string) => encodeURIComponent(v);
+const unseg = (v: string | undefined) => (v == null ? "" : decodeURIComponent(v));
+
 function parseSel(s: string): Selection {
   if (!s) return null;
   const [tag, ...rest] = s.split(":");
-  if (tag === "kv") return { kind: "kv", namespace: rest.join(":") };
+  if (tag === "kv") return { kind: "kv", namespace: unseg(rest[0]) };
   if (tag === "coll") {
-    const [namespace, name, ctype] = [rest[0], rest[1], rest[2] as CType];
-    return { kind: "coll", namespace, name, ctype: ctype || "set" };
+    const ctype = rest[2] as CType;
+    return { kind: "coll", namespace: unseg(rest[0]), name: unseg(rest[1]), ctype: ctype || "set" };
   }
-  if (tag === "graph") return { kind: "graph", graphId: rest.join(":") };
+  if (tag === "graph") return { kind: "graph", graphId: unseg(rest[0]) };
   return null;
 }
 function encodeSel(sel: Selection): string {
   if (!sel) return "";
-  if (sel.kind === "kv") return `kv:${sel.namespace}`;
-  if (sel.kind === "coll") return `coll:${sel.namespace}:${sel.name}:${sel.ctype}`;
-  return `graph:${sel.graphId}`;
+  if (sel.kind === "kv") return `kv:${seg(sel.namespace)}`;
+  if (sel.kind === "coll") return `coll:${seg(sel.namespace)}:${seg(sel.name)}:${sel.ctype}`;
+  return `graph:${seg(sel.graphId)}`;
 }
 
 const labelStyle = { fontWeight: 700 as const, fontSize: "var(--ws-text-body-sm-size)" };
