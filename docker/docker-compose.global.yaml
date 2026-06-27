@@ -17,6 +17,9 @@ x-node: &node
 services:
   a1:
     <<: *node
+    # Stable hostname: dragonboat pins the hostname into its data dir and refuses to start with
+    # "hostname changed" if a recreated container (new random hostname) reuses the same volume.
+    hostname: a1
     environment:
       WAVESPAN_RUNTIME: docker
       WAVESPAN_CLUSTER_ID: test-a
@@ -34,6 +37,7 @@ services:
     volumes: ["a1-data:/var/lib/wavespan"]
   a2:
     <<: *node
+    hostname: a2
     environment:
       WAVESPAN_RUNTIME: docker
       WAVESPAN_CLUSTER_ID: test-a
@@ -51,6 +55,7 @@ services:
     volumes: ["a2-data:/var/lib/wavespan"]
   b1:
     <<: *node
+    hostname: b1
     environment:
       WAVESPAN_RUNTIME: docker
       WAVESPAN_CLUSTER_ID: test-b
@@ -68,6 +73,7 @@ services:
     volumes: ["b1-data:/var/lib/wavespan"]
   b2:
     <<: *node
+    hostname: b2
     environment:
       WAVESPAN_RUNTIME: docker
       WAVESPAN_CLUSTER_ID: test-b
