@@ -250,7 +250,9 @@ must use the logical path — see §7.)
 ## 7. Restore / clone / PITR
 
 Restore reads `cluster.manifest`, reconstructs namespace configs + collection inventory +
-source topology, then picks a path per the **target** shape:
+source topology, then picks a path per the **target shape and the restore intent**. Intent
+(`restore` = DR of the same cluster vs `clone` = new cluster identity) comes from the CLI/API
+invocation — it is *not* a field in the backup:
 
 - **DR of the same cluster, same shape, physical present → physical fast path.** Map source
   `storageUUID` → target node by ordinal, drop SSTables into each data dir, `Open{ReadOnly}` +
@@ -260,7 +262,8 @@ source topology, then picks a path per the **target** shape:
   cluster*. The CLI's `restore` (DR) may use it; `clone` (new cluster identity) must **not** —
   even at matching shape — because importing the source identity would corrupt the new cluster.
   `clone` always takes the logical path below, which excludes node-local identity (§5).
-- **Different shape (or logical-only) → re-shard logical path.** Stream chunks back; KV →
+- **Different shape, any clone, or logical-only → logical path.** (Re-shard when the shape
+  differs; verbatim re-route when it matches.) Stream chunks back; KV →
   normal coordinator write path (re-routes via generic `route()`, re-replicates to target-N,
   repair fills). Collections re-shard at **whole-collection granularity**: routing hashes
   `routeKey(ns,coll)` (`ShardForKey`), so a collection relocates atomically to exactly one
