@@ -61,20 +61,27 @@ the two the plan itself labels as placeholders. Line numbers drift by 10–40 (t
 
 Ordered by severity. The first two are the ones that matter most.
 
+> **STATUS (2026-06-27): ✅ ALL of B1–B10 folded into the revised plan**
+> (`docs/superpowers/plans/2026-06-25-leased-budget-stage1.md`), and all Part A grounding refs corrected
+> there (scope list +`scopeTTLPtr 0x04`; line refs HIncrBy 287-298 / sweepOnce ~358 / coalescable ~247 /
+> handlers ~172-186; `shardPrefix`→inline prefix; `applySingleForTest` add; `errors.go`→`command.go`;
+> StoreOp/item field facts). See each item's resolution note below.
+
 ### B1. On-disk key layout diverges from the design — forces a future migration (HIGH)
 The Stage-1 plan picks `scopeBudPool=0x05`, `scopeBudLease=0x06` and folds config+state into one
 `poolRec`. The design §6.1 final layout is `scopeBudCfg=0x05`, `scopeBudState=0x06`,
 `scopeBudLease=0x07`, `scopeBudExp=0x08`, `scopeBudTomb=0x09`. When Stage 2/3 split config from
 state and add the expiry/tombstone scopes, **the byte assignments collide and the record shape
 changes**, requiring snapshot migration of a *money* datatype mid-roadmap.
-- **Fix:** adopt the design's final byte layout in Stage 1 (`0x05`=cfg, `0x06`=state, `0x07`=lease)
-  even though Stage-1 cfg is trivial; OR explicitly document a versioned `poolRec` + migration step.
-  Recommend the former — it's nearly free now and removes a later migration.
-- **Prerequisite (RESOLVED):** `scopeTTLPtr=0x04` (`ttl.go:17`) also lives under `collScope`, so the
-  taken bytes are `0x00`–`0x04` and `0x05+` are genuinely free — **no collision** with either the
-  Stage-1 (`0x05/0x06`) or design-final (`0x05`–`0x09`) layouts. The remaining issue is purely the
-  Stage-1↔design *meaning* divergence above. The plan's scope-byte list (which stops at `0x03`) should
-  be corrected to include `scopeTTLPtr=0x04`.
+- **✅ RESOLVED (chosen the other way — amend the design, not the plan):** rather than split the record,
+  keep ONE combined `poolRec` at `0x05` and make `decodePool` **append-tolerant** (reads its fixed prefix,
+  ignores trailing bytes) so Stages 2–3 *append* `lastRefillMs`/`tokens`/`pendingReclaim` with no snapshot
+  migration. Plan keeps `0x05`=pool / `0x06`=lease; `0x07`=exp / `0x08`=tomb reserved. **design §6.1 amended**
+  to this combined layout (the old `scopeBudCfg`/`scopeBudState` split is marked superseded). This is less
+  churn than splitting and is migration-free.
+- **✅ Prerequisite RESOLVED:** `scopeTTLPtr=0x04` (`ttl.go:17`) also lives under `collScope`, so taken bytes
+  are `0x00`–`0x04` and `0x05+` is genuinely free — **no collision**. The plan's scope-byte list now includes
+  `scopeTTLPtr=0x04`.
 
 ### B2. The conservation **invariant probe is omitted** (HIGH — cheap, highest-value safety net)
 Design §6.8 specifies a `budCheckQuery` Lookup asserting

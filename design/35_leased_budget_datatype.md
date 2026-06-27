@@ -150,16 +150,28 @@ LeasedBudget is implemented as a **new datatype handled by the existing `shardSM
 
 ### 6.1 Key layout (sub-scopes under `collScope`, continuing `statemachine.go:36-39`)
 
+> **Revised 2026-06-27 (combined-record layout).** The original design used two separate keys —
+> `scopeBudCfg 0x05` (config) and `scopeBudState 0x06` (accounting). The Stage-1 plan and this design are
+> reconciled to a **single combined, append-extensible pool record** at `scopeBudPool 0x05` holding *both*
+> the config and accounting fields as logical sections. Rationale: one read/write per grant (simpler, fewer
+> ops), and — because the decoder reads only its fixed prefix and tolerates trailing bytes — Stages 2–3 can
+> **append** `lastRefillMs`/`tokens`/`pendingReclaim` to the same record with **no snapshot migration**
+> (contract: append-only, never reorder/resize existing fields). The lease table shifts to `0x06`,
+> expiry to `0x07`, tombstone to `0x08`. Note: under `collScope`, bytes `0x00`–`0x04` are already taken
+> (`scopeCard/Elem/ZPtr/Type` + `scopeTTLPtr 0x04`), so `0x05` is the first free byte.
+
 ```go
 const (
     typeBudget collType = 4
 
-    scopeBudCfg   byte = 0x05 // config: mode, epoch, cap, rate, burst
-    scopeBudState byte = 0x06 // accounting: available, leasedOut, pendingReclaim, spent, lastRefillMs, tokens
-    scopeBudLease byte = 0x07 // <leaseID> -> leaseRec (outstanding-lease table)
-    scopeBudExp   byte = 0x08 // be(expiresMs)|<leaseID> -> empty (expiry-ordered sweep index)
-    scopeBudTomb  byte = 0x09 // <leaseID> -> settled tombstone {status,spent,epoch,result} (Fix 2)
+    scopeBudPool  byte = 0x05 // combined pool record (cfg + accounting), append-extensible:
+                              //   mode, epoch, cap, rate, burst | available, leasedOut, pendingReclaim, spent, lastRefillMs, tokens
+    scopeBudLease byte = 0x06 // <leaseID> -> leaseRec (outstanding-lease table)
+    scopeBudExp   byte = 0x07 // be(expiresMs)|<leaseID> -> empty (expiry-ordered sweep index)
+    scopeBudTomb  byte = 0x08 // <leaseID> -> settled tombstone {status,spent,epoch,result} (Fix 2)
 )
+// SUPERSEDED (do not use): the earlier scopeBudCfg=0x05 / scopeBudState=0x06 split is replaced by the
+// single combined scopeBudPool above; the cfg/state distinction is now logical, within one record.
 ```
 
 **Quantities are stored as 8-byte BE int64** (micro-units: micro-currency or milli-impressions), not decimal strings. Rationale: budgets are compared/saturated arithmetically on every grant; BE int64 keeps compares cheap and replica-deterministic. (HIncr uses decimal strings only so `HGet` returns them verbatim — irrelevant for an internal pool counter.) Money exactness is preserved by integer micro-units. INV-LOCAL is now a 5-term equality including `pendingReclaim`.
