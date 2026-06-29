@@ -299,10 +299,13 @@ Mirrors `Checkpoint` but streams SSTable files to an `ObjectStore` under a key p
 - Create: `/Volumes/HOME/code/storage-engines/wavesdb-backup/checkpoint_objstore.go`
 - Test: `/Volumes/HOME/code/storage-engines/wavesdb-backup/checkpoint_objstore_test.go`
 
-- [ ] **Step 1: Identify the FS ObjectStore constructor for the test**
+- [ ] **Step 1: (confirmed) FS ObjectStore constructor**
 
-Run: `cd /Volumes/HOME/code/storage-engines/wavesdb-backup && grep -rn "ObjectStore" objstore.go objstore_mode.go | grep -iE "func New|fsObject|FSObject|NewFS" | head`
-Record the exact filesystem-backed `ObjectStore` constructor name (e.g. `NewFSObjectStore(dir)`); use it in the test below. If only an unexported type exists, add a tiny test helper in the test file that constructs it.
+The filesystem-backed store is `objstore.NewFS(dir string) (*objstore.FS, error)` in package
+**`wavesdb/objstore`** (`objstore/fs.go:23`) — a *different package*, and it returns `(*FS, error)`.
+`*objstore.FS` satisfies the `wavesdb.ObjectStore` interface. The test file is `package wavesdb`
+and must `import "wavesdb/objstore"` and construct it with the two-return form. (No import cycle:
+`objstore` does not import `wavesdb`.)
 
 - [ ] **Step 2: Write the failing test**
 
@@ -314,6 +317,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"wavesdb/objstore"
 )
 
 func countKlogs(keys []string) int {
@@ -338,7 +343,10 @@ func TestCheckpointToObjectStoreFullAndIncremental(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := NewFSObjectStore(t.TempDir()) // from Step 1
+	store, err := objstore.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 
 	full, err := db.CheckpointToObjectStore(ctx, store, "b1", nil)
@@ -524,24 +532,11 @@ func (db *DB) CheckpointToObjectStore(ctx context.Context, store ObjectStore, ke
 	}
 	return out, nil
 }
-
-func uploadFile(store ObjectStore, key, srcPath string) error {
-	f, err := os.Open(srcPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	return store.Put(key, f, fi.Size())
-}
 ```
-Implementation notes for the worker:
-- Confirm the handle unref method name: `grep -n "func (th \*tableHandle)" db.go` — use the existing decrement (likely `decref` or `unref`). `incref` is confirmed at iterator.go.
-- Confirm `manifest.Manifest` has `Save(path string)` (used by Checkpoint at maintenance.go:169 via `man.Save(manifest.Path(dir))`) and `cf.snapshotManifest()` exists (used in Checkpoint).
-- `tableHandle.reader` exposes `KlogPath()`/`VlogPath()` (used in Checkpoint).
+Implementation notes for the worker (all confirmed against the real code by review):
+- **Reuse the existing `uploadFile(store ObjectStore, key, path string) error`** (objstore_mode.go:33) — do NOT redefine it; package `wavesdb` already has it with this exact signature (Open→Stat→Put), so the call sites above compile as-is. (Redefining would be a "redeclared in this block" error.)
+- Handle decrement is **`th.decref()`** (db.go:71); `incref()` (db.go:69). Level handles keep their own ref, so incref→upload→defer decref is safe (mirrors `newIterator`).
+- `manifest.Manifest.Save(path string)` (used by Checkpoint at maintenance.go:169) and `cf.snapshotManifest()` (columnfamily.go:222) exist; `tableHandle.reader.KlogPath()`/`VlogPath()` at internal/sst/reader.go:394.
 
 - [ ] **Step 5: Run to verify it passes**
 
@@ -552,6 +547,11 @@ Expected: PASS.
 
 Run: `go test -race -run TestCheckpointToObjectStore ./...`
 Expected: PASS (verifies upload-outside-lock + pin/unpin is race-free against background compaction).
+
+Note: the incremental assertions check exact table/klog counts (`full+1`, delta `==1`). At these
+tiny sizes (≤3 L0 tables) background compaction won't merge mid-test, so they're deterministic.
+If they ever flake because compaction merged L0 tables, gate the assertions by quiescing
+background work first (`db.CancelBackgroundWork()`, maintenance.go:460) after the final flush.
 
 - [ ] **Step 7: Commit**
 
@@ -581,6 +581,8 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	"wavesdb/objstore"
 )
 
 func TestCheckpointObjStoreRoundTrip(t *testing.T) {
@@ -598,7 +600,10 @@ func TestCheckpointObjStoreRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	store := NewFSObjectStore(t.TempDir())
+	store, err := objstore.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	if _, err := db.CheckpointToObjectStore(ctx, store, "b1", nil); err != nil {
 		t.Fatal(err)
@@ -644,7 +649,7 @@ package wavesdb
 
 import (
 	"context"
-	"io"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -652,15 +657,19 @@ import (
 	"wavesdb/internal/manifest"
 )
 
+// sstName is the on-disk SSTable file name Open expects inside cf_<name>/ — it must
+// match what Checkpoint writes (maintenance.go uses fmt.Sprintf("%d.klog", id)).
+func sstName(id uint64, ext string) string { return fmt.Sprintf("%d.%s", id, ext) }
+
 // RestoreFromObjectStore downloads the checkpoint at keyPrefix in store into dir,
 // producing a directory openable with Open(Options{Path: dir}).
 func RestoreFromObjectStore(ctx context.Context, store ObjectStore, keyPrefix, dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	// 1. fetch MANIFEST into place and load it.
+	// 1. fetch MANIFEST into place and load it (downloadObject does MkdirAll + atomic rename).
 	manPath := manifest.Path(dir)
-	if err := downloadFile(store, path.Join(keyPrefix, "MANIFEST"), manPath); err != nil {
+	if err := downloadObject(store, path.Join(keyPrefix, "MANIFEST"), manPath); err != nil {
 		return err
 	}
 	man, err := manifest.Load(manPath)
@@ -677,13 +686,13 @@ func RestoreFromObjectStore(ctx context.Context, store ObjectStore, keyPrefix, d
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if err := downloadFile(store, objKey(keyPrefix, cf.Name, t.ID, "klog"),
-				filepath.Join(cfDir, fileName(t.ID, "klog"))); err != nil {
+			if err := downloadObject(store, objKey(keyPrefix, cf.Name, t.ID, "klog"),
+				filepath.Join(cfDir, sstName(t.ID, "klog"))); err != nil {
 				return err
 			}
 			if t.VlogSize > 0 {
-				if err := downloadFile(store, objKey(keyPrefix, cf.Name, t.ID, "vlog"),
-					filepath.Join(cfDir, fileName(t.ID, "vlog"))); err != nil {
+				if err := downloadObject(store, objKey(keyPrefix, cf.Name, t.ID, "vlog"),
+					filepath.Join(cfDir, sstName(t.ID, "vlog"))); err != nil {
 					return err
 				}
 			}
@@ -691,13 +700,11 @@ func RestoreFromObjectStore(ctx context.Context, store ObjectStore, keyPrefix, d
 	}
 	return nil
 }
-
-func fileName(id uint64, ext string) string { return objKey("", "", id, ext)[len("/cf_/"):] }
 ```
-Implementation notes:
-- Confirm the on-disk SSTable file names Open expects (Checkpoint writes `fmt.Sprintf("%d.klog", id)` directly into `cf_<name>/`); match that exactly — simplest is a local helper `func sstName(id uint64, ext string) string { return fmt.Sprintf("%d.%s", id, ext) }` rather than the slicing hack above. Replace `fileName` with that.
-- Add `downloadFile(store, key, destPath)`: `r, err := store.Get(key)`; create dest; `io.Copy`; close both.
-- Confirm `manifest.Load` and `manifest.Path` exist (Checkpoint uses `manifest.Path`; `Load` is used on Open — grep to confirm exact name; it may be `manifest.Load` or `manifest.Open`).
+Implementation notes (confirmed by review):
+- **Reuse the existing `downloadObject(store ObjectStore, key, dst string) error`** (objstore_mode.go:96) — it does `MkdirAll` + atomic temp-rename, more robust than a hand-rolled copy. Do not add a new helper.
+- `manifest.Load(path)` and `manifest.Path(dir)` both exist (manifest.go; `Path` used by Checkpoint, `Load` used on Open).
+- `objKey` is the helper defined in `checkpoint_objstore.go` (Task 3) — restore must use the *same* key scheme as checkpoint (`<prefix>/cf_<cf>/<id>.<ext>`).
 
 - [ ] **Step 4: Run to verify it passes**
 
