@@ -89,6 +89,7 @@ const (
 	opBudReport    opKind = 18 // leased-budget: cumulative-per-lease spent fold (max)
 	opBudReturn    opKind = 19 // leased-budget: release unspent; book spent
 	opBudExpire    opKind = 20 // leased-budget: leader-proposed forced expiry (DEBIT settlement, §3.5)
+	opBudTombGC    opKind = 21 // leased-budget: leader-proposed tombstone GC (drop settled tombstone + index)
 )
 
 // mutates reports whether an op changes element state (and so must respect a subrange freeze).
@@ -130,7 +131,7 @@ func typeForOp(op opKind) collType {
 		return typeHash
 	case opZAdd, opZRem:
 		return typeZSet
-	case opBudInit, opBudGrant, opBudReport, opBudReturn, opBudExpire:
+	case opBudInit, opBudGrant, opBudReport, opBudReturn, opBudExpire, opBudTombGC:
 		return typeBudget
 	}
 	return 0

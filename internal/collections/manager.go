@@ -370,22 +370,52 @@ func (m *Manager) sweepOnce() {
 		if lead, _, ok, err := m.nh.GetLeaderID(shardID); err != nil || !ok || lead != replicaID {
 			continue // only the leader sweeps
 		}
-		v, err := m.nh.StaleRead(shardID, ttlDueQuery{NowMs: now, Limit: 1024})
-		if err != nil {
-			continue
+		// Pass 1: TTL element expiry (design/30 §10). An empty/failed due read no longer skips the budget
+		// pass below (a shard with no TTL elements still needs its timed leases swept).
+		if v, err := m.nh.StaleRead(shardID, ttlDueQuery{NowMs: now, Limit: 1024}); err == nil {
+			if due, _ := v.([]dueElem); len(due) > 0 {
+				type ck struct{ ns, coll string }
+				groups := map[ck][]item{}
+				for _, d := range due {
+					k := ck{string(d.NS), string(d.Coll)}
+					groups[k] = append(groups[k], item{Key: d.Member, ExpiryMs: int64(d.Expiry)})
+				}
+				for k, items := range groups {
+					cmd := encodeCommand(command{Op: opExpire, NS: []byte(k.ns), Coll: []byte(k.coll), Items: items})
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					_, _ = m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
+					cancel()
+				}
+			}
 		}
-		due, _ := v.([]dueElem)
-		if len(due) == 0 {
-			continue
-		}
-		type ck struct{ ns, coll string }
-		groups := map[ck][]item{}
+		// Pass 2: leased-budget forced expiry + tombstone GC (Stage 2 §3.5/§6).
+		m.sweepBudget(shardID, now)
+	}
+}
+
+// sweepBudget runs the Stage-2 leased-budget passes for one shard this node leads (caller already gated on
+// leadership). It force-expires every timed lease past its REPLICATED reclaim deadline — the DEBIT
+// settlement lands in applyBudExpire (§3.5) — and GCs settled tombstones whose dedup retry window has
+// elapsed (§6). sweepNowMs is leader-stamped here, pre-propose, so apply reads no wall clock; the deadline
+// comparison runs against the replicated ReclaimNotBeforeMs, surviving a leader change.
+func (m *Manager) sweepBudget(shardID uint64, sweepNowMs int64) {
+	if v, err := m.nh.StaleRead(shardID, budExpiryDueQuery{NowMs: sweepNowMs, Limit: 1024}); err == nil {
+		due, _ := v.([]dueBudLease)
 		for _, d := range due {
-			k := ck{string(d.NS), string(d.Coll)}
-			groups[k] = append(groups[k], item{Key: d.Member, ExpiryMs: int64(d.Expiry)})
+			val := make([]byte, 8)
+			putI64(val, sweepNowMs)
+			cmd := encodeCommand(command{Op: opBudExpire, NS: d.NS, Coll: d.Coll, Items: []item{{Key: d.LeaseID, Val: val}}})
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_, _ = m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
+			cancel()
 		}
-		for k, items := range groups {
-			cmd := encodeCommand(command{Op: opExpire, NS: []byte(k.ns), Coll: []byte(k.coll), Items: items})
+	}
+	if v, err := m.nh.StaleRead(shardID, budTombGCDueQuery{NowMs: sweepNowMs, Limit: 1024}); err == nil {
+		due, _ := v.([]dueBudLease)
+		for _, d := range due {
+			val := make([]byte, 8)
+			putI64(val, d.ReclaimMs) // gcDueMs — apply recomputes the GC-index key from it
+			cmd := encodeCommand(command{Op: opBudTombGC, NS: d.NS, Coll: d.Coll, Items: []item{{Key: d.LeaseID, Val: val}}})
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			_, _ = m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
 			cancel()

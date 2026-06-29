@@ -720,6 +720,22 @@ func (u *updateCtx) applyBudExpire(c command) (ProposeResult, error) {
 	return ProposeResult{Value: uint64(rem)}, nil
 }
 
+// applyBudTombGC drops a settled tombstone + its GC-index entry once the dedup retry window has elapsed
+// (§6, M3). gcDueMs (carried in Val) is the GC-index key's time component, needed to recompute the key.
+// This is safe — and only fires — at gcDueMs = reclaimNotBeforeMs + dedup_retry_window_ms, which is sized
+// >= the longest retried Draw, so no in-flight retry can re-grant fresh money after the tombstone is gone
+// (I4). It changes NO pool accounting.
+func (u *updateCtx) applyBudTombGC(c command) (ProposeResult, error) {
+	if len(c.Items) == 0 || len(c.Items[0].Key) == 0 || len(c.Items[0].Val) < 8 {
+		return ProposeResult{}, errShortCommand
+	}
+	leaseID := c.Items[0].Key
+	gcDueMs := getI64(c.Items[0].Val)
+	u.delTomb(c.NS, c.Coll, leaseID)
+	u.delBudTombGC(c.NS, c.Coll, leaseID, gcDueMs)
+	return ProposeResult{}, nil
+}
+
 // GrantResult is the effective grant echoed back from apply to Collections.BudgetGrant. The timing
 // fields are only meaningful once timed leases land (2b); in 2a only Granted/GrantedMs are populated.
 type GrantResult struct {

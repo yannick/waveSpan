@@ -895,6 +895,79 @@ func TestBudgetEndToEnd(t *testing.T) {
 	}
 }
 
+// --- Task 2b.5: lease-expiry sweep (real shard, mirrors TestSetTTLExpiry + TestBudgetEndToEnd) ---
+
+// TestBudgetLeaseExpirySweep drives the full server expiry path through Raft: a paced+timed budget is
+// granted via the typed API, then the leader's sweepOnce second pass auto-expires the lease once its
+// replicated reclaim deadline passes. The settlement is a DEBIT (the whole grant booked as spent, nothing
+// returned to available, since no report ever arrived), conservation holds, and the settled leaseID can
+// never be re-granted (tombstone).
+func TestBudgetLeaseExpirySweep(t *testing.T) {
+	mem := storage.NewMemStore()
+	t.Cleanup(func() { _ = mem.Close() })
+	addr := freeAddr(t)
+	m := newMgr(t, t.TempDir(), addr, mem)
+	if err := m.StartShard(2, 1, map[uint64]string{1: addr}, false); err != nil {
+		t.Fatalf("StartShard: %v", err)
+	}
+	defer m.Stop()
+	c := New(m, SingleShardDirectory(2))
+	waitReady(t, c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ns, coll := []byte("pacing"), []byte("li/expire")
+
+	// paced + timed: ttl 600ms, selfGuard 500 (=skew), maxPause 0 -> reclaim ~ grant + 600 + 1500 = ~2.1s.
+	cfg := BudgetConfig{Rate: 1_000_000, Burst: 1000, SelfGuardMs: maxClockSkewMs, MaxPauseMs: 0,
+		DefaultTTLMs: 600, DedupRetryWindowMs: minDedupRetryWindowMs}
+	if err := c.BudgetDefine(ctx, ns, coll, 1000, modeStrict, cfg); err != nil {
+		t.Fatalf("define: %v", err)
+	}
+	g, err := c.BudgetGrant(ctx, ns, coll, []byte("node-A"), 600, []byte("lease-X"), 0) // ttl from DefaultTTLMs
+	if err != nil || g.Granted != 600 {
+		t.Fatalf("grant = %+v, %v want 600", g, err)
+	}
+	if g.TTLMs != 600 || g.SelfGuardMs != maxClockSkewMs { // the effective timing is echoed back
+		t.Fatalf("grant echo = %+v, want ttl600 guard500", g)
+	}
+	if st, _ := c.BudgetStat(ctx, ns, coll, true); st.LeasedOut != 600 {
+		t.Fatalf("pre-expire leased=%d want 600", st.LeasedOut)
+	}
+
+	deadline := time.Now().Add(20 * time.Second)
+	var st BudStat
+	for {
+		st, err = c.BudgetStat(ctx, ns, coll, true)
+		if err == nil && st.LeasedOut == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("lease never auto-expired (last stat leased=%d spent=%d)", st.LeasedOut, st.Spent)
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	// DEBIT settlement: the whole 600 is booked as spent, available untouched (NOT credited back).
+	if st.Spent != 600 || st.Available != 400 || st.LeasedOut != 0 {
+		t.Fatalf("expired settlement = spent%d avail%d leased%d want 600/400/0 (DEBIT, never credit)",
+			st.Spent, st.Available, st.LeasedOut)
+	}
+	if st.Available+st.LeasedOut+st.Spent != st.Cap {
+		t.Fatalf("conservation violated after expiry: %+v", st)
+	}
+	chk, err := c.read(ctx, ns, coll, budCheckQuery{NS: ns, Coll: coll}, true)
+	if err != nil {
+		t.Fatalf("budCheck: %v", err)
+	}
+	if bc, _ := chk.(budCheck); !bc.OK {
+		t.Fatalf("budCheck not OK after expiry: %+v", bc)
+	}
+	// the settled leaseID is single-use-forever: re-granting it is refused by the tombstone.
+	if _, err := c.BudgetGrant(ctx, ns, coll, []byte("node-A"), 100, []byte("lease-X"), 0); err != ErrLeaseSettled {
+		t.Fatalf("re-grant settled lease err = %v, want ErrLeaseSettled", err)
+	}
+}
+
 // --- Task 11: Stage-1 verification gate ---
 
 // detRand is a tiny deterministic xorshift64 PRNG. Seeded from a constant so the fuzz interleaving is
