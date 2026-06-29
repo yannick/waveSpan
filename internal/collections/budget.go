@@ -7,12 +7,25 @@ import (
 	"github.com/yannick/wavespan/internal/storage"
 )
 
-// Budget sub-scope bytes. Existing collScope sub-scopes are 0x00..0x04 (scopeCard/Elem/ZPtr/Type in
-// statemachine.go:36-39, scopeTTLPtr in ttl.go:17), so 0x05 is the first free byte.
+// Budget collScope sub-scope bytes (under subData|chunk(ns)|chunk(coll)). Existing collScope sub-scopes
+// are 0x00..0x04 (scopeCard/Elem/ZPtr/Type in statemachine.go:36-39, scopeTTLPtr in ttl.go:17), so 0x05
+// is the first free byte. The lease-EXPIRY index is NOT a collScope sub-scope — it is shard-level
+// (subBudExp, below) so the leader sweeps it shard-wide like the TTL index (plan I1, §3.4).
 const (
 	scopeBudPool  byte = 0x05 // the pool record (combined cfg+state; append-extensible)
 	scopeBudLease byte = 0x06 // <leaseID> -> leaseRec
-	// reserved (NOT used in Stage 1): 0x07 lease-expiry index, 0x08 settled tombstone (both Stage 2)
+	scopeBudTomb  byte = 0x07 // <leaseID> -> settled tombstone {finalSpent, reason} (point lookup, 2b.3)
+)
+
+// Shard-level (prefix) due-index sub-scopes for the budget, alongside subTTL/subDedup/subDedupRing
+// (0x02..0x04). Expiry-ordered and ns/coll-embedded so ONE shard-wide scan finds every due lease across
+// all collections (mirrors ttl.go's index):
+//
+//	<prefix>|subBudExp|be(reclaimNotBeforeMs)|chunk(ns)|chunk(coll)|leaseID -> empty  (auto-reclaim, 2b.2)
+//	<prefix>|subBudTombGC|be(gcDueMs)|chunk(ns)|chunk(coll)|leaseID         -> empty  (tombstone GC, 2b.5)
+const (
+	subBudExp    byte = 0x05
+	subBudTombGC byte = 0x06
 )
 
 // Budget modes (Stage 1 ships STRICT only; modeRelaxed reserved for Stage 4 and rejected at init here).
@@ -80,6 +93,49 @@ func (s *shardSM) budLeasePrefix(ns, coll []byte) []byte {
 }
 func (s *shardSM) budLeaseKey(ns, coll, leaseID []byte) []byte {
 	return append(s.budLeasePrefix(ns, coll), leaseID...)
+}
+
+// budTombKey is the collScope point-lookup key for a settled-lease tombstone (2b.3).
+func (s *shardSM) budTombKey(ns, coll, leaseID []byte) []byte {
+	return append(append(s.collScope(ns, coll), scopeBudTomb), leaseID...)
+}
+
+// --- shard-level due indices (mirror ttl.go's ttlSpace/ttlIndexKey) ---
+
+func (s *shardSM) budExpSpace() []byte    { return append(append([]byte{}, s.prefix...), subBudExp) }
+func (s *shardSM) budTombGCSpace() []byte { return append(append([]byte{}, s.prefix...), subBudTombGC) }
+
+// budExpKey is the shard-level auto-reclaim index key: prefix|subBudExp|be(reclaim)|chunk(ns)|chunk(coll)|leaseID.
+func (s *shardSM) budExpKey(reclaimMs int64, ns, coll, leaseID []byte) []byte {
+	out := append(s.budExpSpace(), u64(uint64(reclaimMs))...)
+	out = appendChunk(out, ns)
+	out = appendChunk(out, coll)
+	return append(out, leaseID...)
+}
+
+// budTombGCKey is the shard-level tombstone-GC index key (same layout, keyed by gcDueMs).
+func (s *shardSM) budTombGCKey(gcDueMs int64, ns, coll, leaseID []byte) []byte {
+	out := append(s.budTombGCSpace(), u64(uint64(gcDueMs))...)
+	out = appendChunk(out, ns)
+	out = appendChunk(out, coll)
+	return append(out, leaseID...)
+}
+
+// dueBudLease is a lease whose reclaim deadline (or whose tombstone-GC deadline) has passed, returned by
+// budExpiryDueQuery / budTombGCDueQuery for the sweeper. ReclaimMs carries the index key's time component
+// (reclaimNotBeforeMs for the expiry index, gcDueMs for the GC index) so the sweep can recompute the key.
+type dueBudLease struct {
+	NS, Coll, LeaseID []byte
+	ReclaimMs         int64
+}
+
+// setBudExp / delBudExp write or drop the shard-level expiry-index entry (value-less). Budget ops are not
+// coalesced (B7), so these go straight to u.ops like ttl.go's setTTL — no in-batch overlay needed.
+func (u *updateCtx) setBudExp(ns, coll, leaseID []byte, reclaimMs int64) {
+	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: u.s.budExpKey(reclaimMs, ns, coll, leaseID), Value: []byte{}})
+}
+func (u *updateCtx) delBudExp(ns, coll, leaseID []byte, reclaimMs int64) {
+	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: u.s.budExpKey(reclaimMs, ns, coll, leaseID), Delete: true})
 }
 
 func putI64(b []byte, v int64) { binary.BigEndian.PutUint64(b, uint64(v)) }
@@ -352,11 +408,24 @@ func (u *updateCtx) applyBudGrant(c command) (ProposeResult, error) {
 	if amount < 0 { // B4: reject a negative draw (deterministic guard; never trust the caller)
 		return ProposeResult{Data: budNoCapacity}, nil
 	}
-	// idempotency: existing lease row for this leaseID -> echo its grant (timing echo widens in 2b).
+	// idempotency: an existing lease row for this leaseID -> echo its grant with the SAME effective timing
+	// (Gap#2, load-bearing for 2c.4's exactly-once refill): grantedMs/ttl reconstructed from the stored
+	// lease, selfGuard/maxPause from the pool config. A retry must produce a byte-identical timing echo, or
+	// the holder's freshness gate + deadline stamping break on exactly the retried-Draw path.
 	if l, found, err := u.getLease(c.NS, c.Coll, leaseID); err != nil {
 		return ProposeResult{}, err
 	} else if found {
-		return ProposeResult{Value: uint64(l.Amount), Data: encodeGrantResult(GrantResult{Granted: l.Amount})}, nil
+		gr := GrantResult{Granted: l.Amount, GrantedMs: l.GrantedMs}
+		if l.ExpiresMs > 0 { // timed lease: ttl = ExpiresMs - GrantedMs (reconstructed, not re-resolved)
+			gr.TTLMs = l.ExpiresMs - l.GrantedMs
+		}
+		if p, pf, perr := u.getPool(c.NS, c.Coll); perr != nil {
+			return ProposeResult{}, perr
+		} else if pf {
+			gr.SelfGuardMs = p.SelfGuardMs
+			gr.MaxPauseMs = p.MaxPauseMs
+		}
+		return ProposeResult{Value: uint64(l.Amount), Data: encodeGrantResult(gr)}, nil
 	}
 	p, found, err := u.getPool(c.NS, c.Coll)
 	if err != nil {
@@ -410,8 +479,15 @@ func (u *updateCtx) applyBudGrant(c command) (ProposeResult, error) {
 		p.Tokens -= grant
 	}
 	u.setPool(c.NS, c.Coll, p)
-	u.setLease(c.NS, c.Coll, leaseID, leaseRec{Holder: append([]byte{}, holder...), Amount: grant, Spent: 0, Epoch: p.Epoch})
-	return ProposeResult{Value: uint64(grant), Data: encodeGrantResult(GrantResult{Granted: grant, GrantedMs: grantedMs})}, nil
+	lr := leaseRec{Holder: append([]byte{}, holder...), Amount: grant, Spent: 0, Epoch: p.Epoch, GrantedMs: grantedMs}
+	if ttl > 0 { // timed lease: stamp the REPLICATED reclaim deadline (§2) + write the shard-level expiry index
+		lr.ReclaimNotBeforeMs = grantedMs + ttl + 3*maxClockSkewMs + p.MaxPauseMs
+		lr.ExpiresMs = grantedMs + ttl // informational only (§3.3 M2); never feeds a stop/reclaim decision
+		u.setBudExp(c.NS, c.Coll, leaseID, lr.ReclaimNotBeforeMs)
+	}
+	u.setLease(c.NS, c.Coll, leaseID, lr)
+	return ProposeResult{Value: uint64(grant), Data: encodeGrantResult(GrantResult{
+		Granted: grant, GrantedMs: grantedMs, TTLMs: ttl, SelfGuardMs: p.SelfGuardMs, MaxPauseMs: p.MaxPauseMs})}, nil
 }
 
 // applyBudReport folds a cumulative-per-lease spent total (max), moving the delta leasedOut->spent.
@@ -509,14 +585,18 @@ type GrantResult struct {
 }
 
 // encodeGrantResult / decodeGrantResult carry the effective grant in ProposeResult.Data. The success
-// payload is a fixed 16 bytes in 2a (amount|grantedMs) and widens to 40 in 2b (amount|grantedMs|ttl|
-// selfGuard|maxPause). It is length-distinguishable from the budget sentinels (BUDNOCAP/BUDNOBUDGET/...),
-// none of which are 16 or 40 bytes, so the typed API can switch sentinels first then decode the rest as
-// a success (Gap#1).
+// payload is a fixed 40 bytes (amount|grantedMs|ttl|selfGuard|maxPause) — the EFFECTIVE timing resolved
+// inside apply, echoed so the holder runs the freshness gate + stamps its deadline + sets the self-fence
+// (§5 M4). It is length-distinguishable from the budget sentinels (BUDNOCAP/BUDNOBUDGET/BUDSETTLED/...),
+// none of which are 40 bytes, so the typed API switches sentinels first then decodes the rest as a
+// success (Gap#1). A non-timed grant carries ttl/selfGuard/maxPause = the pool's (0 when unconfigured).
 func encodeGrantResult(r GrantResult) []byte {
-	b := make([]byte, 16)
+	b := make([]byte, 40)
 	putI64(b[0:], r.Granted)
 	putI64(b[8:], r.GrantedMs)
+	putI64(b[16:], r.TTLMs)
+	putI64(b[24:], r.SelfGuardMs)
+	putI64(b[32:], r.MaxPauseMs)
 	return b
 }
 
@@ -527,6 +607,11 @@ func decodeGrantResult(b []byte) GrantResult {
 	}
 	if len(b) >= 16 {
 		r.GrantedMs = getI64(b[8:])
+	}
+	if len(b) >= 40 {
+		r.TTLMs = getI64(b[16:])
+		r.SelfGuardMs = getI64(b[24:])
+		r.MaxPauseMs = getI64(b[32:])
 	}
 	return r
 }

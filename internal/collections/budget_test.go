@@ -343,6 +343,80 @@ func TestApplyBudGrantIdempotent(t *testing.T) {
 	}
 }
 
+// findOp returns the LAST StoreOp in u.ops whose key equals key (the effective write, since later ops
+// win). Budget apply funcs append index/row writes to u.ops without flushing, so tests inspect them here.
+func findOp(u *updateCtx, key []byte) (storage.StoreOp, bool) {
+	for i := len(u.ops) - 1; i >= 0; i-- {
+		if bytes.Equal(u.ops[i].Key, key) {
+			return u.ops[i], true
+		}
+	}
+	return storage.StoreOp{}, false
+}
+
+// --- Task 2b.2: timed grant writes the reclaim deadline + shard-level expiry index ---
+
+func TestGrantWritesExpiryIndex(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	// timed budget via per-grant ttl override: selfGuard>=skew, maxPause=2000, dedup>=floor.
+	if _, err := u.applyBudInit(initCmdFull(ns, coll, 1000, 0, 1000, maxClockSkewMs, 2000, 0, minDedupRetryWindowMs)); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	const grantedMs, ttl = int64(1_000_000), int64(3000)
+	mustGrant(t, u, ns, coll, "L", 100, grantedMs, ttl)
+	// the lease stores the REPLICATED reclaim deadline = grantedMs + ttl + 3*skew + maxPause
+	l, found, _ := u.getLease(ns, coll, []byte("L"))
+	if !found {
+		t.Fatal("lease row missing")
+	}
+	wantReclaim := grantedMs + ttl + 3*maxClockSkewMs + 2000
+	if l.ReclaimNotBeforeMs != wantReclaim || l.GrantedMs != grantedMs || l.ExpiresMs != grantedMs+ttl {
+		t.Fatalf("lease timing = granted %d reclaim %d expires %d, want %d / %d / %d",
+			l.GrantedMs, l.ReclaimNotBeforeMs, l.ExpiresMs, grantedMs, wantReclaim, grantedMs+ttl)
+	}
+	// the shard-level expiry index carries a be(reclaim)|chunk(ns)|chunk(coll)|leaseID entry (value-less)
+	if op, ok := findOp(u, u.s.budExpKey(wantReclaim, ns, coll, []byte("L"))); !ok || op.Delete {
+		t.Fatalf("expiry index entry not written (ok=%v delete=%v)", ok, op.Delete)
+	}
+}
+
+// ttl==0 (non-expiring, Stage-1 behavior) writes NO expiry-index entry and leaves the timing fields 0.
+func TestUntimedGrantWritesNoExpiryIndex(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmd(ns, coll, 1000))
+	mustGrant(t, u, ns, coll, "L", 100, 1_000_000, 0)
+	l, _, _ := u.getLease(ns, coll, []byte("L"))
+	if l.ReclaimNotBeforeMs != 0 || l.ExpiresMs != 0 {
+		t.Fatalf("non-timed lease has timing: reclaim=%d expires=%d", l.ReclaimNotBeforeMs, l.ExpiresMs)
+	}
+	// scan u.ops for ANY subBudExp write
+	space := u.s.budExpSpace()
+	for _, op := range u.ops {
+		if len(op.Key) >= len(space) && bytes.Equal(op.Key[:len(space)], space) {
+			t.Fatalf("non-timed grant wrote an expiry index entry: %x", op.Key)
+		}
+	}
+}
+
+// Gap#2: a retried Draw (same leaseID) hits the idempotency branch and must echo BYTE-IDENTICAL timing
+// reconstructed from the stored lease + pool, NOT the retry's grantedMs/ttl (which apply ignores).
+func TestIdempotentTimedGrantEchoesSameTiming(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmdFull(ns, coll, 1000, 0, 1000, maxClockSkewMs, 2000, 0, minDedupRetryWindowMs))
+	r1 := mustGrant(t, u, ns, coll, "L", 100, 1_000_000, 3000)
+	r2 := mustGrant(t, u, ns, coll, "L", 100, 9_999_999, 7777) // retry: different grantedMs/ttl must be ignored
+	if !bytes.Equal(r1.Data, r2.Data) {
+		t.Fatalf("idempotent timing echo not byte-identical:\n r1=%x\n r2=%x", r1.Data, r2.Data)
+	}
+	g := decodeGrantResult(r2.Data)
+	if g.Granted != 100 || g.GrantedMs != 1_000_000 || g.TTLMs != 3000 || g.SelfGuardMs != maxClockSkewMs || g.MaxPauseMs != 2000 {
+		t.Fatalf("echo = %+v, want granted100 granted@1e6 ttl3000 guard500 pause2000", g)
+	}
+}
+
 // --- Task 2a.2: token-bucket pacing ---
 
 func TestApplyBudGrantPaced(t *testing.T) {
