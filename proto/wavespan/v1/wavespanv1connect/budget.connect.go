@@ -45,6 +45,9 @@ const (
 	// BudgetServiceBudgetReturnProcedure is the fully-qualified name of the BudgetService's
 	// BudgetReturn RPC.
 	BudgetServiceBudgetReturnProcedure = "/wavespan.v1.BudgetService/BudgetReturn"
+	// BudgetServiceBudgetReconcileProcedure is the fully-qualified name of the BudgetService's
+	// BudgetReconcile RPC.
+	BudgetServiceBudgetReconcileProcedure = "/wavespan.v1.BudgetService/BudgetReconcile"
 	// BudgetServiceBudgetStatProcedure is the fully-qualified name of the BudgetService's BudgetStat
 	// RPC.
 	BudgetServiceBudgetStatProcedure = "/wavespan.v1.BudgetService/BudgetStat"
@@ -62,6 +65,11 @@ type BudgetServiceClient interface {
 	BudgetReport(context.Context, *connect.Request[v1.BudgetReportRequest]) (*connect.Response[v1.BudgetStatResult], error)
 	// BudgetReturn releases a lease's unspent remainder and deletes the lease row.
 	BudgetReturn(context.Context, *connect.Request[v1.BudgetReturnRequest]) (*connect.Response[v1.BudgetStatResult], error)
+	// BudgetReconcile re-credits a budget to its authoritative external Σ-acked spend, recovering the
+	// headroom a forced lease expiry stranded as underspend — without overspend (§3.8). Controller/admin
+	// surface only; not exposed on the read-only HTTP gateway. The result's recovered_units carries the
+	// recovered amount (old spent - new spent).
+	BudgetReconcile(context.Context, *connect.Request[v1.BudgetReconcileRequest]) (*connect.Response[v1.BudgetStatResult], error)
 	// BudgetStat reads the pool accounting (bounded-stale unless linearizable).
 	BudgetStat(context.Context, *connect.Request[v1.BudgetStatRequest]) (*connect.Response[v1.BudgetStatResult], error)
 }
@@ -101,6 +109,12 @@ func NewBudgetServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(budgetServiceMethods.ByName("BudgetReturn")),
 			connect.WithClientOptions(opts...),
 		),
+		budgetReconcile: connect.NewClient[v1.BudgetReconcileRequest, v1.BudgetStatResult](
+			httpClient,
+			baseURL+BudgetServiceBudgetReconcileProcedure,
+			connect.WithSchema(budgetServiceMethods.ByName("BudgetReconcile")),
+			connect.WithClientOptions(opts...),
+		),
 		budgetStat: connect.NewClient[v1.BudgetStatRequest, v1.BudgetStatResult](
 			httpClient,
 			baseURL+BudgetServiceBudgetStatProcedure,
@@ -112,11 +126,12 @@ func NewBudgetServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // budgetServiceClient implements BudgetServiceClient.
 type budgetServiceClient struct {
-	budgetDefine *connect.Client[v1.BudgetDefineRequest, v1.BudgetStatResult]
-	budgetGrant  *connect.Client[v1.BudgetGrantRequest, v1.BudgetGrantResult]
-	budgetReport *connect.Client[v1.BudgetReportRequest, v1.BudgetStatResult]
-	budgetReturn *connect.Client[v1.BudgetReturnRequest, v1.BudgetStatResult]
-	budgetStat   *connect.Client[v1.BudgetStatRequest, v1.BudgetStatResult]
+	budgetDefine    *connect.Client[v1.BudgetDefineRequest, v1.BudgetStatResult]
+	budgetGrant     *connect.Client[v1.BudgetGrantRequest, v1.BudgetGrantResult]
+	budgetReport    *connect.Client[v1.BudgetReportRequest, v1.BudgetStatResult]
+	budgetReturn    *connect.Client[v1.BudgetReturnRequest, v1.BudgetStatResult]
+	budgetReconcile *connect.Client[v1.BudgetReconcileRequest, v1.BudgetStatResult]
+	budgetStat      *connect.Client[v1.BudgetStatRequest, v1.BudgetStatResult]
 }
 
 // BudgetDefine calls wavespan.v1.BudgetService.BudgetDefine.
@@ -139,6 +154,11 @@ func (c *budgetServiceClient) BudgetReturn(ctx context.Context, req *connect.Req
 	return c.budgetReturn.CallUnary(ctx, req)
 }
 
+// BudgetReconcile calls wavespan.v1.BudgetService.BudgetReconcile.
+func (c *budgetServiceClient) BudgetReconcile(ctx context.Context, req *connect.Request[v1.BudgetReconcileRequest]) (*connect.Response[v1.BudgetStatResult], error) {
+	return c.budgetReconcile.CallUnary(ctx, req)
+}
+
 // BudgetStat calls wavespan.v1.BudgetService.BudgetStat.
 func (c *budgetServiceClient) BudgetStat(ctx context.Context, req *connect.Request[v1.BudgetStatRequest]) (*connect.Response[v1.BudgetStatResult], error) {
 	return c.budgetStat.CallUnary(ctx, req)
@@ -156,6 +176,11 @@ type BudgetServiceHandler interface {
 	BudgetReport(context.Context, *connect.Request[v1.BudgetReportRequest]) (*connect.Response[v1.BudgetStatResult], error)
 	// BudgetReturn releases a lease's unspent remainder and deletes the lease row.
 	BudgetReturn(context.Context, *connect.Request[v1.BudgetReturnRequest]) (*connect.Response[v1.BudgetStatResult], error)
+	// BudgetReconcile re-credits a budget to its authoritative external Σ-acked spend, recovering the
+	// headroom a forced lease expiry stranded as underspend — without overspend (§3.8). Controller/admin
+	// surface only; not exposed on the read-only HTTP gateway. The result's recovered_units carries the
+	// recovered amount (old spent - new spent).
+	BudgetReconcile(context.Context, *connect.Request[v1.BudgetReconcileRequest]) (*connect.Response[v1.BudgetStatResult], error)
 	// BudgetStat reads the pool accounting (bounded-stale unless linearizable).
 	BudgetStat(context.Context, *connect.Request[v1.BudgetStatRequest]) (*connect.Response[v1.BudgetStatResult], error)
 }
@@ -191,6 +216,12 @@ func NewBudgetServiceHandler(svc BudgetServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(budgetServiceMethods.ByName("BudgetReturn")),
 		connect.WithHandlerOptions(opts...),
 	)
+	budgetServiceBudgetReconcileHandler := connect.NewUnaryHandler(
+		BudgetServiceBudgetReconcileProcedure,
+		svc.BudgetReconcile,
+		connect.WithSchema(budgetServiceMethods.ByName("BudgetReconcile")),
+		connect.WithHandlerOptions(opts...),
+	)
 	budgetServiceBudgetStatHandler := connect.NewUnaryHandler(
 		BudgetServiceBudgetStatProcedure,
 		svc.BudgetStat,
@@ -207,6 +238,8 @@ func NewBudgetServiceHandler(svc BudgetServiceHandler, opts ...connect.HandlerOp
 			budgetServiceBudgetReportHandler.ServeHTTP(w, r)
 		case BudgetServiceBudgetReturnProcedure:
 			budgetServiceBudgetReturnHandler.ServeHTTP(w, r)
+		case BudgetServiceBudgetReconcileProcedure:
+			budgetServiceBudgetReconcileHandler.ServeHTTP(w, r)
 		case BudgetServiceBudgetStatProcedure:
 			budgetServiceBudgetStatHandler.ServeHTTP(w, r)
 		default:
@@ -232,6 +265,10 @@ func (UnimplementedBudgetServiceHandler) BudgetReport(context.Context, *connect.
 
 func (UnimplementedBudgetServiceHandler) BudgetReturn(context.Context, *connect.Request[v1.BudgetReturnRequest]) (*connect.Response[v1.BudgetStatResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.BudgetService.BudgetReturn is not implemented"))
+}
+
+func (UnimplementedBudgetServiceHandler) BudgetReconcile(context.Context, *connect.Request[v1.BudgetReconcileRequest]) (*connect.Response[v1.BudgetStatResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.BudgetService.BudgetReconcile is not implemented"))
 }
 
 func (UnimplementedBudgetServiceHandler) BudgetStat(context.Context, *connect.Request[v1.BudgetStatRequest]) (*connect.Response[v1.BudgetStatResult], error) {
