@@ -134,10 +134,11 @@ lastRefillMs= max(lastRefillMs, grantedMs)               // monotone forward onl
 grant       = min(amount, tokens, available)             // STRICT: paced AND capacity-bounded
 tokens     -= grant
 ```
-`maxElapsedMs` is computed **per-budget** as `k * (burst/rate) * 1000` (a few multiples `k` of the time to
-refill a full burst). Then `rate * maxElapsedMs = k * burst * 1000` — **rate-independent** — so with `burst`
-admission-bounded (`burst < 2^62/(1000k)`) the product can never overflow int64 regardless of how large
-`rate` is. (A single GLOBAL `maxElapsedMs` constant would NOT bound the product for arbitrary `rate`, M-2 —
+`maxElapsedMs` is computed **per-budget** as `(k * burst * 1000) / rate` (a few multiples `k` of the time to
+refill a full burst). **Multiply before dividing** — `k*(burst/rate)*1000` integer-truncates to 0 when
+`rate > burst`, wedging pacing at 0 grants forever (plan I4). Then `rate * maxElapsedMs ≈ k * burst * 1000` —
+**rate-independent** — so with `burst` admission-bounded (`burst < 2^62/(1000k)`) the product can never
+overflow int64 regardless of how large `rate` is. (A single GLOBAL `maxElapsedMs` constant would NOT bound the product for arbitrary `rate`, M-2 —
 alternatively compute `accrued` through a 128-bit intermediate.) `rate == 0` ⇒ pacing disabled
 (Stage-1 behavior preserved: `tokens` ignored, grant = `min(amount, available)`). No wall-clock in apply. The
 grant is still one Raft entry; idempotent retry returns the existing lease.
@@ -167,15 +168,19 @@ non-expiring (ttl=0 ⇒ no expiry-index entry, no reclaim — unchanged).
 
 ### 3.4 New sub-scopes (reserved in Stage 1)
 ```
-scopeBudExp  byte = 0x07 // be(reclaimNotBeforeMs) | <leaseID> -> empty   (reclaim-ordered sweep index)
-scopeBudTomb byte = 0x08 // <leaseID> -> settled tombstone {finalSpent, reason}  (single-shot settlement)
+// EXPIRY INDEX IS SHARD-LEVEL (plan I1), NOT a collScope sub-scope — sweepOnce scans it shard-wide like
+// the TTL index, so it must embed ns/coll:
+//   prefix|subBudExp(prefix-level 0x05)|be(reclaimNotBeforeMs)|chunk(ns)|chunk(coll)|leaseID -> empty
+//   prefix|subBudTombGC(prefix-level 0x06)|be(gcDueMs)|chunk(ns)|chunk(coll)|leaseID -> empty  (tombstone GC)
+scopeBudTomb byte = 0x07 // collScope: <leaseID> -> settled tombstone {finalSpent, reason} (point lookup by leaseID)
 ```
 Mirror `ttl.go`'s due-ordered index + the existing `scanDue` pattern.
 
 ### 3.5 `opBudExpire` + a second pass in `sweepOnce`
-A `budExpiryDueQuery{NowMs, Limit}` Lookup scans `scopeBudExp` for `be(reclaimNotBeforeMs) ≤ sweepNowMs`
-(exact copy of TTL `scanDue`). The leader (already gated in `sweepOnce`) stamps `sweepNowMs` and proposes
-`opBudExpire(leaseID, sweepNowMs)` per due lease. `applyBudExpire`:
+A `budExpiryDueQuery{NowMs, Limit}` Lookup scans the **shard-level `subBudExp`** index for
+`be(reclaimNotBeforeMs) ≤ sweepNowMs`, returning `[]dueBudLease{NS,Coll,LeaseID,ReclaimMs}` (exact analogue of
+TTL `scanDue`/`ttlDueQuery`). The leader (already gated in `sweepOnce`) stamps `sweepNowMs` and proposes
+`opBudExpire(ns, coll, leaseID, sweepNowMs)` per due lease. `applyBudExpire`:
 1. **Tombstone check first** — if a tombstone exists, no-op (idempotent, §16 edit #3 terminal-symmetric).
 2. Re-read the lease; if absent (already returned) → write/keep tombstone, delete the expiry-index entry, done.
 3. Re-check `sweepNowMs ≥ lr.ReclaimNotBeforeMs` (a renewed/re-drawn lease has a later value → skip).

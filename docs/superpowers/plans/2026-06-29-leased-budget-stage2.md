@@ -181,9 +181,15 @@ so it can't overflow. Add `TestPacingRateAboveBurst` (rate=200, burst=100 → pa
 **New helpers (M5):** `min64`/`max64`/`clampI64`/`pacingMaxElapsedMs` do NOT exist in `internal/collections` —
 add them in `budget.go` (small, unexported).
 
-**Return widening (M1):** `Collections.BudgetGrant` must surface the internally-stamped `grantedMs` (the 2c.1
-gRPC result echoes it). Widen its signature to also return `grantedMs int64` (or a small `grantResult` struct
-carrying granted/ttl/selfGuard/maxPause) — update the Stage-1 callers/handler accordingly.
+**Return widening + result `Data` codec (M1 / Gap#1).** The effective timing is known only inside apply
+(`grantedMs` is leader-stamped; in 2b `ttl` resolves from the pool, `selfGuard`/`maxPause` ARE pool config),
+so it must ride back to the caller through `ProposeResult.Data`. Replace the Stage-1 8-byte
+`encodeGrant(amount)` with a versioned `encodeGrantResult(...)`: in 2a it carries `amount(8)|grantedMs(8)`; in
+2b.2 it widens to `amount(8)|grantedMs(8)|ttl(8)|selfGuard(8)|maxPause(8)`. `Collections.BudgetGrant` decodes
+it and returns a `grantResult{Granted, GrantedMs, TTLMs, SelfGuardMs, MaxPauseMs int64}` struct (the handler
+populates the gRPC `BudgetGrantResult` echo from it, 2c.1). Update the Stage-1 callers (they ignore the extra
+fields). Keep the sentinel-in-`Data` cases (`budNoCapacity`/`budNoBudget`/`budSettled`) distinguishable from a
+success `Data` (e.g. a length/first-byte tag) so the typed API doesn't misparse them.
 
 **Val guard (M4):** the Stage-1 `applyBudGrant` length guard `len(Val) < 8` becomes `< 24` for the new
 `amount|grantedMs|ttlOverride|holder` layout (8*3 fixed bytes before the holder rest).
@@ -208,10 +214,18 @@ come from config (echoed on the result).
   `BudgetDefineRequest` proto with these (M3 — so the SDK `BudgetClient.Define` sets them over the wire; regen
   stubs, server + sdk/go gens, zero drift).
 - [ ] **Admission** in `applyBudInit` (new sentinel `budBadParam`): reject `rate < 0`; `burst < 0`;
-  `burst > pacingBurstCeil` (so `pacingMaxElapsedMs` can't overflow); **`rate > 0 && selfGuardMs < maxClockSkewMs`**
-  (I2); **`defaultTtlMs > 0 && dedupRetryWindowMs < minDedupRetryWindowMs`** (I3 — `minDedupRetryWindowMs`
-  defaults to the cluster RPC-retry budget, ~30s, NOT `skew+maxPause`; reject below it loudly). Map
-  `budBadParam → ErrUnsupportedMode`-style error in the typed API + handler.
+  `burst > pacingBurstCeil` (so `pacingMaxElapsedMs` can't overflow); **`defaultTtlMs > 0 && selfGuardMs <
+  maxClockSkewMs`** (I2 — the floor is gated on **TTL**, NOT rate: `self_guard` protects the expiry/reclaim
+  window, which is orthogonal to pacing; an expiring-but-unpaced budget with `self_guard<500` would collapse
+  the §2 `3*skew` margin → H-S1 overspend); **`defaultTtlMs > 0 && dedupRetryWindowMs < minDedupRetryWindowMs`**
+  (I3 — `minDedupRetryWindowMs` defaults to the cluster RPC-retry budget, ~30s, NOT `skew+maxPause`; reject
+  below it loudly). Map `budBadParam → ErrUnsupportedMode`-style error in the typed API + handler.
+- [ ] **AUTHORITATIVE grant-apply enforcement (I2).** Because a per-grant `ttlOverride` (2a.2) can make ANY
+  budget timed, the Define-time check above is necessary but NOT sufficient. In `applyBudGrant`, after
+  resolving `ttl = ttlOverride>0 ? ttlOverride : pool.DefaultTtlMs`: if `ttl > 0 && pool.SelfGuardMs <
+  maxClockSkewMs`, reject with `budBadParam` (never write a timed lease whose guard band is too small to be
+  safe). This is the single authoritative gate; the Define check is just an early, friendlier reject. Unify —
+  2b.2 must NOT add a second/different self_guard gate. Test `TestTimedGrantRejectsSmallSelfGuard`.
 - [ ] Tests: `TestBudgetDefineRejectsOverflowBurst`, `TestBudgetDefineRejectsLowSelfGuard`,
   `TestBudgetDefineRejectsLowDedupWindow`. Commit `feat(collections): per-budget pacing+timing config + admission`.
 
@@ -247,15 +261,25 @@ shard-level `subBudExp`.
 
 **I2 — `maxClockSkewMs` source.** The reclaim formula is money-load-bearing. Add
 `const maxClockSkewMs int64 = 500` in `budget.go` (the HLC mesh bound, matching `internal/version/hlc.go`'s
-default), and have `applyBudInit`/the grant path admit `self_guard ≥ maxClockSkewMs`.
+default). The `self_guard ≥ maxClockSkewMs` enforcement lives in 2a.3 (authoritative grant-apply gate on
+resolved `ttl > 0`) — do NOT add a second gate here; just consume the const in the `reclaimNotBeforeMs`
+formula.
 
 - [ ] When the grant carries `ttl > 0`, `applyBudGrant` computes
-  `reclaimNotBefore = grantedMs + ttl + 3*maxClockSkewMs + maxPause` (§2), stores `GrantedMs/ReclaimNotBeforeMs/
-  ExpiresMs(=grantedMs+ttl)` on the lease, and writes the **shard-level** `subBudExp` index entry above (mirror
-  `ttl.go`'s due-index writer). `ttl == 0` ⇒ no index entry (non-expiring; Stage-1 behavior). Add
-  `budExpKey(reclaimMs, ns, coll, leaseID)` at the prefix level + a `dueBudLease{NS,Coll,LeaseID,ReclaimMs}`
-  type. Test `TestGrantWritesExpiryIndex` (scan the shard-level index, assert the ns/coll-tagged entry + the
-  stored `ReclaimNotBeforeMs`).
+  `reclaimNotBefore = grantedMs + ttl + 3*maxClockSkewMs + maxPause` (§2; `maxPause = pool.MaxPauseMs`), stores
+  `GrantedMs/ReclaimNotBeforeMs/ExpiresMs(=grantedMs+ttl)` on the lease, widens the success `Data` to echo
+  `amount|grantedMs|ttl|selfGuard|maxPause` (Gap#1, 2a.2), and writes the **shard-level** `subBudExp` index
+  entry above (mirror `ttl.go`'s due-index writer). `ttl == 0` ⇒ no index entry (non-expiring; Stage-1
+  behavior). Add `budExpKey(reclaimMs, ns, coll, leaseID)` at the prefix level + a
+  `dueBudLease{NS,Coll,LeaseID,ReclaimMs}` type. Test `TestGrantWritesExpiryIndex` (scan the shard-level index,
+  assert the ns/coll-tagged entry + the stored `ReclaimNotBeforeMs`).
+- [ ] **Idempotent-retry echo (Gap#2 — load-bearing for 2c.4's exactly-once refill).** A retried `Draw` reuses
+  a stable `leaseID`, so it hits `applyBudGrant`'s idempotency branch (returns the existing lease). That branch
+  must **reconstruct and echo the SAME effective timing**, not just the amount: `grantedMs`/`ttl(=ExpiresMs−
+  GrantedMs)` from the stored `leaseRec`, `selfGuard`/`maxPause` from the pool — produce the identical widened
+  `Data`. Otherwise a retry returns no timing and the node's freshness gate + deadline stamping break exactly
+  on the path 2c.4 relies on. Test `TestIdempotentTimedGrantEchoesSameTiming` (grant timed lease, retry same
+  leaseID → byte-identical timing echo).
 - [ ] Commit `feat(collections): timed grant writes reclaim deadline + shard-level expiry index`.
 
 ## Task 2b.3: tombstone scope (`scopeBudTomb 0x07`, collScope) + grant tombstone branch + settlement symmetry
