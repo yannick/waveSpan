@@ -835,6 +835,27 @@ New `tests/harness/workloads/budget/` + `checker/budget.go`:
 >   table is at `0x06`. `decodePool` tolerates trailing bytes so later stages append fields with no
 >   snapshot migration. Pacing, expiry, recall, hierarchy, and RELAXED remain unimplemented (Stages 2–4).
 
+> **Implementation status (2026-06-29): Stage 2 IMPLEMENTED** per
+> `docs/superpowers/plans/2026-06-29-leased-budget-stage2.md` (sub-stages 2a–2e). Shipped: server-side
+> token-bucket pacing (leader-stamped `grantedMs`, deterministic apply), §16-hardened **timed lease expiry +
+> auto-reclaim**, settled tombstones with cumulative-per-lease reporting, and the node lease cache in BOTH
+> SDKs (`sdk/go`, `wavespan-sdk`). RECALL/FREEZE/`pendingReclaim` and `BudgetWatch` (listed in the sketch
+> below) were DEFERRED to Stage 3 — Stage 2 stays 3-term. The §16 holes closed for the single-cluster case:
+> - **Edits 1/2/3/6 closed.** #1 the grantor reclaims LATE on a **replicated logical deadline**
+>   `reclaimNotBeforeMs = grantedMs + ttl + 3·maxClockSkewMs + maxPause` (survives leader change, never a live
+>   clock in apply); #2 the holder **freshness gate** rejects a grant whose transit exceeded `self_guard`;
+>   #3 settlement is **terminal-symmetric** via a tombstone (Return/Expire idempotent, single settlement);
+>   #6 the holder **self-fences** beyond the pause budget, dropping the lease WITHOUT a report.
+> - **Debit-on-forced-expiry is the money-safety crux (edit #9).** Forced expiry of an un-attested holder
+>   **DEBITS** the whole remainder to `spent` (nothing returns to `available`); only a holder-attested
+>   graceful Return **credits**. This is what bounds STRICT overspend in single-cluster: a holder never serves
+>   more than a chunk's granted amount, so `Σ acked ≤ cap` holds as long as un-attested budget is never
+>   credited back. The §7 soak's `budget-strict-cap` checker asserts exactly this on the holders' ground-truth
+>   deliveries (the equality probe alone cannot catch a credit-instead-of-debit regression — C2).
+> - **CLOCK_BOOTTIME is load-bearing (C1).** On Linux the node cache MUST read `CLOCK_BOOTTIME` for the
+>   self-fence/stop deadline; `time.Now()`'s `CLOCK_MONOTONIC` freezes during VM suspend and silently breaks
+>   the fence (the §7 suspend nemesis + the `CLOCK_MONOTONIC` negative control prove this).
+
 **Stage 1 — minimal atomic conditional-deduct primitive.** Add `opLeaseGrant` as a `compare-and-decrement` on a single budget field (check `available ≥ amount && epoch == current`, decrement, emit lease) committed in one Raft entry — reusing `applyHIncrInt`'s shape and the existing dedup. No hierarchy, no pacing, no recall: just exact, idempotent, leader-routed escrow draws within one cluster. This alone replaces the hot-counter `HIncrBy` for single-cluster pacing #2 and is independently shippable/testable.
 
 **Stage 2 — full datatype, single cluster.** Promote to the full `typeBudget` with `scopeBudState`/`scopeBudLease`/`scopeBudExp`/`scopeBudTomb`, token-bucket pacing, lease-expiry sweep, RECALL/FREEZE with `pendingReclaim`, settled tombstones, cumulative-per-lease reporting, the node lease cache, and `BudgetWatch`.
