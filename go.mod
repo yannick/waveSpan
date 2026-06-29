@@ -72,4 +72,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260622175928-b703f567277d // indirect
 )
 
-replace wavesdb v0.0.1 => ../wavesdb
+replace wavesdb v0.0.1 => ../wavesdb-backup
