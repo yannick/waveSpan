@@ -282,6 +282,13 @@ func expireCmd(ns, coll []byte, leaseID string, sweepNowMs int64) command {
 	putI64(v, sweepNowMs)
 	return command{Op: opBudExpire, NS: ns, Coll: coll, Items: []item{{Key: []byte(leaseID), Val: v}}}
 }
+
+// reconcileCmd builds a controller-proposed Σ-acked reconcile carrying the authoritative trueAckedUnits.
+func reconcileCmd(ns, coll []byte, trueAcked int64) command {
+	v := make([]byte, 8)
+	putI64(v, trueAcked)
+	return command{Op: opBudReconcile, NS: ns, Coll: coll, Items: []item{{Key: nil, Val: v}}}
+}
 func decodeGrant(b []byte) int64 {
 	if len(b) < 8 {
 		return -1
@@ -508,6 +515,156 @@ func TestSpentReportedGrowsOnReturnFold(t *testing.T) {
 	p, _, _ := u.getPool(ns, coll)
 	if p.Spent != 70 || p.SpentReported != 70 {
 		t.Fatalf("after return-fold: spent=%d spentReported=%d, want 70/70", p.Spent, p.SpentReported)
+	}
+}
+
+// --- §3.8: external Σ-acked reconciliation (BudgetReconcile) — recover forced-expiry stranding ---
+
+// reconciledRecovered decodes the int64 recovered amount an applyBudReconcile success returns in Data.
+func reconciledRecovered(t *testing.T, r ProposeResult) int64 {
+	t.Helper()
+	if len(r.Data) != 8 {
+		t.Fatalf("reconcile result Data = %x, want 8-byte recovered int64", r.Data)
+	}
+	return getI64(r.Data)
+}
+
+// TestReconcileRecoversStranding is the canonical recovery: a forced expiry pessimistically DEBITS the
+// whole remainder to spent (un-attested holder), stranding the genuinely-unspent portion as underspend.
+// The controller's authoritative Σ-acked total (30) re-credits spent down to its true value, recovering 70
+// of stranded headroom back to available — WITHOUT overspend. The conservation invariant still holds.
+func TestReconcileRecoversStranding(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	timedBudget(u, ns, coll, 1000, 2000)
+	mustGrant(t, u, ns, coll, "L", 100, 1000, 3000)
+	if _, err := u.applyBudReport(reportCmd(ns, coll, "L", 30)); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	// forced expiry DEBITS the un-attested 70 into spent: spent=100, available=900, SpentReported stays 30.
+	if _, err := u.applyBudExpire(expireCmd(ns, coll, "L", 9_999_999)); err != nil {
+		t.Fatalf("expire: %v", err)
+	}
+	p, _, _ := u.getPool(ns, coll)
+	if p.Spent != 100 || p.Available != 900 || p.LeasedOut != 0 || p.SpentReported != 30 {
+		t.Fatalf("post-expire = spent%d avail%d leased%d reported%d, want 100/900/0/30", p.Spent, p.Available, p.LeasedOut, p.SpentReported)
+	}
+	// reconcile with the external ground-truth acked total (30): re-credit spent to 30, recover 70.
+	r, err := u.applyBudReconcile(reconcileCmd(ns, coll, 30))
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := reconciledRecovered(t, r); got != 70 {
+		t.Fatalf("recovered = %d, want 70 (100 booked - 30 true)", got)
+	}
+	p, _, _ = u.getPool(ns, coll)
+	assertInv(t, p) // budCheck.OK: cap == available+leasedOut+spent, no bucket out of range
+	if p.Spent != 30 || p.Available != 970 || p.LeasedOut != 0 {
+		t.Fatalf("post-reconcile = spent%d avail%d leased%d, want 30/970/0", p.Spent, p.Available, p.LeasedOut)
+	}
+}
+
+// TestReconcileClampsFloorAtSpentReported pins the SAFETY floor: a trueAcked BELOW the provably-reported
+// spend is clamped UP to SpentReported — reconcile can never under-credit below what holders attested
+// (which would let already-reported-spent budget be granted and served again).
+func TestReconcileClampsFloorAtSpentReported(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	timedBudget(u, ns, coll, 1000, 2000)
+	mustGrant(t, u, ns, coll, "L", 100, 1000, 3000)
+	if _, err := u.applyBudReport(reportCmd(ns, coll, "L", 40)); err != nil { // attest 40
+		t.Fatalf("report: %v", err)
+	}
+	if _, err := u.applyBudExpire(expireCmd(ns, coll, "L", 9_999_999)); err != nil { // DEBIT -> spent=100
+		t.Fatalf("expire: %v", err)
+	}
+	// controller (wrongly/stale) claims only 10 acked — below the attested floor of 40. Clamp UP to 40.
+	r, err := u.applyBudReconcile(reconcileCmd(ns, coll, 10))
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := reconciledRecovered(t, r); got != 60 { // 100 - clamp(10,40,1000)=40 -> recovered 60
+		t.Fatalf("recovered = %d, want 60 (clamped to SpentReported floor 40)", got)
+	}
+	p, _, _ := u.getPool(ns, coll)
+	assertInv(t, p)
+	if p.Spent != 40 || p.Available != 960 {
+		t.Fatalf("post-reconcile = spent%d avail%d, want spent40 avail960 (floor at SpentReported)", p.Spent, p.Available)
+	}
+}
+
+// TestReconcileCannotExceedCap pins the Cap ceiling: a trueAcked ABOVE cap is clamped to cap (spent can
+// never exceed the pool). With no outstanding leases, available lands at 0 and conservation holds.
+func TestReconcileCannotExceedCap(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmd(ns, coll, 1000))
+	// grant + report + return everything so leasedOut=0, then reconcile with an absurd acked total.
+	mustGrant(t, u, ns, coll, "L", 100, 0, 0)
+	if _, err := u.applyBudReturn(returnCmd(ns, coll, "L", 100)); err != nil { // spent=100, leased=0, avail=900
+		t.Fatalf("return: %v", err)
+	}
+	r, err := u.applyBudReconcile(reconcileCmd(ns, coll, 5000)) // 5000 > cap 1000
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := reconciledRecovered(t, r); got != 100-1000 { // recovered = 100 - clamp(5000,_,1000)=1000 -> -900
+		t.Fatalf("recovered = %d, want -900 (acked clamped to cap raises spent)", got)
+	}
+	p, _, _ := u.getPool(ns, coll)
+	assertInv(t, p)
+	if p.Spent != 1000 || p.Available != 0 || p.LeasedOut != 0 {
+		t.Fatalf("post-reconcile = spent%d avail%d leased%d, want 1000/0/0 (clamped at cap)", p.Spent, p.Available, p.LeasedOut)
+	}
+}
+
+// TestReconcileWithOutstandingLeasesNeverNegativeAvailable pins the never-negative rule: when the
+// reconciled spend plus the still-outstanding leasedOut exceeds cap, Available is floored at 0 (never
+// negative) and LeasedOut is NOT lowered — the transient over-commit drains as those leases settle.
+func TestReconcileWithOutstandingLeasesNeverNegativeAvailable(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmd(ns, coll, 1000))
+	// hold 600 out on a live lease (leasedOut=600, available=400, spent=0).
+	mustGrant(t, u, ns, coll, "L", 600, 0, 0)
+	p, _, _ := u.getPool(ns, coll)
+	if p.LeasedOut != 600 || p.Available != 400 {
+		t.Fatalf("pre-reconcile = leased%d avail%d, want 600/400", p.LeasedOut, p.Available)
+	}
+	// controller's external ledger says 700 acked already (holders served but never reported). target=700;
+	// 700 + 600 leasedOut = 1300 > cap 1000 -> available would be -300, must floor at 0 (over-commit drains).
+	if _, err := u.applyBudReconcile(reconcileCmd(ns, coll, 700)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	p, _, _ = u.getPool(ns, coll)
+	if p.Available != 0 {
+		t.Fatalf("available = %d, want 0 (floored, never negative)", p.Available)
+	}
+	if p.LeasedOut != 600 {
+		t.Fatalf("leasedOut = %d, want 600 (over-commit left to drain, not lowered)", p.LeasedOut)
+	}
+	if p.Spent != 700 {
+		t.Fatalf("spent = %d, want 700 (reconciled to true acked)", p.Spent)
+	}
+	if p.Available < 0 {
+		t.Fatal("available went negative — the never-negative rule was violated")
+	}
+}
+
+// TestReconcileNoBudget pins that reconcile against a pool that does not exist returns budNoBudget (B9),
+// not an error and not a stray pool.
+func TestReconcileNoBudget(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("nope")
+	r, err := u.applyBudReconcile(reconcileCmd(ns, coll, 50))
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if !bytes.Equal(r.Data, budNoBudget) {
+		t.Fatalf("reconcile no-budget Data = %q, want budNoBudget", r.Data)
+	}
+	if _, found, _ := u.getPool(ns, coll); found {
+		t.Fatal("reconcile created a stray pool")
 	}
 }
 
@@ -1053,6 +1210,80 @@ func TestBudgetEndToEnd(t *testing.T) {
 	}
 	if st.Available+st.LeasedOut+st.Spent != st.Cap {
 		t.Fatalf("INV violated through Raft: %+v", st)
+	}
+}
+
+// TestBudgetReconcileEndToEnd drives the §3.8 reconcile path through Raft: a timed lease is force-expired
+// (DEBIT strands the unspent remainder), then the controller's typed BudgetReconcile re-credits spent to
+// the external Σ-acked total — recovering the stranded headroom, with the conservation invariant (budCheck.OK)
+// still holding through the full consensus path, and the recovered amount returned.
+func TestBudgetReconcileEndToEnd(t *testing.T) {
+	mem := storage.NewMemStore()
+	t.Cleanup(func() { _ = mem.Close() })
+	addr := freeAddr(t)
+	m := newMgr(t, t.TempDir(), addr, mem)
+	if err := m.StartShard(2, 1, map[uint64]string{1: addr}, false); err != nil {
+		t.Fatalf("StartShard: %v", err)
+	}
+	defer m.Stop()
+	c := New(m, SingleShardDirectory(2))
+	waitReady(t, c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ns, coll := []byte("pacing"), []byte("li/reconcile")
+
+	// timed budget; grant 600, attest 100, then let the lease force-expire (DEBIT the unreported 500).
+	cfg := BudgetConfig{Rate: 1_000_000, Burst: 1000, SelfGuardMs: maxClockSkewMs, MaxPauseMs: 0,
+		DefaultTTLMs: 600, DedupRetryWindowMs: minDedupRetryWindowMs}
+	if err := c.BudgetDefine(ctx, ns, coll, 1000, modeStrict, cfg); err != nil {
+		t.Fatalf("define: %v", err)
+	}
+	if _, err := c.BudgetGrant(ctx, ns, coll, []byte("node-A"), 600, []byte("lease-R"), 0); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+	if err := c.BudgetReport(ctx, ns, coll, []byte("lease-R"), []byte("node-A"), 100); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	// wait for the leader's sweep to force-expire the lease (DEBIT): leasedOut -> 0, spent -> 600.
+	deadline := time.Now().Add(20 * time.Second)
+	var st BudStat
+	for {
+		st, _ = c.BudgetStat(ctx, ns, coll, true)
+		if st.LeasedOut == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("lease never auto-expired (leased=%d spent=%d)", st.LeasedOut, st.Spent)
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	if st.Spent != 600 || st.Available != 400 || st.SpentReported != 100 {
+		t.Fatalf("post-expire = spent%d avail%d reported%d, want 600/400/100", st.Spent, st.Available, st.SpentReported)
+	}
+	// controller reconciles to the external ground-truth acked total (250): recover 600-250 = 350.
+	recovered, err := c.BudgetReconcile(ctx, ns, coll, 250)
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if recovered != 350 {
+		t.Fatalf("recovered = %d, want 350 (600 debited - 250 true acked)", recovered)
+	}
+	st, _ = c.BudgetStat(ctx, ns, coll, true)
+	if st.Spent != 250 || st.Available != 750 || st.LeasedOut != 0 {
+		t.Fatalf("post-reconcile = spent%d avail%d leased%d, want 250/750/0", st.Spent, st.Available, st.LeasedOut)
+	}
+	// budCheck.OK must still hold through the full Raft path after reconcile.
+	chk, err := c.read(ctx, ns, coll, budCheckQuery{NS: ns, Coll: coll}, true)
+	if err != nil {
+		t.Fatalf("budCheck: %v", err)
+	}
+	if bc, _ := chk.(budCheck); !bc.OK {
+		t.Fatalf("budCheck not OK after reconcile: %+v", bc)
+	}
+	// reconcile against an undefined pool -> ErrBudgetNotFound.
+	if _, err := c.BudgetReconcile(ctx, ns, []byte("nope"), 10); err != ErrBudgetNotFound {
+		t.Fatalf("reconcile undefined pool err = %v, want ErrBudgetNotFound", err)
 	}
 }
 

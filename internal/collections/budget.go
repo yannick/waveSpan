@@ -767,6 +767,47 @@ func (u *updateCtx) applyBudTombGC(c command) (ProposeResult, error) {
 	return ProposeResult{}, nil
 }
 
+// applyBudReconcile is the controller-proposed EXTERNAL Σ-acked re-credit (§3.8). A forced expiry (§3.5)
+// pessimistically DEBITS the whole outstanding remainder to spent — stranding the genuinely-unspent
+// portion as bounded UNDERSPEND. A controller holding the AUTHORITATIVE Σ-acked total from the external
+// impression/billing ledger calls this to reset spent to its true value, recovering the stranded headroom
+// WITHOUT re-introducing overspend.
+//
+// Safety: target = clamp(trueAcked, SpentReported, Cap). The SpentReported FLOOR is the crux — we never
+// credit back provably-reported spend (a controller cannot under-count below what holders attested), so a
+// stale/low trueAcked can only recover, never overspend. The Cap ceiling rejects nonsense. Available is
+// recomputed as Cap - Spent - LeasedOut; if outstanding leases exceed the reconciled headroom that would
+// be < 0, so we clamp Available to 0 and DO NOT lower LeasedOut — the transient over-commit drains
+// naturally as those leases settle (never make Available negative). Val layout: trueAckedUnits(8). No
+// leaseID, no Idem (idempotent by construction: re-applying the same trueAcked is a fixed point once the
+// floor/ceiling settle, and a fresh authoritative total simply re-targets). Result: recovered = old Spent
+// - new Spent (int64, 8 bytes in Data; negative if the external ledger booked MORE than the pool had).
+func (u *updateCtx) applyBudReconcile(c command) (ProposeResult, error) {
+	if len(c.Items) == 0 || len(c.Items[0].Val) < 8 {
+		return ProposeResult{}, errShortCommand
+	}
+	trueAcked := getI64(c.Items[0].Val)
+	p, found, err := u.getPool(c.NS, c.Coll)
+	if err != nil {
+		return ProposeResult{}, err
+	}
+	if !found {
+		return ProposeResult{Data: budNoBudget}, nil // B9: reconcile against a pool that does not exist
+	}
+	// SpentReported floor (never under-credit provably-reported spend), Cap ceiling (reject nonsense).
+	target := clampI64(trueAcked, p.SpentReported, p.Cap)
+	recovered := p.Spent - target
+	p.Spent = target
+	p.Available = p.Cap - p.Spent - p.LeasedOut
+	if p.Available < 0 { // outstanding leases exceed the reconciled headroom: floor at 0, never go negative.
+		p.Available = 0 // leave the over-commit on LeasedOut to drain as those leases settle (§3.8).
+	}
+	u.setPool(c.NS, c.Coll, p)
+	out := make([]byte, 8)
+	putI64(out, recovered)
+	return ProposeResult{Value: uint64(recovered), Data: out}, nil
+}
+
 // GrantResult is the effective grant echoed back from apply to Collections.BudgetGrant. The timing
 // fields are only meaningful once timed leases land (2b); in 2a only Granted/GrantedMs are populated.
 type GrantResult struct {

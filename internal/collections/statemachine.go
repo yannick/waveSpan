@@ -320,7 +320,7 @@ func (u *updateCtx) applyOne(cmd []byte, frozen []frozenRange, scratch []item) (
 	// c.Idem — idempotency is enforced inside the apply functions (durable lease-row check for grant,
 	// max-fold for report, lease-absence for return), so they are not routed through the dedup ring above.
 	switch c.Op {
-	case opBudInit, opBudGrant, opBudReport, opBudReturn, opBudExpire, opBudTombGC:
+	case opBudInit, opBudGrant, opBudReport, opBudReturn, opBudExpire, opBudTombGC, opBudReconcile:
 		// Type guard (non-creating): WRONGTYPE only for a budget op hitting a set/hash/zset collection.
 		// opBudInit creates the typeBudget header ITSELF, but only after its own validation passes (see
 		// applyBudInit) — so a rejected init leaves no orphaned header and grant-before-define -> budNoBudget.
@@ -342,6 +342,8 @@ func (u *updateCtx) applyOne(cmd []byte, frozen []frozenRange, scratch []item) (
 			return u.applyBudExpire(c)
 		case opBudTombGC: // leader-proposed tombstone GC (§6)
 			return u.applyBudTombGC(c)
+		case opBudReconcile: // controller-proposed Σ-acked re-credit (§3.8; no c.Idem, never coalesced)
+			return u.applyBudReconcile(c)
 		}
 	}
 	changed, err := u.applyCommand(c)

@@ -488,6 +488,32 @@ func (c *Collections) BudgetReturn(ctx context.Context, ns, coll, leaseID, holde
 	return nil
 }
 
+// BudgetReconcile is the controller surface for EXTERNAL Σ-acked reconciliation (§3.8). A forced lease
+// expiry pessimistically DEBITS the whole outstanding remainder to spent, stranding the genuinely-unspent
+// portion as bounded underspend. A controller holding the AUTHORITATIVE Σ-acked total from the external
+// impression/billing ledger calls this to reset spent to its true value (clamped to the SpentReported
+// floor and the Cap ceiling), recovering the stranded headroom WITHOUT re-introducing overspend. It
+// returns the recovered amount (old spent - new spent; negative if the external total booked MORE than the
+// pool had). A reconcile against an undefined pool returns ErrBudgetNotFound. This is an admin/controller
+// op — it carries no Idem and is never coalesced; conservation (cap == available + leasedOut + spent)
+// holds afterward except for a transient over-commit when outstanding leases exceed the reconciled
+// headroom (Available is floored at 0, never negative; the over-commit drains as those leases settle).
+func (c *Collections) BudgetReconcile(ctx context.Context, ns, coll []byte, trueAckedUnits int64) (int64, error) {
+	v := make([]byte, 8)
+	putI64(v, trueAckedUnits)
+	_, data, err := c.proposeCmd(ctx, command{Op: opBudReconcile, NS: ns, Coll: coll, Items: []item{{Val: v}}})
+	if err != nil {
+		return 0, err
+	}
+	if string(data) == string(budNoBudget) {
+		return 0, ErrBudgetNotFound
+	}
+	if len(data) != 8 { // success Data is always the 8-byte recovered int64 (sentinels are distinguishable)
+		return 0, ErrBudgetNotFound
+	}
+	return getI64(data), nil
+}
+
 // BudgetStat reads the pool accounting (cap/available/leasedOut/spent/epoch/mode). It is a bounded-stale
 // local read unless linearizable is set.
 func (c *Collections) BudgetStat(ctx context.Context, ns, coll []byte, linearizable bool) (BudStat, error) {

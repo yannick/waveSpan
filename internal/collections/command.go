@@ -95,6 +95,7 @@ const (
 	opBudReturn    opKind = 19 // leased-budget: release unspent; book spent
 	opBudExpire    opKind = 20 // leased-budget: leader-proposed forced expiry (DEBIT settlement, §3.5)
 	opBudTombGC    opKind = 21 // leased-budget: leader-proposed tombstone GC (drop settled tombstone + index)
+	opBudReconcile opKind = 22 // leased-budget: controller-proposed Σ-acked re-credit (recover stranding, §3.8)
 )
 
 // mutates reports whether an op changes element state (and so must respect a subrange freeze).
@@ -136,7 +137,7 @@ func typeForOp(op opKind) collType {
 		return typeHash
 	case opZAdd, opZRem:
 		return typeZSet
-	case opBudInit, opBudGrant, opBudReport, opBudReturn, opBudExpire, opBudTombGC:
+	case opBudInit, opBudGrant, opBudReport, opBudReturn, opBudExpire, opBudTombGC, opBudReconcile:
 		return typeBudget
 	}
 	return 0
