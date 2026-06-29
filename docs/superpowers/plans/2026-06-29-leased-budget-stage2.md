@@ -116,14 +116,16 @@ Seed at init: in `applyBudInit`, after validation, set `Tokens: burst` when `rat
 
 **Files:** Modify `command.go`, `collections.go`, `budget.go`, `budget_test.go`.
 
-The grant must carry a leader-stamped `grantedMs` (for pacing, always) plus optional `ttl_ms`/`self_guard_ms`/
-`max_pause_budget_ms` (for 2b expiry). **Grant `Items[0].Val` layout changes** to keep `holder` as the trailing
-rest while adding fixed fields before it:
+The grant must carry a leader-stamped `grantedMs` (for pacing, always) plus an optional per-grant `ttl`
+override (0 ⇒ use the budget's `DefaultTtlMs`). `selfGuard`/`maxPause` are NOT per-grant — they come from the
+budget config (2a.3) and are echoed on the result (2c.1). **Grant `Items[0].Val` layout changes** to keep
+`holder` as the trailing rest while adding fixed fields before it:
 ```
-Val = amount(8 BE) | grantedMs(8) | ttl(8) | selfGuard(8) | maxPause(8) | holder(rest)
+Val = amount(8 BE) | grantedMs(8) | ttlOverride(8) | holder(rest)      // 24 fixed bytes + holder
 ```
 This is a breaking change to the Stage-1 grant encoding — update the `grantCmd` test builder and
-`Collections.BudgetGrant` together. `grantedMs` is always stamped (pacing needs it even when ttl=0).
+`Collections.BudgetGrant` together. `grantedMs` is always stamped (pacing needs it even when ttl=0). `apply`
+resolves `ttl = ttlOverride>0 ? ttlOverride : pool.DefaultTtlMs` and reads `selfGuard`/`maxPause` from the pool.
 
 - [ ] **Step 1: Failing test** — extend the `grantCmd` builder to take `grantedMs, ttl int64` (selfGuard/maxPause
   default 0 for pacing-only tests) and write the new layout; add `TestApplyBudGrantPaced`:
@@ -171,18 +173,47 @@ if grant <= 0 { return ProposeResult{Data: budNoCapacity}, nil }
 ... // existing available-=grant; leasedOut+=grant; setPool; setLease
 if p.Rate > 0 { p.Tokens -= grant } // (fold into the setPool write)
 ```
-`pacingMaxElapsedMs(rate, burst) = k * (burst/rate) * 1000` with `k=4`; admission (Task 2a.3) bounds `burst`.
+**I4 — multiply before divide.** `pacingMaxElapsedMs(rate, burst) = (k * burst * 1000) / rate` with `k=4`
+(NOT `k*(burst/rate)*1000`, which integer-truncates to **0** when `rate > burst` → `accrued` always 0 → grants
+saturate to 0 forever). The product `k*burst*1000` is rate-independent and admission-bounds `burst` (Task 2a.3)
+so it can't overflow. Add `TestPacingRateAboveBurst` (rate=200, burst=100 → pacing still accrues, doesn't wedge).
 
-- [ ] **Step 4: Run — PASS** (all pacing tests + existing Stage-1 grant tests, after updating `grantCmd`).
+**New helpers (M5):** `min64`/`max64`/`clampI64`/`pacingMaxElapsedMs` do NOT exist in `internal/collections` —
+add them in `budget.go` (small, unexported).
+
+**Return widening (M1):** `Collections.BudgetGrant` must surface the internally-stamped `grantedMs` (the 2c.1
+gRPC result echoes it). Widen its signature to also return `grantedMs int64` (or a small `grantResult` struct
+carrying granted/ttl/selfGuard/maxPause) — update the Stage-1 callers/handler accordingly.
+
+**Val guard (M4):** the Stage-1 `applyBudGrant` length guard `len(Val) < 8` becomes `< 24` for the new
+`amount|grantedMs|ttlOverride|holder` layout (8*3 fixed bytes before the holder rest).
+
+- [ ] **Step 4: Run — PASS** (all pacing tests + existing Stage-1 grant tests, after updating `grantCmd` and
+  the `BudgetGrant` callers).
 - [ ] **Step 5: Commit** `feat(collections): token-bucket pacing on grant (leader-stamped grantedMs)`.
 
-## Task 2a.3: admission guards + `BudgetDefine` rate/burst
+## Task 2a.3: admission guards + per-budget config (rate/burst + timing defaults)
 
-**Files:** Modify `collections.go`, `budget.go`, `budget_test.go`.
+**Files:** Modify `collections.go`, `budget.go`, `command.go`, `budget_test.go`; `proto/wavespan/v1/budget.proto`
+(+regen, M3).
 
-- [ ] Extend `BudgetDefine` to accept `rate, burst int64` (Stage-1 callers pass 0/cap). Reject in `applyBudInit`
-  (sentinel `budBadMode` or a new `budBadParam`): `burst > pacingBurstCeil` (so `pacingMaxElapsedMs` cannot
-  overflow), `rate < 0`, `burst < 0`. Test `TestBudgetDefineRejectsOverflowBurst`. Commit.
+Store the per-budget timing config in `poolRec` (append-only fields, after `Tokens`): `SelfGuardMs`,
+`MaxPauseMs`, `DefaultTtlMs`, `DedupRetryWindowMs`. These are needed server-side: `SelfGuardMs`/`MaxPauseMs`
+feed `reclaimNotBeforeMs` (2b.2) and are echoed to the holder (2c.1); `DedupRetryWindowMs` sizes tombstone GC
+(2b.5). A grant's `ttl` override (2a.2 Val) falls back to `DefaultTtlMs` when 0; `selfGuard`/`maxPause` always
+come from config (echoed on the result).
+
+- [ ] Extend `BudgetDefine` to accept `rate, burst, selfGuardMs, maxPauseMs, defaultTtlMs, dedupRetryWindowMs`
+  (Stage-1 callers pass zeros → non-paced, non-expiring, unchanged). Extend the init-key encoding and
+  `BudgetDefineRequest` proto with these (M3 — so the SDK `BudgetClient.Define` sets them over the wire; regen
+  stubs, server + sdk/go gens, zero drift).
+- [ ] **Admission** in `applyBudInit` (new sentinel `budBadParam`): reject `rate < 0`; `burst < 0`;
+  `burst > pacingBurstCeil` (so `pacingMaxElapsedMs` can't overflow); **`rate > 0 && selfGuardMs < maxClockSkewMs`**
+  (I2); **`defaultTtlMs > 0 && dedupRetryWindowMs < minDedupRetryWindowMs`** (I3 — `minDedupRetryWindowMs`
+  defaults to the cluster RPC-retry budget, ~30s, NOT `skew+maxPause`; reject below it loudly). Map
+  `budBadParam → ErrUnsupportedMode`-style error in the typed API + handler.
+- [ ] Tests: `TestBudgetDefineRejectsOverflowBurst`, `TestBudgetDefineRejectsLowSelfGuard`,
+  `TestBudgetDefineRejectsLowDedupWindow`. Commit `feat(collections): per-budget pacing+timing config + admission`.
 
 ---
 
@@ -199,24 +230,41 @@ if p.Rate > 0 { p.Tokens -= grant } // (fold into the setPool write)
   `decodeLease`, after `takeChunk(holder)`, read them from `rest` **iff `len(rest) >= 24`** (else 0). (§3.3.)
 - [ ] Commit `feat(collections): leaseRec timing fields (append-tolerant)`.
 
-## Task 2b.2: grant writes `ReclaimNotBeforeMs` + expiry index (`scopeBudExp 0x07`)
+## Task 2b.2: grant writes `ReclaimNotBeforeMs` + **shard-level** expiry index
 
 **Files:** Modify `budget.go`, `budget_test.go`.
 
+**I1 — the expiry due index is SHARD-LEVEL, not a `collScope` sub-scope.** `sweepOnce` runs ONE shard-wide
+scan (like the TTL `ttlDueQuery`), so the index must live at the shard/`prefix` level and embed ns/coll, exactly
+like `ttl.go`'s due index (`prefix|subTTL|be(expiry)|chunk(ns)|chunk(coll)|member`). Add a **new prefix-level
+sub-byte** `subBudExp` (confirm a free value alongside `subTTL`/`subDedup`/`subDedupRing` — do NOT reuse a
+`collScope` byte; the collScope `0x07` reservation is freed and only the tombstone stays collScope-level, see
+2b.3). Key: `prefix|subBudExp|be(reclaimNotBeforeMs)|chunk(ns)|chunk(coll)|leaseID -> empty`. The lease row's
+stored `ReclaimNotBeforeMs` (+ ns/coll/leaseID) is the "reverse pointer" used to delete this entry on settle
+(no separate ptr scope needed). Correspondingly **update the Stage-1 reserved-byte comment** in `budget.go`
+and design §6.1: collScope now uses `0x05 pool / 0x06 lease / 0x07 tombstone`; the expiry index is the
+shard-level `subBudExp`.
+
+**I2 — `maxClockSkewMs` source.** The reclaim formula is money-load-bearing. Add
+`const maxClockSkewMs int64 = 500` in `budget.go` (the HLC mesh bound, matching `internal/version/hlc.go`'s
+default), and have `applyBudInit`/the grant path admit `self_guard ≥ maxClockSkewMs`.
+
 - [ ] When the grant carries `ttl > 0`, `applyBudGrant` computes
   `reclaimNotBefore = grantedMs + ttl + 3*maxClockSkewMs + maxPause` (§2), stores `GrantedMs/ReclaimNotBeforeMs/
-  ExpiresMs(=grantedMs+ttl)` on the lease, and writes a `scopeBudExp` index entry keyed
-  `be(reclaimNotBeforeMs)|leaseID -> empty` (mirror `ttl.go` `addTTL`). `ttl == 0` ⇒ no index entry
-  (non-expiring; Stage-1 behavior). Add `budExpKey(ns,coll,reclaimMs,leaseID)` + helpers. Test
-  `TestGrantWritesExpiryIndex` (scan `scopeBudExp`, assert the entry + the stored `ReclaimNotBeforeMs`).
-- [ ] Commit `feat(collections): timed grant writes reclaim deadline + expiry index`.
+  ExpiresMs(=grantedMs+ttl)` on the lease, and writes the **shard-level** `subBudExp` index entry above (mirror
+  `ttl.go`'s due-index writer). `ttl == 0` ⇒ no index entry (non-expiring; Stage-1 behavior). Add
+  `budExpKey(reclaimMs, ns, coll, leaseID)` at the prefix level + a `dueBudLease{NS,Coll,LeaseID,ReclaimMs}`
+  type. Test `TestGrantWritesExpiryIndex` (scan the shard-level index, assert the ns/coll-tagged entry + the
+  stored `ReclaimNotBeforeMs`).
+- [ ] Commit `feat(collections): timed grant writes reclaim deadline + shard-level expiry index`.
 
-## Task 2b.3: tombstone scope (`scopeBudTomb 0x08`) + grant tombstone branch + settlement symmetry
+## Task 2b.3: tombstone scope (`scopeBudTomb 0x07`, collScope) + grant tombstone branch + settlement symmetry
 
 **Files:** Modify `budget.go`, `budget_test.go`.
 
 - [ ] Add `tombRec{FinalSpent int64; Reason byte}` (`reasonReturn`/`reasonExpire`) + `encodeTomb`/`decodeTomb`
-  + `budTombKey`. Add `getTomb`/`setTomb` overlay helpers.
+  + `budTombKey(ns,coll,leaseID)` at **collScope** `scopeBudTomb 0x07` (a point lookup by leaseID within a
+  budget — NOT shard-level; contrast the expiry index in 2b.2). Add `getTomb`/`setTomb` overlay helpers.
 - [ ] `applyBudGrant` **step 0**: if a tombstone exists for `leaseID` → return `budSettled` sentinel
   ("already settled", never re-grant). (§3.7 — closes B5 for timed leases.)
 - [ ] Refactor `applyBudReturn` to the terminal-symmetric shape (§3.6): tombstone-check first (no-op if
@@ -260,9 +308,12 @@ func TestReturnThenExpireIdempotent(t *testing.T) { /* return, then expire -> to
 - [ ] **Step 3: Implement `applyBudExpire`** (§3.5): tombstone-check first (no-op); re-read lease (absent ⇒
   ensure tombstone + delete index, done); re-check `sweepNowMs >= lr.ReclaimNotBeforeMs` (else skip — renewed);
   then **debit**: `rem = lr.Amount - lr.Spent; p.Spent += rem; p.LeasedOut -= rem;` (`available += 0`); in the
-  same entry delete lease row, delete `scopeBudExp` entry, write tombstone. Dispatch `opBudExpire` in
-  `applyOne`'s budget block (it carries no `c.Idem`). Add `budExpiryDueQuery{NowMs,Limit}` Lookup scanning
-  `scopeBudExp` for `be(reclaimNotBeforeMs) <= NowMs` (mirror `scanDue`).
+  same entry delete lease row, delete the shard-level `subBudExp` entry (recompute its key from the lease's
+  stored `ReclaimNotBeforeMs` + ns/coll/leaseID), write tombstone. Dispatch `opBudExpire` in `applyOne`'s
+  budget block (it carries no `c.Idem`; stays OUT of `coalescable()`). Add `budExpiryDueQuery{NowMs,Limit}`
+  Lookup scanning the **shard-level** `subBudExp` for `be(reclaimNotBeforeMs) <= NowMs`, returning
+  `[]dueBudLease{NS,Coll,LeaseID,ReclaimMs}` (mirror `scanDue`/`ttlDueQuery` which return ns/coll-tagged
+  tuples).
 - [ ] **Step 4: Run — PASS** (incl. `budCheckQuery.OK` after expiry). Commit
   `feat(collections): opBudExpire (debit settlement) + due query + dispatch`.
 
@@ -271,9 +322,12 @@ func TestReturnThenExpireIdempotent(t *testing.T) { /* return, then expire -> to
 **Files:** Modify `manager.go`, `budget_test.go`.
 
 - [ ] In the leader-gated `sweepOnce` (after the TTL pass), run `budExpiryDueQuery{NowMs: time.Now().UnixMilli(),
-  Limit: N}` and for each due lease propose `opBudExpire(leaseID, sweepNowMs)` with `sweepNowMs` stamped
-  pre-propose (same discipline as the TTL sweep). Add a tombstone-GC pass: a `ttl.go`-style due index at
-  `reclaimNotBeforeMs + dedup_retry_window_ms` that deletes stale tombstones (M-3/I-2).
+  Limit: N}` and for each due `dueBudLease` propose `opBudExpire(ns, coll, leaseID, sweepNowMs)` with
+  `sweepNowMs` stamped pre-propose (same discipline as the TTL sweep; the per-lease ns/coll come from the due
+  tuple). Add a tombstone-GC pass over a **second shard-level due index** `subBudTombGC`
+  (`prefix|subBudTombGC|be(gcDueMs)|chunk(ns)|chunk(coll)|leaseID`), where `gcDueMs = reclaimNotBeforeMs +
+  dedup_retry_window_ms` is written when the tombstone is created; the sweep deletes both the tombstone row and
+  its GC-index entry once due (M-3/I-2).
 - [ ] **Integration test** (real shard, mirror `hincr_test.go`): define paced+ttl budget, grant via the typed
   API, wait > (ttl + guard), assert via `BudgetStat`/`budCheckQuery` that the lease auto-expired with DEBIT
   semantics and conservation holds. Commit `feat(collections): lease-expiry sweep + tombstone GC in sweepOnce`.
@@ -286,9 +340,11 @@ func TestReturnThenExpireIdempotent(t *testing.T) { /* return, then expire -> to
 
 **Files:** Modify `proto/wavespan/v1/budget.proto`; regenerate.
 
-- [ ] Add to `BudgetGrantRequest`: `int64 ttl_ms`, `int64 self_guard_ms`, `int64 max_pause_budget_ms`. Add to
-  `BudgetGrantResult`: `int64 granted_ms`, `int64 ttl_ms`, `int64 self_guard_ms`, `int64 max_pause_budget_ms`
-  (echoed so the holder runs the freshness gate + stamps its deadline + sets self-fence; §5 M-4).
+- [ ] Add to `BudgetGrantRequest`: `int64 ttl_ms` (per-grant override only; 0 ⇒ budget `DefaultTtlMs`).
+  `self_guard`/`max_pause`/`dedup_retry_window` are Define-time config on `BudgetDefineRequest` (2a.3 M3), not
+  per-grant. Add to `BudgetGrantResult`: `int64 granted_ms`, `int64 ttl_ms`, `int64 self_guard_ms`,
+  `int64 max_pause_budget_ms` (the EFFECTIVE values, echoed so the holder runs the freshness gate + stamps its
+  deadline + sets self-fence; §5 M-4).
 - [ ] Regenerate the SERVER stubs and the `sdk/go` vendored stubs. **Codegen gotcha** (from Stage-1): server
   full `buf generate` fails on the missing TS plugin — use the filtered Go-only template; `sdk/go` uses
   `make sdk-proto` (Go-only). Pin `protoc-gen-go@v1.36.11` (prepend `~/go/bin`); `git diff` must show ONLY
@@ -338,7 +394,10 @@ func TestSpendPacingThrottled(t *testing.T) { /* ... */ }
   the decrement; (a) self-fence (`lastSeenMon != 0 && now-lastSeenMon > maxPauseNs` → drop cur/next, **no
   report** — I-1); (b) pacing gate; (c) drop `cur` if `now >= cur.deadlineMon`; (d) decrement + low-watermark
   refill trigger; (e) STRICT-empty → trigger refill + `ErrBudgetUnavailable`. `Spend` holds the cell lock but
-  NEVER across an RPC (refill is off-path, single-flight). Add `Acquire`/`Remaining`.
+  NEVER across an RPC (refill is off-path, single-flight). Add `Acquire(key, opts...)`/`Remaining`. **Node
+  pacing-gate `rate`/`burst` and `leaseChunk`/low-watermark come from `Acquire` opts** (`WithRate`/`WithBurst`/
+  `WithChunk`, M2); `ttl`/`selfGuard`/`maxPause`/`maxPauseNs` come **echoed from the grant result** (set on the
+  cell at refill, 2c.4) — the node never hard-codes the server's timing.
 - [ ] **Step 4: Run — PASS.** Commit `feat(sdk): LeasedBudgetClient + zero-coordination Spend fast path`.
 
 ## Task 2c.4: refill (single-flight, double-buffer, freshness gate)
