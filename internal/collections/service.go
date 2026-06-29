@@ -390,14 +390,15 @@ func (s *Service) BudgetDefine(ctx context.Context, req *connect.Request[wavespa
 // result with no_capacity set (not an error), so callers can distinguish "nothing right now" from a fault.
 func (s *Service) BudgetGrant(ctx context.Context, req *connect.Request[wavespanv1.BudgetGrantRequest]) (*connect.Response[wavespanv1.BudgetGrantResult], error) {
 	m := req.Msg
-	n, err := s.cols.BudgetGrant(ctx, []byte(m.GetNamespace()), m.GetBudget(), []byte(m.GetHolderId()), m.GetAmountUnits(), m.GetLeaseId())
+	// ttlMs (per-grant TTL override) rides the proto from 2c.1; until then it is 0 (non-expiring).
+	gr, err := s.cols.BudgetGrant(ctx, []byte(m.GetNamespace()), m.GetBudget(), []byte(m.GetHolderId()), m.GetAmountUnits(), m.GetLeaseId(), 0)
 	if err != nil {
 		if errors.Is(err, ErrNoCapacity) {
 			return connect.NewResponse(&wavespanv1.BudgetGrantResult{Meta: s.meta(), NoCapacity: true}), nil
 		}
 		return nil, collErr(err)
 	}
-	return connect.NewResponse(&wavespanv1.BudgetGrantResult{Meta: s.meta(), GrantedUnits: n, Partial: n < m.GetAmountUnits()}), nil
+	return connect.NewResponse(&wavespanv1.BudgetGrantResult{Meta: s.meta(), GrantedUnits: gr.Granted, Partial: gr.Granted < m.GetAmountUnits()}), nil
 }
 
 // BudgetReport folds a cumulative-per-lease spent total and returns the pool accounting.

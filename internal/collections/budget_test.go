@@ -127,21 +127,55 @@ func mustApply(t *testing.T, sm *shardSM, c command) ProposeResult {
 // --- Task 4: command builders + invariant helper ---
 
 func initCmd(ns, coll []byte, capacity int64) command {
-	k := make([]byte, 1+8*3)
+	// Stage-1 shape: no pacing (rate 0), burst == cap, no timing config.
+	return initCmdFull(ns, coll, capacity, 0, capacity, 0, 0, 0, 0)
+}
+
+// initCmdFull builds an init key carrying the full Stage-2 config:
+// mode(1) | cap(8) | rate(8) | burst(8) | selfGuard(8) | maxPause(8) | defaultTtl(8) | dedupRetryWindow(8).
+func initCmdFull(ns, coll []byte, capacity, rate, burst, selfGuardMs, maxPauseMs, defaultTtlMs, dedupRetryWindowMs int64) command {
+	k := make([]byte, 1+8*7)
 	k[0] = modeStrict
-	putI64(k[1:], capacity)  // cap
-	putI64(k[9:], 0)         // rate
-	putI64(k[17:], capacity) // burst = cap (Stage 1)
+	putI64(k[1:], capacity)
+	putI64(k[9:], rate)
+	putI64(k[17:], burst)
+	putI64(k[25:], selfGuardMs)
+	putI64(k[33:], maxPauseMs)
+	putI64(k[41:], defaultTtlMs)
+	putI64(k[49:], dedupRetryWindowMs)
 	return command{Op: opBudInit, NS: ns, Coll: coll, Items: []item{{Key: k}}}
 }
 
-// grant: leaseID in Items[0].Key; Val = amount(8B) || holder. The tests use leaseID == holder string
-// purely for brevity; in production they differ (leaseID is per-refill). Idem stays EMPTY.
+// initCmdPaced defines a paced pool with explicit rate/burst (timing config stays 0 -> non-expiring).
+func initCmdPaced(ns, coll []byte, capacity, rate, burst int64) command {
+	return initCmdFull(ns, coll, capacity, rate, burst, 0, 0, 0, 0)
+}
+
+// grant: leaseID in Items[0].Key; Val = amount(8) | grantedMs(8) | ttlOverride(8) | holder(rest). The
+// tests use leaseID == holder string purely for brevity; in production they differ (leaseID is
+// per-refill). Idem stays EMPTY. grantCmd is the non-paced shorthand (grantedMs=0, ttl=0).
 func grantCmd(ns, coll []byte, holder string, amt int64) command {
-	v := make([]byte, 8+len(holder))
-	putI64(v, amt)
-	copy(v[8:], holder)
+	return grantCmdT(ns, coll, holder, amt, 0, 0)
+}
+
+// grantCmdT builds a grant carrying the leader-stamped grantedMs and a per-grant ttl override.
+func grantCmdT(ns, coll []byte, holder string, amt, grantedMs, ttl int64) command {
+	v := make([]byte, 24+len(holder))
+	putI64(v[0:], amt)
+	putI64(v[8:], grantedMs)
+	putI64(v[16:], ttl)
+	copy(v[24:], holder)
 	return command{Op: opBudGrant, NS: ns, Coll: coll, Items: []item{{Key: []byte(holder), Val: v}}}
+}
+
+// mustGrant applies a paced/timed grant and returns the ProposeResult (failing the test on a hard error).
+func mustGrant(t *testing.T, u *updateCtx, ns, coll []byte, holder string, amt, grantedMs, ttl int64) ProposeResult {
+	t.Helper()
+	r, err := u.applyBudGrant(grantCmdT(ns, coll, holder, amt, grantedMs, ttl))
+	if err != nil {
+		t.Fatalf("grant %s: %v", holder, err)
+	}
+	return r
 }
 func reportCmd(ns, coll []byte, leaseID string, cum int64) command {
 	v := make([]byte, 8)
@@ -256,6 +290,74 @@ func TestApplyBudGrantIdempotent(t *testing.T) {
 	p, _, _ := u.getPool(ns, coll)
 	if p.LeasedOut != 600 || p.Available != 400 { // NOT 1200/-200
 		t.Fatalf("retry double-granted: leased=%d avail=%d", p.LeasedOut, p.Available)
+	}
+}
+
+// --- Task 2a.2: token-bucket pacing ---
+
+func TestApplyBudGrantPaced(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	// cap 1000, rate 100 u/s, burst 100 -> seeded tokens=100
+	if _, err := u.applyBudInit(initCmdPaced(ns, coll, 1000, 100, 100)); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	// first paced grant at grantedMs=1000: lazy-init lastRefillMs=1000, accrued=0, tokens=100 (seeded burst)
+	r := mustGrant(t, u, ns, coll, "A", 80, 1000, 0)
+	if decodeGrant(r.Data) != 80 {
+		t.Fatalf("paced grant=%d want 80 (from seeded burst)", decodeGrant(r.Data))
+	}
+	// tokens now 20; a 50-draw saturates to 20 even though available is huge
+	r2 := mustGrant(t, u, ns, coll, "B", 50, 1000, 0)
+	if decodeGrant(r2.Data) != 20 {
+		t.Fatalf("paced grant=%d want 20 (token-bound)", decodeGrant(r2.Data))
+	}
+	// 1s later: +100 tokens accrued, capped at burst=100
+	r3 := mustGrant(t, u, ns, coll, "C", 100, 2000, 0)
+	if decodeGrant(r3.Data) != 100 {
+		t.Fatalf("after 1s grant=%d want 100", decodeGrant(r3.Data))
+	}
+	p, _, _ := u.getPool(ns, coll)
+	assertInv(t, p)
+}
+
+// rate=0 => Stage-1 behavior: grant=min(amount,available), tokens ignored entirely.
+func TestApplyBudGrantRateZeroUnchanged(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmd(ns, coll, 1000)) // rate 0
+	r := mustGrant(t, u, ns, coll, "A", 900, 1000, 0)
+	if decodeGrant(r.Data) != 900 { // not token-bound (no pacing)
+		t.Fatalf("rate-0 grant=%d want 900", decodeGrant(r.Data))
+	}
+	p, _, _ := u.getPool(ns, coll)
+	if p.Tokens != 0 || p.LastRefillMs != 0 { // pacing state untouched when rate==0
+		t.Fatalf("rate-0 touched pacing state: tokens=%d lastRefill=%d", p.Tokens, p.LastRefillMs)
+	}
+}
+
+// A huge rate with lazy-init must NOT accrue rate*grantedMs on the first grant (lastRefillMs starts 0).
+func TestPacingNoOverflow(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmdPaced(ns, coll, 1_000_000, 1_000_000_000, 100)) // burst 100
+	// grantedMs is a real epoch-ms value; lazy-init makes elapsed=0, so the bucket is just the seeded burst.
+	r := mustGrant(t, u, ns, coll, "A", 1_000_000, 1_700_000_000_000, 0)
+	if decodeGrant(r.Data) != 100 { // seeded burst, NOT rate*grantedMs
+		t.Fatalf("lazy-init overflow: grant=%d want 100", decodeGrant(r.Data))
+	}
+}
+
+// rate > burst must still accrue (I4: multiply-before-divide; the (burst/rate)*1000 form would wedge at 0).
+func TestPacingRateAboveBurst(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmdPaced(ns, coll, 10_000, 200, 100)) // rate 200 > burst 100
+	_ = mustGrant(t, u, ns, coll, "A", 100, 1000, 0)                // drains seeded tokens to 0
+	// 500ms later: accrued = 200*500/1000 = 100 -> a 50-draw must succeed (pacing did not wedge at 0)
+	r := mustGrant(t, u, ns, coll, "B", 50, 1500, 0)
+	if decodeGrant(r.Data) != 50 {
+		t.Fatalf("rate>burst wedged: grant=%d want 50", decodeGrant(r.Data))
 	}
 }
 
@@ -391,9 +493,9 @@ func TestBudgetEndToEnd(t *testing.T) {
 	if err := c.BudgetDefine(ctx, ns, coll, 1000, modeStrict); err != nil {
 		t.Fatalf("define: %v", err)
 	}
-	g, err := c.BudgetGrant(ctx, ns, coll, []byte("node-A"), 600, []byte("lease-A1"))
-	if err != nil || g != 600 {
-		t.Fatalf("grant = %d, %v want 600", g, err)
+	g, err := c.BudgetGrant(ctx, ns, coll, []byte("node-A"), 600, []byte("lease-A1"), 0)
+	if err != nil || g.Granted != 600 {
+		t.Fatalf("grant = %+v, %v want 600", g, err)
 	}
 	if err := c.BudgetReport(ctx, ns, coll, []byte("lease-A1"), 250); err != nil {
 		t.Fatalf("report: %v", err)

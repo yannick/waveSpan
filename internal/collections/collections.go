@@ -392,21 +392,28 @@ func (c *Collections) BudgetDefine(ctx context.Context, ns, coll []byte, capUnit
 // re-debits) — it rides in Items[0].Key, with Idem left empty so it is not routed through the dedup ring.
 // A grant against an undefined pool returns ErrBudgetNotFound; a pool with nothing left returns
 // ErrNoCapacity. Stage-1 contract: a lease_id is single-use-forever — never reuse one after BudgetReturn.
-func (c *Collections) BudgetGrant(ctx context.Context, ns, coll, holder []byte, amount int64, leaseID []byte) (int64, error) {
-	v := make([]byte, 8+len(holder))
-	putI64(v, amount)
-	copy(v[8:], holder)
-	n, data, err := c.proposeCmd(ctx, command{Op: opBudGrant, NS: ns, Coll: coll, Items: []item{{Key: leaseID, Val: v}}})
+// The leader stamps grantedMs (UnixMilli) before propose — mirroring SAddTTL — so every replica applies
+// the same deterministic time for pacing/expiry; never read a wall clock inside apply. ttlMs is a
+// per-grant TTL override (0 ⇒ use the budget's DefaultTtlMs). The returned GrantResult echoes the
+// effective grant + leader timing (only Granted/GrantedMs are populated until timed leases land, 2b).
+func (c *Collections) BudgetGrant(ctx context.Context, ns, coll, holder []byte, amount int64, leaseID []byte, ttlMs int64) (GrantResult, error) {
+	grantedMs := time.Now().UnixMilli()
+	v := make([]byte, 24+len(holder)) // amount(8) | grantedMs(8) | ttlOverride(8) | holder(rest)
+	putI64(v[0:], amount)
+	putI64(v[8:], grantedMs)
+	putI64(v[16:], ttlMs)
+	copy(v[24:], holder)
+	_, data, err := c.proposeCmd(ctx, command{Op: opBudGrant, NS: ns, Coll: coll, Items: []item{{Key: leaseID, Val: v}}})
 	if err != nil {
-		return 0, err
+		return GrantResult{}, err
 	}
 	switch string(data) {
 	case string(budNoCapacity):
-		return 0, ErrNoCapacity
+		return GrantResult{}, ErrNoCapacity
 	case string(budNoBudget):
-		return 0, ErrBudgetNotFound // B9: budget pool does not exist
+		return GrantResult{}, ErrBudgetNotFound // B9: budget pool does not exist
 	}
-	return int64(n), nil
+	return decodeGrantResult(data), nil
 }
 
 // BudgetReport folds a cumulative-per-lease spent total into the pool (idempotent max fold: a stale or

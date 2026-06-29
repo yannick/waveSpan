@@ -64,6 +64,39 @@ func (s *shardSM) budLeaseKey(ns, coll, leaseID []byte) []byte {
 func putI64(b []byte, v int64) { binary.BigEndian.PutUint64(b, uint64(v)) }
 func getI64(b []byte) int64    { return int64(binary.BigEndian.Uint64(b)) }
 
+// --- Task 2a.2: small integer helpers for the token-bucket pacing math (unexported, deterministic) ---
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// clampI64 returns v clamped to [lo, hi] (assumes lo <= hi).
+func clampI64(v, lo, hi int64) int64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+// pacingMaxElapsedMs bounds how much idle time a single grant may accrue tokens for, so a long-idle
+// budget cannot mint an unbounded burst on its next draw. I4: the product k*burst*1000 is computed
+// BEFORE the divide — the rate-independent numerator is admission-bounded (burst <= pacingBurstCeil,
+// Task 2a.3) so it can't overflow, and unlike k*(burst/rate)*1000 it never integer-truncates to 0 when
+// rate > burst (which would wedge accrual at 0 forever).
+func pacingMaxElapsedMs(rate, burst int64) int64 {
+	const k = 4
+	if rate <= 0 {
+		return 0
+	}
+	return (k * burst * 1000) / rate
+}
+
 func encodePool(p poolRec) []byte {
 	b := make([]byte, 8*4+8+1+8*2+8*2) // [prefix 57] | lastRefillMs,tokens (Stage-2 tail) -> 73
 	putI64(b[0:], p.Cap)
@@ -242,20 +275,23 @@ func (u *updateCtx) applyBudInit(c command) (ProposeResult, error) {
 // B6: `holder` is recorded on the lease but NOT validated on later Report/Return — in Stage 1 the lease_id
 // is the bearer capability. Holder binding/auth is Stage 3+ (design open Q6).
 func (u *updateCtx) applyBudGrant(c command) (ProposeResult, error) {
-	if len(c.Items) == 0 || len(c.Items[0].Key) == 0 || len(c.Items[0].Val) < 8 {
+	// Val layout (Stage 2): amount(8) | grantedMs(8) | ttlOverride(8) | holder(rest) — 24 fixed bytes.
+	if len(c.Items) == 0 || len(c.Items[0].Key) == 0 || len(c.Items[0].Val) < 24 {
 		return ProposeResult{}, errShortCommand
 	}
 	leaseID := c.Items[0].Key
 	amount := getI64(c.Items[0].Val[0:8])
-	holder := c.Items[0].Val[8:]
+	grantedMs := getI64(c.Items[0].Val[8:16])
+	ttlOverride := getI64(c.Items[0].Val[16:24])
+	holder := c.Items[0].Val[24:]
 	if amount < 0 { // B4: reject a negative draw (deterministic guard; never trust the caller)
 		return ProposeResult{Data: budNoCapacity}, nil
 	}
-	// idempotency: existing lease row for this leaseID -> return its amount.
+	// idempotency: existing lease row for this leaseID -> echo its grant (timing echo widens in 2b).
 	if l, found, err := u.getLease(c.NS, c.Coll, leaseID); err != nil {
 		return ProposeResult{}, err
 	} else if found {
-		return ProposeResult{Value: uint64(l.Amount), Data: encodeGrant(l.Amount)}, nil
+		return ProposeResult{Value: uint64(l.Amount), Data: encodeGrantResult(GrantResult{Granted: l.Amount})}, nil
 	}
 	p, found, err := u.getPool(c.NS, c.Coll)
 	if err != nil {
@@ -264,18 +300,42 @@ func (u *updateCtx) applyBudGrant(c command) (ProposeResult, error) {
 	if !found {
 		return ProposeResult{Data: budNoBudget}, nil // B9: budget pool does not exist (distinct from budNoLease)
 	}
+	_ = ttlOverride // resolved + self_guard-gated in Task 2a.3 (kept in the Val layout from 2a.2)
+	// §3.2 token-bucket pacing (rate==0 => Stage-1 behavior, pacing state untouched).
+	if p.Rate > 0 {
+		if p.LastRefillMs == 0 { // lazy-init (M-3): the first grant accrues 0, never rate*grantedMs
+			p.LastRefillMs = grantedMs
+		}
+		maxElapsed := pacingMaxElapsedMs(p.Rate, p.Burst)
+		elapsed := clampI64(grantedMs-p.LastRefillMs, 0, maxElapsed)
+		accrued := p.Rate * elapsed / 1000 // integer floor, deterministic
+		ceil := min64(p.Burst, p.Cap-p.Spent)
+		p.Tokens = min64(ceil, p.Tokens+accrued)
+		if p.Tokens < 0 {
+			p.Tokens = 0
+		}
+		if grantedMs > p.LastRefillMs {
+			p.LastRefillMs = grantedMs
+		}
+	}
 	grant := amount
+	if p.Rate > 0 {
+		grant = min64(grant, p.Tokens)
+	}
 	if grant > p.Available {
 		grant = p.Available
 	}
-	if grant <= 0 { // STRICT: nothing to give
+	if grant <= 0 { // STRICT: nothing to give (token-bound or available-bound)
 		return ProposeResult{Data: budNoCapacity}, nil
 	}
 	p.Available -= grant
 	p.LeasedOut += grant
+	if p.Rate > 0 {
+		p.Tokens -= grant
+	}
 	u.setPool(c.NS, c.Coll, p)
 	u.setLease(c.NS, c.Coll, leaseID, leaseRec{Holder: append([]byte{}, holder...), Amount: grant, Spent: 0, Epoch: p.Epoch})
-	return ProposeResult{Value: uint64(grant), Data: encodeGrant(grant)}, nil
+	return ProposeResult{Value: uint64(grant), Data: encodeGrantResult(GrantResult{Granted: grant, GrantedMs: grantedMs})}, nil
 }
 
 // applyBudReport folds a cumulative-per-lease spent total (max), moving the delta leasedOut->spent.
@@ -362,7 +422,38 @@ func (u *updateCtx) applyBudReturn(c command) (ProposeResult, error) {
 	return ProposeResult{Value: uint64(rem)}, nil
 }
 
-func encodeGrant(amount int64) []byte { b := make([]byte, 8); putI64(b, amount); return b }
+// GrantResult is the effective grant echoed back from apply to Collections.BudgetGrant. The timing
+// fields are only meaningful once timed leases land (2b); in 2a only Granted/GrantedMs are populated.
+type GrantResult struct {
+	Granted     int64
+	GrantedMs   int64
+	TTLMs       int64
+	SelfGuardMs int64
+	MaxPauseMs  int64
+}
+
+// encodeGrantResult / decodeGrantResult carry the effective grant in ProposeResult.Data. The success
+// payload is a fixed 16 bytes in 2a (amount|grantedMs) and widens to 40 in 2b (amount|grantedMs|ttl|
+// selfGuard|maxPause). It is length-distinguishable from the budget sentinels (BUDNOCAP/BUDNOBUDGET/...),
+// none of which are 16 or 40 bytes, so the typed API can switch sentinels first then decode the rest as
+// a success (Gap#1).
+func encodeGrantResult(r GrantResult) []byte {
+	b := make([]byte, 16)
+	putI64(b[0:], r.Granted)
+	putI64(b[8:], r.GrantedMs)
+	return b
+}
+
+func decodeGrantResult(b []byte) GrantResult {
+	var r GrantResult
+	if len(b) >= 8 {
+		r.Granted = getI64(b[0:])
+	}
+	if len(b) >= 16 {
+		r.GrantedMs = getI64(b[8:])
+	}
+	return r
+}
 
 // --- Task 6: read path — budStatQuery + budCheckQuery Lookups ---
 
