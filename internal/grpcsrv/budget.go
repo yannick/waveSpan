@@ -59,6 +59,15 @@ func (s *Budget) BudgetReturn(ctx context.Context, m *wavespanv1.BudgetReturnReq
 	return res.Msg, nil
 }
 
+// BudgetReconcile implements the BudgetServiceServer gRPC method by delegating to the Connect service.
+func (s *Budget) BudgetReconcile(ctx context.Context, m *wavespanv1.BudgetReconcileRequest) (*wavespanv1.BudgetStatResult, error) {
+	res, err := s.svc.BudgetReconcile(ctx, connect.NewRequest(m))
+	if err != nil {
+		return nil, connectToGRPC(err)
+	}
+	return res.Msg, nil
+}
+
 // BudgetStat implements the BudgetServiceServer gRPC method by delegating to the Connect service.
 func (s *Budget) BudgetStat(ctx context.Context, m *wavespanv1.BudgetStatRequest) (*wavespanv1.BudgetStatResult, error) {
 	res, err := s.svc.BudgetStat(ctx, connect.NewRequest(m))

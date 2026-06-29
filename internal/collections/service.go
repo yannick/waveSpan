@@ -455,6 +455,26 @@ func (s *Service) BudgetReturn(ctx context.Context, req *connect.Request[wavespa
 	return connect.NewResponse(s.budStatResult(st)), nil
 }
 
+// BudgetReconcile re-credits a budget to its authoritative external Σ-acked spend (§3.8), recovering the
+// headroom a forced lease expiry stranded as underspend — without overspend. Controller/admin surface; it
+// is mounted on the gRPC data plane and the Connect admin port, NOT the read-only HTTP gateway. The result
+// carries the recovered amount (old spent - new spent) alongside the post-reconcile pool accounting.
+func (s *Service) BudgetReconcile(ctx context.Context, req *connect.Request[wavespanv1.BudgetReconcileRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
+	m := req.Msg
+	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
+	recovered, err := s.cols.BudgetReconcile(ctx, ns, coll, m.GetTrueAckedUnits())
+	if err != nil {
+		return nil, collErr(err)
+	}
+	st, err := s.cols.BudgetStat(ctx, ns, coll, false)
+	if err != nil {
+		return nil, collErr(err)
+	}
+	res := s.budStatResult(st)
+	res.RecoveredUnits = recovered
+	return connect.NewResponse(res), nil
+}
+
 // BudgetStat reads the pool accounting (bounded-stale unless linearizable).
 func (s *Service) BudgetStat(ctx context.Context, req *connect.Request[wavespanv1.BudgetStatRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
 	m := req.Msg
