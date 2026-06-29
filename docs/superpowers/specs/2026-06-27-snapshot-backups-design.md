@@ -405,6 +405,39 @@ size, max concurrency, and a **bandwidth rate-limit** so export cannot starve th
   gap); disk-pressure during restore → graceful; write flood during backup → cut excludes
   `>T`, no node crash.
 
+## Implementation status (2026-06-29)
+
+- **Phase 1 (wavesdb engine primitives) — DONE**, branch `backup-primitives`: `AcquireSnapshot`/
+  `*SnapshotHandle`, `SSTablesSince`, `CheckpointToObjectStore`, `RestoreFromObjectStore`. TDD,
+  two-stage reviewed, `-race` clean.
+- **Phase 2a (logical core, same-shape) — DONE**, branch `backup`: `Contributor` registry + 5
+  contributors, versioned `NodeManifest`, `ExportLogical`/`RestoreLogical` with manifest
+  entry-count integrity check. 2a copies derived index CFs verbatim (rebuild deferred). TDD,
+  two-stage reviewed.
+
+### Phase 2b grounding findings (de-risk the next phase)
+
+- **Collections re-shard is feasible and partly pre-built.** `internal/collections/migrate.go`
+  already extracts the routing key from a `CFReplData` key suffix — `routeKeyOf(suffix)
+  ([]byte, bool)` handles `subData`/`subTTL` rows and returns `ok=false` for shard-meta
+  (`subMeta`) and budget secondary-index keys (`subBudExp`/`subBudTombGC`). Re-shard restore =
+  for each data row, `routeKeyOf` → recompute `FirstDataShard + fnv64a(routeKey) % newN` →
+  rewrite the 8-byte shard prefix. The `migrate.go` ingest/purge codec is reusable. Caveat:
+  budget shard-level secondary indexes (`subBudExp`/`subBudTombGC`) are NOT carried by
+  `routeKeyOf` → after re-shard they must be **rebuilt** from the re-routed lease rows (a budget
+  rebuild hook), or auto-reclaim/tomb-GC won't fire in the new shard. The shard `applied` raft
+  index (`subMeta`) must be dropped (new shard starts fresh), not re-routed.
+- **Vector ANN index specs are CONFIG-only, not in storage.** `vector.IndexSpec` "mirrors the
+  VectorIndex CRD spec"; specs are built in `cmd/wavespan-node/main.go:338` from config
+  (`ParseVectorIndexSpec` → `IndexMeta`; `NewIndexSet(metas, ann.DefaultParams())`), never
+  persisted to a CF. So `RebuildLiveIndex(store, coll, metric, params)` cannot recover
+  metric/params from a logical backup of `CFVectorRaw` alone. Restore-side rebuild must source
+  specs from the **destination cluster's configured `IndexSet`** (the common clone/DR case), OR
+  the backup must **capture the index specs** (from running config at backup time → manifest) so
+  a spec-less destination can rebuild. Raw vectors restore regardless; ANN comes up once specs
+  are available. Graph rebuild has no such dependency — `RebuildIndexes(graph)` derives entirely
+  from stored node/edge data (only needs graph-name enumeration).
+
 ## Open implementation questions (for the plan, not blockers)
 
 - Exact meta-shard SM command encoding for `BackupIntent` (reuse `opBatch` framing vs a new
