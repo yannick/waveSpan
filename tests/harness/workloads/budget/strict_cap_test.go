@@ -115,13 +115,13 @@ func (b *collBackend) grant(leaseID string, amount int64) (grantEcho, backendErr
 func (b *collBackend) report(leaseID string, cumulative int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = b.cols.BudgetReport(ctx, []byte(budNS), b.coll, []byte(leaseID), cumulative)
+	_ = b.cols.BudgetReport(ctx, []byte(budNS), b.coll, []byte(leaseID), b.holder, cumulative)
 }
 
 func (b *collBackend) ret(leaseID string, finalSpent int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = b.cols.BudgetReturn(ctx, []byte(budNS), b.coll, []byte(leaseID), finalSpent)
+	_ = b.cols.BudgetReturn(ctx, []byte(budNS), b.coll, []byte(leaseID), b.holder, finalSpent)
 }
 
 // ledger is the harness's concurrency-safe ground-truth sink of acked impressions.

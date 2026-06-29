@@ -59,6 +59,11 @@ var (
 	// parameter (negative rate, burst over the ceiling, or a TTL'd budget with too small a self_guard /
 	// dedup window). Maps to InvalidArgument, like ErrUnsupportedMode (2a.3).
 	ErrBudgetBadParam = errors.New("collections: budget pacing/timing parameter out of range")
+	// ErrWrongHolder is returned when BudgetReport/BudgetReturn carries a non-empty holder that does not
+	// match the lease's recorded holder — the lease's grantee binding is violated (first-party Return/Report
+	// tampering or a nodeID collision). Maps to PermissionDenied in the typed API. An empty holder is
+	// lenient (not checked), preserving back-compat with callers that do not bind a holder.
+	ErrWrongHolder = errors.New("collections: budget report/return holder mismatch")
 
 	wrongType  = []byte("WRONGTYPE") // Result.Data sentinel set by the state machine
 	frozenMark = []byte("FROZEN")    // Result.Data sentinel: mutation rejected, subrange is migrating

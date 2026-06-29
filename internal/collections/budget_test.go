@@ -239,6 +239,21 @@ func returnCmd(ns, coll []byte, leaseID string, cum int64) command {
 	return command{Op: opBudReturn, NS: ns, Coll: coll, Items: []item{{Key: []byte(leaseID), Val: v}}}
 }
 
+// reportCmdH / returnCmdH build holder-bound report/return commands (Val = cumulative(8)|holder(rest)) so
+// tests can exercise the holder-match guard. The plain reportCmd/returnCmd above carry NO holder (lenient).
+func reportCmdH(ns, coll []byte, leaseID, holder string, cum int64) command {
+	v := make([]byte, 8+len(holder))
+	putI64(v, cum)
+	copy(v[8:], holder)
+	return command{Op: opBudReport, NS: ns, Coll: coll, Items: []item{{Key: []byte(leaseID), Val: v}}}
+}
+func returnCmdH(ns, coll []byte, leaseID, holder string, cum int64) command {
+	v := make([]byte, 8+len(holder))
+	putI64(v, cum)
+	copy(v[8:], holder)
+	return command{Op: opBudReturn, NS: ns, Coll: coll, Items: []item{{Key: []byte(leaseID), Val: v}}}
+}
+
 // expireCmd builds a leader-proposed forced-expiry command carrying the leader-stamped sweepNowMs.
 func expireCmd(ns, coll []byte, leaseID string, sweepNowMs int64) command {
 	v := make([]byte, 8)
@@ -333,6 +348,75 @@ func TestApplyBudReportThenReturnConserves(t *testing.T) {
 	assertInv(t, p)
 	if p.Available != 750 || p.LeasedOut != 0 || p.Spent != 250 {
 		t.Fatalf("after return: avail=%d leased=%d spent=%d want 750/0/250", p.Available, p.LeasedOut, p.Spent)
+	}
+}
+
+// TestHolderMatchOnReportAndReturn pins the Stage-2.x holder-binding guard: a Report/Return whose bound
+// holder does not match the lease's grantee is rejected (budWrongHolder) and mutates NO accounting; a
+// matching holder is accepted; an omitted (empty) holder stays lenient (back-compat). grantCmd records
+// the holder == the leaseID string ("L"), so "EVIL" mismatches and "L" matches.
+func TestHolderMatchOnReportAndReturn(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmd(ns, coll, 1000))
+	_, _ = u.applyBudGrant(grantCmd(ns, coll, "L", 600)) // lease.Holder == "L"
+
+	// wrong holder on report -> budWrongHolder, no accounting change.
+	r, err := u.applyBudReport(reportCmdH(ns, coll, "L", "EVIL", 100))
+	if err != nil {
+		t.Fatalf("report(wrong holder): %v", err)
+	}
+	if string(r.Data) != string(budWrongHolder) {
+		t.Fatalf("report wrong holder Data = %q, want BUDWRONGHOLDER", r.Data)
+	}
+	if p, _, _ := u.getPool(ns, coll); p.Spent != 0 || p.LeasedOut != 600 {
+		t.Fatalf("wrong-holder report mutated pool: spent=%d leased=%d, want 0/600", p.Spent, p.LeasedOut)
+	}
+
+	// matching holder on report -> accepted (folds the spend).
+	r2, err := u.applyBudReport(reportCmdH(ns, coll, "L", "L", 100))
+	if err != nil {
+		t.Fatalf("report(matching holder): %v", err)
+	}
+	if string(r2.Data) == string(budWrongHolder) {
+		t.Fatal("matching-holder report rejected")
+	}
+	if p, _, _ := u.getPool(ns, coll); p.Spent != 100 {
+		t.Fatalf("matching report spent=%d, want 100", p.Spent)
+	}
+
+	// omitted holder (empty) on report -> lenient, accepted.
+	if r3, _ := u.applyBudReport(reportCmd(ns, coll, "L", 200)); string(r3.Data) == string(budWrongHolder) {
+		t.Fatal("omitted-holder report wrongly rejected (back-compat broken)")
+	}
+	if p, _, _ := u.getPool(ns, coll); p.Spent != 200 {
+		t.Fatalf("omitted-holder report spent=%d, want 200", p.Spent)
+	}
+
+	// wrong holder on return -> budWrongHolder, lease NOT settled.
+	rr, err := u.applyBudReturn(returnCmdH(ns, coll, "L", "EVIL", 200))
+	if err != nil {
+		t.Fatalf("return(wrong holder): %v", err)
+	}
+	if string(rr.Data) != string(budWrongHolder) {
+		t.Fatalf("return wrong holder Data = %q, want BUDWRONGHOLDER", rr.Data)
+	}
+	if _, found, _ := u.getLease(ns, coll, []byte("L")); !found {
+		t.Fatal("wrong-holder return settled the lease (must not)")
+	}
+
+	// matching holder on return -> accepted (settles, credits the remainder).
+	rr2, err := u.applyBudReturn(returnCmdH(ns, coll, "L", "L", 200))
+	if err != nil {
+		t.Fatalf("return(matching holder): %v", err)
+	}
+	if string(rr2.Data) == string(budWrongHolder) {
+		t.Fatal("matching-holder return rejected")
+	}
+	p, _, _ := u.getPool(ns, coll)
+	assertInv(t, p)
+	if p.Available != 800 || p.LeasedOut != 0 || p.Spent != 200 {
+		t.Fatalf("after matching return: avail=%d leased=%d spent=%d, want 800/0/200", p.Available, p.LeasedOut, p.Spent)
 	}
 }
 
@@ -884,7 +968,7 @@ func TestBudgetEndToEnd(t *testing.T) {
 	if err != nil || g.Granted != 600 {
 		t.Fatalf("grant = %+v, %v want 600", g, err)
 	}
-	if err := c.BudgetReport(ctx, ns, coll, []byte("lease-A1"), 250); err != nil {
+	if err := c.BudgetReport(ctx, ns, coll, []byte("lease-A1"), []byte("node-A"), 250); err != nil {
 		t.Fatalf("report: %v", err)
 	}
 	st, err := c.BudgetStat(ctx, ns, coll, true)
@@ -1087,9 +1171,9 @@ func TestBudgetConservationFuzzTimed(t *testing.T) {
 	r := newDetRand(0xB0DDE7)
 	clock := int64(1_000_000) // deterministic leader-stamped clock; never time.Now()
 	leaseSeq := 0
-	live := map[string]*fuzzLease{}      // leaseID -> ground truth for un-settled leases
-	served := map[string]int64{}         // leaseID -> total impressions delivered (acked ledger, all leases)
-	var totalServed int64                // Σ served across ALL lease IDs ever
+	live := map[string]*fuzzLease{} // leaseID -> ground truth for un-settled leases
+	served := map[string]int64{}    // leaseID -> total impressions delivered (acked ledger, all leases)
+	var totalServed int64           // Σ served across ALL lease IDs ever
 
 	liveIDs := func() []string {
 		ids := make([]string, 0, len(live))
@@ -1196,7 +1280,7 @@ func TestGrantAfterReturnReusesIdRegrantsFreshQuantity(t *testing.T) {
 	ns, coll := []byte("p"), []byte("c")
 	_, _ = u.applyBudInit(initCmd(ns, coll, 1000))
 	_, _ = u.applyBudGrant(grantCmd(ns, coll, "A", 600))
-	_, _ = u.applyBudReturn(returnCmd(ns, coll, "A", 0)) // unspent 600 returns; lease row deleted
+	_, _ = u.applyBudReturn(returnCmd(ns, coll, "A", 0))  // unspent 600 returns; lease row deleted
 	r, _ := u.applyBudGrant(grantCmd(ns, coll, "A", 600)) // SAME id -> fresh grant (the hazard)
 	if decodeGrant(r.Data) != 600 {
 		t.Fatalf("expected fresh re-grant of 600 (Stage-1 limitation), got %d", decodeGrant(r.Data))

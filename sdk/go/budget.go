@@ -129,10 +129,12 @@ func (bc *BudgetClient) Grant(ctx context.Context, namespace string, budget, hol
 }
 
 // Report folds a cumulative-per-lease spent total into the pool (idempotent max fold): spentCumulative is
-// the lease's total spend so far, not a delta, so a retry or out-of-order report is safe.
-func (bc *BudgetClient) Report(ctx context.Context, namespace string, budget, leaseID []byte, spentCumulative int64) error {
+// the lease's total spend so far, not a delta, so a retry or out-of-order report is safe. holder binds the
+// report to the lease's grantee — pass the same holder used at Grant; a mismatch fails with
+// PermissionDenied. Pass nil to omit the check (lenient, back-compat).
+func (bc *BudgetClient) Report(ctx context.Context, namespace string, budget, leaseID, holder []byte, spentCumulative int64) error {
 	_, err := bc.writeClient(ctx, namespace, budget).BudgetReport(ctx, &wavespanv1.BudgetReportRequest{
-		Namespace: namespace, Budget: budget, LeaseId: leaseID, SpentCumulative: spentCumulative,
+		Namespace: namespace, Budget: budget, LeaseId: leaseID, HolderId: string(holder), SpentCumulative: spentCumulative,
 	})
 	if err != nil {
 		return wrapErr("BudgetReport", bc.noteWriteErr(ctx, err))
@@ -141,10 +143,11 @@ func (bc *BudgetClient) Report(ctx context.Context, namespace string, budget, le
 }
 
 // Return releases a lease's unspent remainder (folding spentCumulative as the lease's final spend) and
-// deletes the lease row, returning its leased-out units to the pool's available balance.
-func (bc *BudgetClient) Return(ctx context.Context, namespace string, budget, leaseID []byte, spentCumulative int64) error {
+// deletes the lease row, returning its leased-out units to the pool's available balance. holder binds the
+// return to the lease's grantee (same match-or-PermissionDenied rule as Report; nil is lenient).
+func (bc *BudgetClient) Return(ctx context.Context, namespace string, budget, leaseID, holder []byte, spentCumulative int64) error {
 	_, err := bc.writeClient(ctx, namespace, budget).BudgetReturn(ctx, &wavespanv1.BudgetReturnRequest{
-		Namespace: namespace, Budget: budget, LeaseId: leaseID, SpentCumulative: spentCumulative,
+		Namespace: namespace, Budget: budget, LeaseId: leaseID, HolderId: string(holder), SpentCumulative: spentCumulative,
 	})
 	if err != nil {
 		return wrapErr("BudgetReturn", bc.noteWriteErr(ctx, err))

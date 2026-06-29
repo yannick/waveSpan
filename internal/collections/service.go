@@ -106,6 +106,10 @@ func collErr(err error) error {
 		// B3/B4: a non-STRICT mode or an invalid cap at define time; or (2a.3) an out-of-bounds
 		// pacing/timing param at define/grant time — a bad argument, not a transient fault.
 		return connect.NewError(connect.CodeInvalidArgument, err)
+	case errors.Is(err, ErrWrongHolder):
+		// Stage-2.x: a Report/Return whose bound holder_id does not match the lease's grantee — first-party
+		// tampering or a nodeID collision. PermissionDenied: the caller is not authorized for this lease.
+		return connect.NewError(connect.CodePermissionDenied, err)
 	case errors.Is(err, ErrLeaseSettled):
 		// 2b.3/§3.7: the grant's lease_id was already settled (returned/expired) and is tombstoned —
 		// it is never re-granted. AlreadyExists tells the node-side lease cache (§4.2) to mint a fresh
@@ -426,7 +430,7 @@ func (s *Service) BudgetGrant(ctx context.Context, req *connect.Request[wavespan
 func (s *Service) BudgetReport(ctx context.Context, req *connect.Request[wavespanv1.BudgetReportRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
 	m := req.Msg
 	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
-	if err := s.cols.BudgetReport(ctx, ns, coll, m.GetLeaseId(), m.GetSpentCumulative()); err != nil {
+	if err := s.cols.BudgetReport(ctx, ns, coll, m.GetLeaseId(), []byte(m.GetHolderId()), m.GetSpentCumulative()); err != nil {
 		return nil, collErr(err)
 	}
 	st, err := s.cols.BudgetStat(ctx, ns, coll, false)
@@ -440,7 +444,7 @@ func (s *Service) BudgetReport(ctx context.Context, req *connect.Request[wavespa
 func (s *Service) BudgetReturn(ctx context.Context, req *connect.Request[wavespanv1.BudgetReturnRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
 	m := req.Msg
 	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
-	if err := s.cols.BudgetReturn(ctx, ns, coll, m.GetLeaseId(), m.GetSpentCumulative()); err != nil {
+	if err := s.cols.BudgetReturn(ctx, ns, coll, m.GetLeaseId(), []byte(m.GetHolderId()), m.GetSpentCumulative()); err != nil {
 		return nil, collErr(err)
 	}
 	st, err := s.cols.BudgetStat(ctx, ns, coll, false)

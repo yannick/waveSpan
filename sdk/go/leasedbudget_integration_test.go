@@ -32,7 +32,16 @@ type fakePool struct {
 	tombs                             map[string]bool
 }
 
-type fakeLease struct{ amount, spent, grantedMs, ttl int64 }
+type fakeLease struct {
+	amount, spent, grantedMs, ttl int64
+	holder                        string // grantee identity; report/return must match it when both are non-empty
+}
+
+// holderMismatch mirrors the server's lenient holder-match guard: a non-empty caller holder that
+// contradicts the lease's recorded holder is rejected; an empty on either side is lenient.
+func holderMismatch(leaseHolder, caller string) bool {
+	return leaseHolder != "" && caller != "" && leaseHolder != caller
+}
 
 func fakeKey(ns string, b []byte) string { return ns + "\x00" + string(b) }
 
@@ -89,7 +98,7 @@ func (s *fakeBudgetSrv) BudgetGrant(_ context.Context, m *wavespanv1.BudgetGrant
 	gms := time.Now().UnixMilli()
 	p.available -= grant
 	p.leasedOut += grant
-	p.leases[lid] = &fakeLease{amount: grant, grantedMs: gms, ttl: ttl}
+	p.leases[lid] = &fakeLease{amount: grant, grantedMs: gms, ttl: ttl, holder: m.GetHolderId()}
 	return &wavespanv1.BudgetGrantResult{
 		GrantedUnits: grant, Partial: grant < m.GetAmountUnits(),
 		GrantedMs: gms, TtlMs: ttl, SelfGuardMs: p.selfGuard, MaxPauseBudgetMs: p.maxPause,
@@ -120,6 +129,9 @@ func (s *fakeBudgetSrv) BudgetReport(_ context.Context, m *wavespanv1.BudgetRepo
 	if l == nil {
 		return nil, status.Error(codes.FailedPrecondition, "no lease")
 	}
+	if holderMismatch(l.holder, m.GetHolderId()) {
+		return nil, status.Error(codes.PermissionDenied, "holder mismatch")
+	}
 	s.foldReportLocked(p, l, m.GetSpentCumulative())
 	return s.statLocked(k), nil
 }
@@ -139,6 +151,9 @@ func (s *fakeBudgetSrv) BudgetReturn(_ context.Context, m *wavespanv1.BudgetRetu
 	l := p.leases[lid]
 	if l == nil { // unknown/already-returned: lenient no-op
 		return s.statLocked(k), nil
+	}
+	if holderMismatch(l.holder, m.GetHolderId()) {
+		return nil, status.Error(codes.PermissionDenied, "holder mismatch")
 	}
 	s.foldReportLocked(p, l, m.GetSpentCumulative())
 	rem := l.amount - l.spent // CREDIT the attested remainder back to available
@@ -236,5 +251,50 @@ func TestReturnReleasesUnspent(t *testing.T) {
 
 	if err := b.Spend(1); err != ErrBudgetUnavailable {
 		t.Fatalf("post-Return Spend = %v, want ErrBudgetUnavailable", err)
+	}
+}
+
+// TestReportReturnHolderMatch exercises the Stage-2.x holder binding through the real SDK transport: a
+// Report/Return whose holder contradicts the lease's grantee fails with PermissionDenied; the matching
+// holder (and an omitted holder) succeed.
+func TestReportReturnHolderMatch(t *testing.T) {
+	c := startFakeBudget(t)
+	ctx := context.Background()
+	ns, budget := "ad", []byte("li/2/total")
+	holderA, holderB := []byte("node-A"), []byte("node-B")
+
+	if err := c.Budget().Define(ctx, ns, budget, 1000, BudgetModeStrict, nil); err != nil {
+		t.Fatalf("Define: %v", err)
+	}
+	if _, err := c.Budget().Grant(ctx, ns, budget, holderA, 600, []byte("lease-1")); err != nil {
+		t.Fatalf("Grant: %v", err)
+	}
+
+	// wrong holder on Report -> PermissionDenied.
+	if err := c.Budget().Report(ctx, ns, budget, []byte("lease-1"), holderB, 100); CodeOf(err) != codes.PermissionDenied {
+		t.Fatalf("Report(wrong holder) code = %v (err=%v), want PermissionDenied", CodeOf(err), err)
+	}
+	// matching holder on Report -> ok.
+	if err := c.Budget().Report(ctx, ns, budget, []byte("lease-1"), holderA, 100); err != nil {
+		t.Fatalf("Report(matching holder): %v", err)
+	}
+	// omitted holder on Report -> lenient, ok.
+	if err := c.Budget().Report(ctx, ns, budget, []byte("lease-1"), nil, 150); err != nil {
+		t.Fatalf("Report(omitted holder): %v", err)
+	}
+	// wrong holder on Return -> PermissionDenied (lease not settled).
+	if err := c.Budget().Return(ctx, ns, budget, []byte("lease-1"), holderB, 150); CodeOf(err) != codes.PermissionDenied {
+		t.Fatalf("Return(wrong holder) code = %v (err=%v), want PermissionDenied", CodeOf(err), err)
+	}
+	// matching holder on Return -> settles, credits the remainder.
+	if err := c.Budget().Return(ctx, ns, budget, []byte("lease-1"), holderA, 150); err != nil {
+		t.Fatalf("Return(matching holder): %v", err)
+	}
+	st, err := c.Budget().Stat(ctx, ns, budget, true)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if st.SpentUnits != 150 || st.LeasedOutUnits != 0 || st.AvailableUnits != 850 {
+		t.Fatalf("post-settle stat = spent%d leased%d avail%d, want 150/0/850", st.SpentUnits, st.LeasedOutUnits, st.AvailableUnits)
 	}
 }

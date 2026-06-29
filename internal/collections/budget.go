@@ -1,6 +1,7 @@
 package collections
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 
@@ -36,13 +37,14 @@ const (
 
 // Sentinels returned in ProposeResult.Data (mirror wrongType/notNumber in command.go:42-44).
 var (
-	budNoCapacity = []byte("BUDNOCAP")    // grant could not allocate (>0) in STRICT
-	budExists     = []byte("BUDEXISTS")   // init on an existing pool
-	budNoLease    = []byte("BUDNOLEASE")  // report/return on unknown lease
-	budNoBudget   = []byte("BUDNOBUDGET") // grant against a pool that does not exist (B9: distinct from budNoLease)
-	budBadMode    = []byte("BUDBADMODE")  // init with a non-STRICT mode, or invalid cap (B3/B4)
-	budBadParam   = []byte("BUDBADPARAM") // init/grant with an out-of-bounds pacing/timing param (2a.3)
-	budSettled    = []byte("BUDSETTLED")  // grant against a leaseID with a settled tombstone (2b.3; never re-grant)
+	budNoCapacity  = []byte("BUDNOCAP")       // grant could not allocate (>0) in STRICT
+	budExists      = []byte("BUDEXISTS")      // init on an existing pool
+	budNoLease     = []byte("BUDNOLEASE")     // report/return on unknown lease
+	budNoBudget    = []byte("BUDNOBUDGET")    // grant against a pool that does not exist (B9: distinct from budNoLease)
+	budBadMode     = []byte("BUDBADMODE")     // init with a non-STRICT mode, or invalid cap (B3/B4)
+	budBadParam    = []byte("BUDBADPARAM")    // init/grant with an out-of-bounds pacing/timing param (2a.3)
+	budSettled     = []byte("BUDSETTLED")     // grant against a leaseID with a settled tombstone (2b.3; never re-grant)
+	budWrongHolder = []byte("BUDWRONGHOLDER") // report/return whose holder_id does not match the lease's holder
 )
 
 var (
@@ -464,8 +466,10 @@ func (u *updateCtx) applyBudInit(c command) (ProposeResult, error) {
 // applyBudGrant atomically allocates min(requested, available) and emits a lease.
 // Idempotent for the lease's lifetime: a retry with the same leaseID (Items[0].Key) returns the existing
 // lease, never re-debits. leaseID + Idem are NOT routed through the dedup ring (see idempotency design).
-// B6: `holder` is recorded on the lease but NOT validated on later Report/Return — in Stage 1 the lease_id
-// is the bearer capability. Holder binding/auth is Stage 3+ (design open Q6).
+// B6: `holder` is recorded on the lease and, as of Stage-2.x, validated on later Report/Return when the
+// caller binds a non-empty holder (applyBudReport/applyBudReturn -> budWrongHolder). A caller that omits
+// the holder still relies on the lease_id as the bearer capability (lenient, back-compat); full holder
+// binding/auth remains Stage 3+ (design open Q6).
 func (u *updateCtx) applyBudGrant(c command) (ProposeResult, error) {
 	// Val layout (Stage 2): amount(8) | grantedMs(8) | ttlOverride(8) | holder(rest) — 24 fixed bytes.
 	if len(c.Items) == 0 || len(c.Items[0].Key) == 0 || len(c.Items[0].Val) < 24 {
@@ -569,7 +573,10 @@ func (u *updateCtx) applyBudGrant(c command) (ProposeResult, error) {
 		Granted: grant, GrantedMs: grantedMs, TTLMs: ttl, SelfGuardMs: p.SelfGuardMs, MaxPauseMs: p.MaxPauseMs})}, nil
 }
 
-// applyBudReport folds a cumulative-per-lease spent total (max), moving the delta leasedOut->spent.
+// applyBudReport folds a cumulative-per-lease spent total (max), moving the delta leasedOut->spent. Val
+// layout: cumulative(8) | holder(rest). A non-empty caller holder must match the lease's recorded holder
+// (budWrongHolder); an empty caller holder is lenient (back-compat), and a lease granted without a holder
+// is never holder-checked.
 func (u *updateCtx) applyBudReport(c command) (ProposeResult, error) {
 	if len(c.Items) == 0 || len(c.Items[0].Key) == 0 || len(c.Items[0].Val) < 8 {
 		return ProposeResult{}, errShortCommand
@@ -581,6 +588,11 @@ func (u *updateCtx) applyBudReport(c command) (ProposeResult, error) {
 	}
 	if !found {
 		return ProposeResult{Data: budNoLease}, nil
+	}
+	// Holder-match: reject a report whose bound holder contradicts the lease's grantee (B6 closure). Lenient
+	// when either side is empty so Stage-1 untyped callers and holder-less grants keep working.
+	if callerHolder := c.Items[0].Val[8:]; len(callerHolder) > 0 && len(l.Holder) > 0 && !bytes.Equal(callerHolder, l.Holder) {
+		return ProposeResult{Data: budWrongHolder}, nil
 	}
 	reported := getI64(c.Items[0].Val)
 	if reported <= l.Spent { // stale/duplicate -> no-op (max fold)
@@ -628,6 +640,13 @@ func (u *updateCtx) applyBudReturn(c command) (ProposeResult, error) {
 	}
 	if !found {
 		return ProposeResult{Data: budNoLease}, nil // unknown lease (never granted)
+	}
+	// Holder-match: reject a return whose bound holder contradicts the lease's grantee (B6 closure). Lenient
+	// when either side is empty (Val layout: cumulative(8) | holder(rest); a <8-byte Val carries no holder).
+	if len(c.Items[0].Val) >= 8 {
+		if callerHolder := c.Items[0].Val[8:]; len(callerHolder) > 0 && len(l.Holder) > 0 && !bytes.Equal(callerHolder, l.Holder) {
+			return ProposeResult{Data: budWrongHolder}, nil
+		}
 	}
 	p, found, err := u.getPool(c.NS, c.Coll)
 	if err != nil {

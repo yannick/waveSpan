@@ -447,31 +447,43 @@ func (c *Collections) BudgetGrant(ctx context.Context, ns, coll, holder []byte, 
 }
 
 // BudgetReport folds a cumulative-per-lease spent total into the pool (idempotent max fold: a stale or
-// duplicate cumulative is a no-op). An unknown lease returns ErrLeaseUnknown.
-func (c *Collections) BudgetReport(ctx context.Context, ns, coll, leaseID []byte, spentCumulative int64) error {
-	v := make([]byte, 8)
+// duplicate cumulative is a no-op). An unknown lease returns ErrLeaseUnknown. holder binds the report to
+// the lease's grantee: a non-empty holder that does not match the lease's recorded holder returns
+// ErrWrongHolder; pass nil to omit the check (lenient, back-compat). Val layout: cumulative(8)|holder.
+func (c *Collections) BudgetReport(ctx context.Context, ns, coll, leaseID, holder []byte, spentCumulative int64) error {
+	v := make([]byte, 8+len(holder))
 	putI64(v, spentCumulative)
+	copy(v[8:], holder)
 	_, data, err := c.proposeCmd(ctx, command{Op: opBudReport, NS: ns, Coll: coll, Items: []item{{Key: leaseID, Val: v}}})
 	if err != nil {
 		return err
 	}
-	if string(data) == string(budNoLease) {
+	switch string(data) {
+	case string(budNoLease):
 		return ErrLeaseUnknown
+	case string(budWrongHolder):
+		return ErrWrongHolder
 	}
 	return nil
 }
 
 // BudgetReturn folds a final cumulative spent, releases the lease's unspent remainder back to available,
-// and deletes the lease row. An unknown/already-returned lease returns ErrLeaseUnknown.
-func (c *Collections) BudgetReturn(ctx context.Context, ns, coll, leaseID []byte, finalSpent int64) error {
-	v := make([]byte, 8)
+// and deletes the lease row. An unknown/already-returned lease returns ErrLeaseUnknown. holder binds the
+// return to the lease's grantee (same match-or-ErrWrongHolder rule as BudgetReport; nil is lenient). Val
+// layout: cumulative(8)|holder.
+func (c *Collections) BudgetReturn(ctx context.Context, ns, coll, leaseID, holder []byte, finalSpent int64) error {
+	v := make([]byte, 8+len(holder))
 	putI64(v, finalSpent)
+	copy(v[8:], holder)
 	_, data, err := c.proposeCmd(ctx, command{Op: opBudReturn, NS: ns, Coll: coll, Items: []item{{Key: leaseID, Val: v}}})
 	if err != nil {
 		return err
 	}
-	if string(data) == string(budNoLease) {
+	switch string(data) {
+	case string(budNoLease):
 		return ErrLeaseUnknown
+	case string(budWrongHolder):
+		return ErrWrongHolder
 	}
 	return nil
 }
