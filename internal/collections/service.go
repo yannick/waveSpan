@@ -106,6 +106,12 @@ func collErr(err error) error {
 		// B3/B4: a non-STRICT mode or an invalid cap at define time; or (2a.3) an out-of-bounds
 		// pacing/timing param at define/grant time — a bad argument, not a transient fault.
 		return connect.NewError(connect.CodeInvalidArgument, err)
+	case errors.Is(err, ErrLeaseSettled):
+		// 2b.3/§3.7: the grant's lease_id was already settled (returned/expired) and is tombstoned —
+		// it is never re-granted. AlreadyExists tells the node-side lease cache (§4.2) to mint a fresh
+		// lease_id (rotate its nonce) rather than retry the same id, which would keep hitting the
+		// tombstone. Distinct from the missing-pool/lease FailedPrecondition above.
+		return connect.NewError(connect.CodeAlreadyExists, err)
 	}
 	return connect.NewError(connect.CodeInternal, err)
 }

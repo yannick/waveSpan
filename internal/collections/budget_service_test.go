@@ -25,6 +25,10 @@ func TestCollErrBudgetCodes(t *testing.T) {
 		{ErrBudgetNotFound, connect.CodeFailedPrecondition},
 		{ErrLeaseUnknown, connect.CodeFailedPrecondition},
 		{ErrUnsupportedMode, connect.CodeInvalidArgument},
+		{ErrBudgetBadParam, connect.CodeInvalidArgument},
+		// 2c.4: a settled/tombstoned lease_id maps to AlreadyExists so the node lease cache mints a fresh
+		// nonce instead of retrying the same (tombstoned) id.
+		{ErrLeaseSettled, connect.CodeAlreadyExists},
 	}
 	for _, c := range cases {
 		if got := connect.CodeOf(collErr(c.err)); got != c.want {

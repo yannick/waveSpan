@@ -1,9 +1,17 @@
 package wavespan
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"sync"
+	"sync/atomic"
+	"time"
+
+	wavespanv1 "github.com/yannick/wavespan/sdk/go/internal/gen/wavespan/v1"
+	"google.golang.org/grpc/codes"
 )
 
 // LeasedBudget node-side cache (design/35 Stage 2, §4). An adserver Acquires a budget once and Spends
@@ -28,6 +36,21 @@ const defaultChunkUnits int64 = 1000
 
 // nsPerSec is the nanoseconds-per-second divisor for the node token bucket (nowMono is in ns).
 const nsPerSec int64 = 1_000_000_000
+
+// nsPerMs converts the echoed millisecond timing (ttl/self_guard/max_pause) into nowMono's nanoseconds.
+const nsPerMs int64 = 1_000_000
+
+// maxMonoDeadline is the deadline for a non-timed chunk (ttl echoed as 0): effectively never stop. The
+// node cache is intended for TIMED budgets; a non-timed grant yields no holder stop and no self-fence.
+const maxMonoDeadline int64 = 1<<63 - 1
+
+// maxRefillAttempts bounds the redraw loop (freshness rejection / already-settled) so a pathologically
+// skewed clock or a tombstone storm cannot spin forever; on exhaustion the refill gives up and a later
+// Spend re-triggers it.
+const maxRefillAttempts = 4
+
+// refillTimeout caps a single background refill's RPCs.
+const refillTimeout = 10 * time.Second
 
 // BudgetKey identifies a budget pool: its namespace and budget id (the same (namespace, budget) pair the
 // Stage-1 BudgetClient addresses).
@@ -81,6 +104,7 @@ type leaseChunk struct {
 	remaining   int64
 	deadlineMon int64 // suspend-aware monotonic deadline (ns); Spend stops when now >= deadlineMon
 	spent       int64 // units spent from this chunk so far (cumulative)
+	reported    int64 // last cumulative spent attested to the server (avoids duplicate reports)
 	amount      int64 // units granted for this chunk
 	leaseID     []byte
 }
@@ -112,7 +136,36 @@ type budgetCell struct {
 
 	// triggerRefill kicks an off-path, single-flight refill. Set by Acquire; nil in pure cell unit tests.
 	triggerRefill func()
+
+	// --- refill machinery (§4.2) ---
+	refilling atomic.Bool // single-flight guard: at most one in-flight Draw per cell
+	holder    []byte      // node identity; the lease_id namespace (holder || be(nonce))
+	nonce     uint64      // per-refill nonce; rotated after a committed refill, bumped on redraw
+
+	// last echoed timing (set at install, used to stamp the deadline / informational).
+	selfGuardMs int64
+	ttlMs       int64
+
+	// injectable RPC hooks so the refill is testable without a server. wallNow is the holder WALL clock
+	// (UnixMilli) for the freshness gate — distinct from now (the suspend-aware monotonic clock).
+	drawFn   func(ctx context.Context, leaseID []byte, amount int64) (drawResult, error)
+	reportFn func(ctx context.Context, leaseID []byte, spent int64) error
+	wallNow  func() int64
 }
+
+// drawResult is the typed echo of a refill Draw (BudgetGrant): the granted amount plus the effective
+// leader-stamped timing the node needs to stamp its deadline, run the freshness gate, and set the fence.
+type drawResult struct {
+	granted     int64
+	grantedMs   int64
+	ttlMs       int64
+	selfGuardMs int64
+	maxPauseMs  int64
+}
+
+// errLeaseSettled signals that a Draw's lease_id was already settled server-side (tombstoned); the refill
+// mints a fresh nonce and redraws. draw translates a codes.AlreadyExists status into this sentinel.
+var errLeaseSettled = errors.New("wavespan: lease already settled")
 
 // Budget is a handle to one Acquired budget's node-side cache. Spend is zero-coordination; Return folds the
 // final spend and credits the unspent remainder back on graceful shutdown.
@@ -145,8 +198,20 @@ func (lb *LeasedBudgetClient) Acquire(ctx context.Context, key BudgetKey, opts .
 		lastTokenMon: nowMono(),
 		chunk:        o.chunk,
 		lowWatermark: lowWatermarkFor(o.chunk),
+		holder:       randomHolder(),
+		wallNow:      func() int64 { return time.Now().UnixMilli() },
 	}
+	cell.drawFn = func(ctx context.Context, leaseID []byte, amount int64) (drawResult, error) {
+		return lb.draw(ctx, key, cell.holder, amount, leaseID)
+	}
+	cell.reportFn = func(ctx context.Context, leaseID []byte, spent int64) error {
+		return lb.c.Budget().Report(ctx, key.Namespace, key.Budget, leaseID, spent)
+	}
+	cell.triggerRefill = cell.requestRefill
 	b := &Budget{lb: lb, key: key, cell: cell}
+	// Fill the cache synchronously so the returned Budget is immediately usable; the caller's ctx bounds
+	// this initial Draw. Subsequent refills run off-path on a background context (refillTimeout).
+	cell.refillOnce(ctx)
 	return b, nil
 }
 
@@ -214,10 +279,8 @@ func (c *budgetCell) Spend(n int64) error {
 		}
 	}
 
-	// (c) drop cur if it is past its own monotonic deadline.
-	if c.cur != nil && now >= c.cur.deadlineMon {
-		c.cur = nil
-	}
+	// (c) drop cur if it is past its own monotonic deadline (or drained), promoting a buffered chunk.
+	c.promoteLocked(now)
 
 	// (d) fast path: decrement the cached chunk, debit a token, and trigger a refill at the low watermark.
 	if c.cur != nil && c.cur.remaining >= n {
@@ -274,6 +337,164 @@ func (c *budgetCell) accrueTokensLocked(now int64) {
 func maxI64(a, b int64) int64 {
 	if a > b {
 		return a
+	}
+	return b
+}
+
+// promoteLocked drops cur when it is expired or drained, then promotes a buffered next chunk into the
+// empty cur slot (dropping the promotion too if it is already past its deadline). Called with mu held.
+func (c *budgetCell) promoteLocked(now int64) {
+	if c.cur != nil && (now >= c.cur.deadlineMon || c.cur.remaining == 0) {
+		c.cur = nil
+	}
+	if c.cur == nil && c.next != nil {
+		c.cur = c.next
+		c.next = nil
+		if now >= c.cur.deadlineMon {
+			c.cur = nil
+		}
+	}
+}
+
+// requestRefill kicks an off-path, single-flight background refill. If a refill is already in flight it is
+// a no-op (the double buffer means at most one extra chunk is ever in flight). Never blocks the caller.
+func (c *budgetCell) requestRefill() {
+	if c.drawFn == nil {
+		return
+	}
+	if !c.refilling.CompareAndSwap(false, true) {
+		return // already refilling: single-flight
+	}
+	go func() {
+		defer c.refilling.Store(false)
+		ctx, cancel := context.WithTimeout(context.Background(), refillTimeout)
+		defer cancel()
+		c.refillOnce(ctx)
+	}()
+}
+
+// refillOnce performs one logical refill (§4.2): attest the draining lease's cumulative spend, Draw the
+// next chunk under a stable lease_id (redrawing with a fresh nonce on a freshness rejection or an
+// already-settled tombstone), run the freshness gate, then install the chunk and stamp its suspend-aware
+// deadline. It holds the cell lock only to snapshot and to install — NEVER across an RPC. Idempotent w.r.t.
+// the double buffer: it no-ops when a next chunk is already buffered.
+func (c *budgetCell) refillOnce(ctx context.Context) {
+	if c.drawFn == nil {
+		return
+	}
+	c.mu.Lock()
+	if c.next != nil {
+		c.mu.Unlock()
+		return // already buffered
+	}
+	var repID []byte
+	var repSpent int64
+	if c.cur != nil && len(c.cur.leaseID) > 0 && c.cur.spent > c.cur.reported {
+		repID = c.cur.leaseID
+		repSpent = c.cur.spent
+	}
+	chunk := c.chunk
+	nonce := c.nonce
+	holder := c.holder
+	c.mu.Unlock()
+
+	// Attest the draining lease's cumulative spend (best-effort: a failure only delays attestation; a
+	// forced expiry debits any unreported tail, so safety never depends on this report — §3.5/I-1).
+	if repID != nil && c.reportFn != nil {
+		if err := c.reportFn(ctx, repID, repSpent); err == nil {
+			c.mu.Lock()
+			if c.cur != nil && bytes.Equal(c.cur.leaseID, repID) {
+				c.cur.reported = repSpent
+			}
+			c.mu.Unlock()
+		}
+	}
+
+	for attempt := 0; attempt < maxRefillAttempts; attempt++ {
+		leaseID := makeLeaseID(holder, nonce)
+		gr, err := c.drawFn(ctx, leaseID, chunk)
+		if err != nil {
+			if errors.Is(err, errLeaseSettled) {
+				nonce++ // the id is tombstoned: mint a fresh lease and retry
+				continue
+			}
+			return // transient/other: a later Spend re-triggers the refill
+		}
+		if gr.granted <= 0 {
+			return // no capacity right now: underspend, retry later
+		}
+		// Freshness gate (§16 edit #2): reject a grant whose transit exceeded self_guard — anchoring the
+		// local deadline on a stale receipt would be unsound. Drop it (it auto-expires server-side) and
+		// redraw with a fresh nonce (the same id would echo the same stale granted_ms forever).
+		if gr.ttlMs > 0 && c.wallNow()-gr.grantedMs > gr.selfGuardMs {
+			nonce++
+			continue
+		}
+		c.mu.Lock()
+		now := c.now()
+		deadline := maxMonoDeadline
+		if gr.ttlMs > 0 {
+			// Stop on the holder's OWN suspend-aware clock at ttl - self_guard (§2). May be non-positive
+			// for a misconfigured ttl < self_guard; such a chunk is simply dropped on first Spend (safe).
+			deadline = now + (gr.ttlMs-gr.selfGuardMs)*nsPerMs
+		}
+		c.next = &leaseChunk{remaining: gr.granted, amount: gr.granted, deadlineMon: deadline, leaseID: leaseID}
+		if gr.maxPauseMs > 0 {
+			c.maxPauseNs = gr.maxPauseMs * nsPerMs
+		}
+		c.selfGuardMs = gr.selfGuardMs
+		c.ttlMs = gr.ttlMs
+		c.lastSeenMon = now // re-anchor the fence so a freshly installed chunk is not false-fenced
+		c.nonce = nonce + 1 // rotate for the next logical refill (this one committed)
+		c.promoteLocked(now)
+		c.mu.Unlock()
+		return
+	}
+}
+
+// draw issues a refill BudgetGrant and returns the typed timing echo. A codes.AlreadyExists status (the
+// lease_id was settled/tombstoned, §3.7) is translated to errLeaseSettled so the caller mints a fresh id.
+// A depleted pool is a normal no_capacity result (granted 0, nil error), not an error.
+func (lb *LeasedBudgetClient) draw(ctx context.Context, key BudgetKey, holder []byte, amount int64, leaseID []byte) (drawResult, error) {
+	resp, err := lb.c.budget.BudgetGrant(ctx, &wavespanv1.BudgetGrantRequest{
+		Namespace:   key.Namespace,
+		Budget:      key.Budget,
+		HolderId:    string(holder),
+		AmountUnits: amount,
+		LeaseId:     leaseID,
+		// TtlMs 0 ⇒ the server applies the budget's DefaultTtlMs and echoes the effective value.
+	})
+	if err != nil {
+		if CodeOf(err) == codes.AlreadyExists {
+			return drawResult{}, errLeaseSettled
+		}
+		return drawResult{}, wrapErr("BudgetGrant", err)
+	}
+	return drawResult{
+		granted:     resp.GetGrantedUnits(),
+		grantedMs:   resp.GetGrantedMs(),
+		ttlMs:       resp.GetTtlMs(),
+		selfGuardMs: resp.GetSelfGuardMs(),
+		maxPauseMs:  resp.GetMaxPauseBudgetMs(),
+	}, nil
+}
+
+// makeLeaseID derives the stable per-refill lease_id as holder || be(nonce). Stable across RPC retries of
+// one logical refill (exactly-once with the 2b tombstone); unique per refill (the nonce rotates) and per
+// node (the random holder prefix).
+func makeLeaseID(holder []byte, nonce uint64) []byte {
+	id := make([]byte, len(holder)+8)
+	copy(id, holder)
+	binary.BigEndian.PutUint64(id[len(holder):], nonce)
+	return id
+}
+
+// randomHolder mints a per-process-per-Budget node identity that namespaces this holder's lease ids.
+func randomHolder() []byte {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// Best-effort fallback; lease-id uniqueness within a budget still holds via the rotating nonce.
+		binary.BigEndian.PutUint64(b, uint64(time.Now().UnixNano()))
 	}
 	return b
 }
