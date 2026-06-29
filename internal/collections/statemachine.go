@@ -281,7 +281,10 @@ func (u *updateCtx) applyOne(cmd []byte, frozen []frozenRange, scratch []item) (
 			return ProposeResult{Value: cached, Data: cdata}, nil
 		}
 	}
-	if c.Op != opExpire && c.Op != opRemove { // these are type-agnostic: they only delete existing elements
+	// Budget ops run their own type guard in the dispatch block below (opBudInit creates the type; the
+	// others must NOT create it, so a grant-before-define returns budNoBudget rather than a stray header).
+	// opExpire/opRemove are type-agnostic: they only delete existing elements.
+	if c.Op != opExpire && c.Op != opRemove && typeForOp(c.Op) != typeBudget {
 		ok, terr := u.ensureType(c.NS, c.Coll, typeForOp(c.Op))
 		if terr != nil {
 			return ProposeResult{}, terr
@@ -312,6 +315,36 @@ func (u *updateCtx) applyOne(cmd []byte, frozen []frozenRange, scratch []item) (
 			u.inBatchDedup[string(c.Idem)] = ProposeResult{Value: uint64(changed), Data: append([]byte(nil), data...)}
 		}
 		return ProposeResult{Value: uint64(changed), Data: data}, nil
+	}
+	// LeasedBudget ops (B7: NOT in coalescable(); each commits as its own Raft entry). They carry no
+	// c.Idem — idempotency is enforced inside the apply functions (durable lease-row check for grant,
+	// max-fold for report, lease-absence for return), so they are not routed through the dedup ring above.
+	switch c.Op {
+	case opBudInit, opBudGrant, opBudReport, opBudReturn, opBudExpire, opBudTombGC, opBudReconcile:
+		// Type guard (non-creating): WRONGTYPE only for a budget op hitting a set/hash/zset collection.
+		// opBudInit creates the typeBudget header ITSELF, but only after its own validation passes (see
+		// applyBudInit) — so a rejected init leaves no orphaned header and grant-before-define -> budNoBudget.
+		if tp, err := u.typeOf(c.NS, c.Coll); err != nil {
+			return ProposeResult{}, err
+		} else if tp != 0 && tp != typeBudget {
+			return ProposeResult{Data: wrongType}, nil
+		}
+		switch c.Op {
+		case opBudInit:
+			return u.applyBudInit(c)
+		case opBudGrant:
+			return u.applyBudGrant(c)
+		case opBudReport:
+			return u.applyBudReport(c)
+		case opBudReturn:
+			return u.applyBudReturn(c)
+		case opBudExpire: // leader-proposed forced expiry (no c.Idem; never coalesced, §3.5)
+			return u.applyBudExpire(c)
+		case opBudTombGC: // leader-proposed tombstone GC (§6)
+			return u.applyBudTombGC(c)
+		case opBudReconcile: // controller-proposed Σ-acked re-credit (§3.8; no c.Idem, never coalesced)
+			return u.applyBudReconcile(c)
+		}
 	}
 	changed, err := u.applyCommand(c)
 	if err != nil {
@@ -591,13 +624,33 @@ func (s *shardSM) Lookup(query interface{}) (interface{}, error) {
 			it.Next()
 		}
 		return out, it.Err()
+	case budStatQuery:
+		return s.lookupBudStat(snap, q)
+	case budCheckQuery:
+		return s.lookupBudCheck(snap, q)
 	case ttlDueQuery:
 		return s.scanDue(snap, q.NowMs, q.Limit)
+	case budExpiryDueQuery:
+		return s.scanBudDue(snap, s.budExpSpace(), q.NowMs, q.Limit)
+	case budTombGCDueQuery:
+		return s.scanBudDue(snap, s.budTombGCSpace(), q.NowMs, q.Limit)
 	case migrateScanQuery:
 		return scanRange(snap, s.prefix, q.StartRoute, q.EndRoute, q.Limit)
 	default:
 		return nil, errors.New("collections: unknown lookup query")
 	}
+}
+
+// applySingleForTest drives one encoded command through the real Update path (the same flush that
+// production uses: BatchRC, applied-index, card-delta and dedup commits) and returns the apply result as
+// a ProposeResult. It is an unexported test-only seam (no production callers); tests use it via mustApply.
+func applySingleForTest(s *shardSM, enc []byte) (ProposeResult, error) {
+	out, err := s.Update([]sm.Entry{{Index: 1, Cmd: enc}})
+	if err != nil {
+		return ProposeResult{}, err
+	}
+	r := out[0].Result
+	return ProposeResult{Value: r.Value, Data: r.Data}, nil
 }
 
 func (s *shardSM) snapCard(snap storage.Snapshot, ns, coll []byte) (uint64, error) {

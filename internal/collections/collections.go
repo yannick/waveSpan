@@ -362,6 +362,169 @@ func (c *Collections) CardCheck(ctx context.Context, ns, coll []byte, linearizab
 	return cc, nil
 }
 
+// --- Leased budget (design/35, Stage 1: single-cluster STRICT escrow) ---
+
+// BudgetConfig carries the Stage-2 pacing + timing parameters for BudgetDefine. The zero value reproduces
+// Stage-1 behavior: no pacing (Rate 0 ⇒ Burst defaults to the cap) and non-expiring leases (DefaultTTLMs
+// 0). When DefaultTTLMs > 0 the budget is timed and admission requires SelfGuardMs >= the clock-skew
+// bound and DedupRetryWindowMs >= the RPC-retry floor (I2/I3), else BudgetDefine returns ErrBudgetBadParam.
+type BudgetConfig struct {
+	Rate               int64 // token-bucket refill rate in micro-units/sec (0 = no pacing)
+	Burst              int64 // token-bucket ceiling (0 = default to the cap)
+	SelfGuardMs        int64 // holder self-fence band (>= maxClockSkewMs when any TTL is in play)
+	MaxPauseMs         int64 // holder max pause before self-fence (widens the 2b reclaim deadline)
+	DefaultTTLMs       int64 // per-lease TTL when a grant carries no override (0 = non-expiring)
+	DedupRetryWindowMs int64 // tombstone GC / dedup window (>= minDedupRetryWindowMs when timed)
+}
+
+// BudgetDefine creates a STRICT escrow pool with the given cap (int64 micro-units). Stage 1 is
+// STRICT-only: a non-STRICT mode or a negative cap returns ErrUnsupportedMode; defining an existing pool
+// returns ErrBudgetExists. The whole define is one Raft entry. rate/burst are reserved for Stage-2 pacing
+// (rate=0, burst=cap here).
+func (c *Collections) BudgetDefine(ctx context.Context, ns, coll []byte, capUnits int64, mode uint8, cfg BudgetConfig) error {
+	burst := cfg.Burst
+	if burst == 0 { // Stage-1 default: burst == cap (an unspecified burst means "the whole pool")
+		burst = capUnits
+	}
+	k := make([]byte, 1+8*7) // mode | cap | rate | burst | selfGuard | maxPause | defaultTtl | dedupWindow
+	k[0] = mode
+	putI64(k[1:], capUnits)
+	putI64(k[9:], cfg.Rate)
+	putI64(k[17:], burst)
+	putI64(k[25:], cfg.SelfGuardMs)
+	putI64(k[33:], cfg.MaxPauseMs)
+	putI64(k[41:], cfg.DefaultTTLMs)
+	putI64(k[49:], cfg.DedupRetryWindowMs)
+	_, data, err := c.proposeCmd(ctx, command{Op: opBudInit, NS: ns, Coll: coll, Items: []item{{Key: k}}})
+	if err != nil {
+		return err
+	}
+	switch string(data) {
+	case string(budExists):
+		return ErrBudgetExists
+	case string(budBadMode): // B3/B4: non-STRICT mode or invalid cap
+		return ErrUnsupportedMode
+	case string(budBadParam): // 2a.3: out-of-bounds pacing/timing param
+		return ErrBudgetBadParam
+	}
+	return nil
+}
+
+// BudgetGrant atomically leases min(amount, available) from the pool and returns the granted quantity.
+// leaseID makes the grant idempotent for the lease's lifetime (a retry returns the same amount, never
+// re-debits) — it rides in Items[0].Key, with Idem left empty so it is not routed through the dedup ring.
+// A grant against an undefined pool returns ErrBudgetNotFound; a pool with nothing left returns
+// ErrNoCapacity. Stage-1 contract: a lease_id is single-use-forever — never reuse one after BudgetReturn.
+// The leader stamps grantedMs (UnixMilli) before propose — mirroring SAddTTL — so every replica applies
+// the same deterministic time for pacing/expiry; never read a wall clock inside apply. ttlMs is a
+// per-grant TTL override (0 ⇒ use the budget's DefaultTTLMs). The returned GrantResult echoes the
+// effective grant + leader timing (only Granted/GrantedMs are populated until timed leases land, 2b).
+func (c *Collections) BudgetGrant(ctx context.Context, ns, coll, holder []byte, amount int64, leaseID []byte, ttlMs int64) (GrantResult, error) {
+	grantedMs := time.Now().UnixMilli()
+	v := make([]byte, 24+len(holder)) // amount(8) | grantedMs(8) | ttlOverride(8) | holder(rest)
+	putI64(v[0:], amount)
+	putI64(v[8:], grantedMs)
+	putI64(v[16:], ttlMs)
+	copy(v[24:], holder)
+	_, data, err := c.proposeCmd(ctx, command{Op: opBudGrant, NS: ns, Coll: coll, Items: []item{{Key: leaseID, Val: v}}})
+	if err != nil {
+		return GrantResult{}, err
+	}
+	switch string(data) {
+	case string(budNoCapacity):
+		return GrantResult{}, ErrNoCapacity
+	case string(budNoBudget):
+		return GrantResult{}, ErrBudgetNotFound // B9: budget pool does not exist
+	case string(budBadParam):
+		// I2 grant-apply gate: a timed grant (resolved ttl>0) whose pool self_guard is below the
+		// clock-skew bound. Distinct sentinel; must not be misdecoded as a success grant.
+		return GrantResult{}, ErrBudgetBadParam
+	case string(budSettled):
+		// 2b.3: the lease was already settled (returned/expired); re-granting it is refused (B5 closure).
+		return GrantResult{}, ErrLeaseSettled
+	}
+	return decodeGrantResult(data), nil
+}
+
+// BudgetReport folds a cumulative-per-lease spent total into the pool (idempotent max fold: a stale or
+// duplicate cumulative is a no-op). An unknown lease returns ErrLeaseUnknown. holder binds the report to
+// the lease's grantee: a non-empty holder that does not match the lease's recorded holder returns
+// ErrWrongHolder; pass nil to omit the check (lenient, back-compat). Val layout: cumulative(8)|holder.
+func (c *Collections) BudgetReport(ctx context.Context, ns, coll, leaseID, holder []byte, spentCumulative int64) error {
+	v := make([]byte, 8+len(holder))
+	putI64(v, spentCumulative)
+	copy(v[8:], holder)
+	_, data, err := c.proposeCmd(ctx, command{Op: opBudReport, NS: ns, Coll: coll, Items: []item{{Key: leaseID, Val: v}}})
+	if err != nil {
+		return err
+	}
+	switch string(data) {
+	case string(budNoLease):
+		return ErrLeaseUnknown
+	case string(budWrongHolder):
+		return ErrWrongHolder
+	}
+	return nil
+}
+
+// BudgetReturn folds a final cumulative spent, releases the lease's unspent remainder back to available,
+// and deletes the lease row. An unknown/already-returned lease returns ErrLeaseUnknown. holder binds the
+// return to the lease's grantee (same match-or-ErrWrongHolder rule as BudgetReport; nil is lenient). Val
+// layout: cumulative(8)|holder.
+func (c *Collections) BudgetReturn(ctx context.Context, ns, coll, leaseID, holder []byte, finalSpent int64) error {
+	v := make([]byte, 8+len(holder))
+	putI64(v, finalSpent)
+	copy(v[8:], holder)
+	_, data, err := c.proposeCmd(ctx, command{Op: opBudReturn, NS: ns, Coll: coll, Items: []item{{Key: leaseID, Val: v}}})
+	if err != nil {
+		return err
+	}
+	switch string(data) {
+	case string(budNoLease):
+		return ErrLeaseUnknown
+	case string(budWrongHolder):
+		return ErrWrongHolder
+	}
+	return nil
+}
+
+// BudgetReconcile is the controller surface for EXTERNAL Σ-acked reconciliation (§3.8). A forced lease
+// expiry pessimistically DEBITS the whole outstanding remainder to spent, stranding the genuinely-unspent
+// portion as bounded underspend. A controller holding the AUTHORITATIVE Σ-acked total from the external
+// impression/billing ledger calls this to reset spent to its true value (clamped to the SpentReported
+// floor and the Cap ceiling), recovering the stranded headroom WITHOUT re-introducing overspend. It
+// returns the recovered amount (old spent - new spent; negative if the external total booked MORE than the
+// pool had). A reconcile against an undefined pool returns ErrBudgetNotFound. This is an admin/controller
+// op — it carries no Idem and is never coalesced; conservation (cap == available + leasedOut + spent)
+// holds afterward except for a transient over-commit when outstanding leases exceed the reconciled
+// headroom (Available is floored at 0, never negative; the over-commit drains as those leases settle).
+func (c *Collections) BudgetReconcile(ctx context.Context, ns, coll []byte, trueAckedUnits int64) (int64, error) {
+	v := make([]byte, 8)
+	putI64(v, trueAckedUnits)
+	_, data, err := c.proposeCmd(ctx, command{Op: opBudReconcile, NS: ns, Coll: coll, Items: []item{{Val: v}}})
+	if err != nil {
+		return 0, err
+	}
+	if string(data) == string(budNoBudget) {
+		return 0, ErrBudgetNotFound
+	}
+	if len(data) != 8 { // success Data is always the 8-byte recovered int64 (sentinels are distinguishable)
+		return 0, ErrBudgetNotFound
+	}
+	return getI64(data), nil
+}
+
+// BudgetStat reads the pool accounting (cap/available/leasedOut/spent/epoch/mode). It is a bounded-stale
+// local read unless linearizable is set.
+func (c *Collections) BudgetStat(ctx context.Context, ns, coll []byte, linearizable bool) (BudStat, error) {
+	v, err := c.read(ctx, ns, coll, budStatQuery{NS: ns, Coll: coll}, linearizable)
+	if err != nil {
+		return BudStat{}, err
+	}
+	st, _ := v.(BudStat)
+	return st, nil
+}
+
 // --- shared ---
 
 func (c *Collections) card(ctx context.Context, ns, coll []byte, linearizable bool) (uint64, error) {

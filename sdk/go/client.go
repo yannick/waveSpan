@@ -78,6 +78,7 @@ type Client struct {
 	vector      wavespanv1.VectorServiceClient
 	cypher      wavespanv1.CypherClient
 	collections wavespanv1.CollectionServiceClient
+	budget      wavespanv1.BudgetServiceClient
 
 	// router is non-nil only when shard-aware collection-write routing is enabled (Options.ShardAwareCores).
 	router *shardRouter
@@ -116,6 +117,7 @@ func Dial(opts Options) (*Client, error) {
 		vector:      wavespanv1.NewVectorServiceClient(conn),
 		cypher:      wavespanv1.NewCypherClient(conn),
 		collections: wavespanv1.NewCollectionServiceClient(conn),
+		budget:      wavespanv1.NewBudgetServiceClient(conn),
 	}
 
 	if len(opts.ShardAwareCores) > 0 {

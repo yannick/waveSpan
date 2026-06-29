@@ -39,6 +39,32 @@ var (
 	// node admits writes again — and maps to gRPC ResourceExhausted so clients back off and retry.
 	ErrDiskPressure = errors.New("collections: disk pressure (write shed, retry)")
 
+	// ErrNoCapacity is returned when a STRICT pool cannot allocate any (>0) quantity for a grant.
+	// (LeasedBudget, design/35; these typed errors surface through the BudgetDefine/Grant/Report/Return API.)
+	ErrNoCapacity = errors.New("collections: budget has no capacity to grant")
+	// ErrBudgetExists is returned when BudgetDefine targets a pool that already exists.
+	ErrBudgetExists = errors.New("collections: budget already exists")
+	// ErrBudgetNotFound is returned when a grant/report/return targets a pool that was never defined (B9).
+	ErrBudgetNotFound = errors.New("collections: budget not found")
+	// ErrLeaseUnknown is returned when report/return names a lease that does not exist (or was returned).
+	ErrLeaseUnknown = errors.New("collections: lease unknown")
+	// ErrLeaseSettled is returned when a grant targets a leaseID whose lease has already been settled (a
+	// graceful Return or a forced expiry left a tombstone). The lease is single-use-forever; never re-grant
+	// it (§3.7, closes B5 for the timed path). Maps to FailedPrecondition in the typed API.
+	ErrLeaseSettled = errors.New("collections: lease already settled")
+	// ErrUnsupportedMode is returned when BudgetDefine asks for a non-STRICT mode or an invalid cap (B3/B4);
+	// Stage 1 ships STRICT only.
+	ErrUnsupportedMode = errors.New("collections: budget mode not supported in stage 1")
+	// ErrBudgetBadParam is returned when BudgetDefine/BudgetGrant carries an out-of-bounds pacing/timing
+	// parameter (negative rate, burst over the ceiling, or a TTL'd budget with too small a self_guard /
+	// dedup window). Maps to InvalidArgument, like ErrUnsupportedMode (2a.3).
+	ErrBudgetBadParam = errors.New("collections: budget pacing/timing parameter out of range")
+	// ErrWrongHolder is returned when BudgetReport/BudgetReturn carries a non-empty holder that does not
+	// match the lease's recorded holder — the lease's grantee binding is violated (first-party Return/Report
+	// tampering or a nodeID collision). Maps to PermissionDenied in the typed API. An empty holder is
+	// lenient (not checked), preserving back-compat with callers that do not bind a holder.
+	ErrWrongHolder = errors.New("collections: budget report/return holder mismatch")
+
 	wrongType  = []byte("WRONGTYPE") // Result.Data sentinel set by the state machine
 	frozenMark = []byte("FROZEN")    // Result.Data sentinel: mutation rejected, subrange is migrating
 	notNumber  = []byte("NOTNUM")    // Result.Data sentinel: HIncr* on a non-numeric field
@@ -63,6 +89,13 @@ const (
 	opHIncrByFloat opKind = 13 // hash: atomic float increment of a field (HINCRBYFLOAT)
 	opRemove       opKind = 14 // type-agnostic element removal (bulk cross-collection delete, §13.7)
 	opBatch        opKind = 15 // QW2: a coalesced batch of single commands carried in one Raft entry
+	opBudInit      opKind = 16 // leased-budget: create pool (cap, mode); epoch=1
+	opBudGrant     opKind = 17 // leased-budget: atomic lease grant (create-if-absent by Idem)
+	opBudReport    opKind = 18 // leased-budget: cumulative-per-lease spent fold (max)
+	opBudReturn    opKind = 19 // leased-budget: release unspent; book spent
+	opBudExpire    opKind = 20 // leased-budget: leader-proposed forced expiry (DEBIT settlement, §3.5)
+	opBudTombGC    opKind = 21 // leased-budget: leader-proposed tombstone GC (drop settled tombstone + index)
+	opBudReconcile opKind = 22 // leased-budget: controller-proposed Σ-acked re-credit (recover stranding, §3.8)
 )
 
 // mutates reports whether an op changes element state (and so must respect a subrange freeze).
@@ -74,9 +107,10 @@ func mutates(op opKind) bool {
 type collType byte
 
 const (
-	typeSet  collType = 1
-	typeHash collType = 2
-	typeZSet collType = 3
+	typeSet    collType = 1
+	typeHash   collType = 2
+	typeZSet   collType = 3
+	typeBudget collType = 4
 )
 
 // String maps a collection's datatype to its public wire name ("set"/"hash"/"zset"), or "unknown"
@@ -103,6 +137,8 @@ func typeForOp(op opKind) collType {
 		return typeHash
 	case opZAdd, opZRem:
 		return typeZSet
+	case opBudInit, opBudGrant, opBudReport, opBudReturn, opBudExpire, opBudTombGC, opBudReconcile:
+		return typeBudget
 	}
 	return 0
 }

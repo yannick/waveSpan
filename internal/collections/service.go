@@ -64,6 +64,13 @@ func (s *Service) Handler() (string, http.Handler) {
 	return wavespanv1connect.NewCollectionServiceHandler(s, rpcopts.Handler()...)
 }
 
+// BudgetHandler returns the mountable Connect handler (path, handler) for the LeasedBudget escrow API
+// (design/35). The same *Service backs both CollectionService and BudgetService — one engine, one error
+// mapper (collErr) — so budget RPCs reuse the leader-routing, WRONGTYPE, and ResponseMeta plumbing.
+func (s *Service) BudgetHandler() (string, http.Handler) {
+	return wavespanv1connect.NewBudgetServiceHandler(s, rpcopts.Handler()...)
+}
+
 func (s *Service) meta() *wavespanv1.ResponseMeta {
 	return &wavespanv1.ResponseMeta{
 		ServedByClusterId: s.self.ClusterID,
@@ -87,6 +94,28 @@ func collErr(err error) error {
 		// (codes 8 in both), so the write is rejected cleanly without the node ever crashing or filling its
 		// volume.
 		return connect.NewError(connect.CodeResourceExhausted, err)
+	case errors.Is(err, ErrNoCapacity):
+		// LeasedBudget (design/35): a STRICT pool with nothing left to grant — the caller asked for more
+		// than exists. ResourceExhausted mirrors the load-shed semantics: the resource (budget) is depleted.
+		return connect.NewError(connect.CodeResourceExhausted, err)
+	case errors.Is(err, ErrBudgetExists), errors.Is(err, ErrBudgetNotFound), errors.Is(err, ErrLeaseUnknown):
+		// Precondition violations: defining an existing pool, or grant/report/return against a missing
+		// pool/lease (B9). FailedPrecondition, like WRONGTYPE.
+		return connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, ErrUnsupportedMode), errors.Is(err, ErrBudgetBadParam):
+		// B3/B4: a non-STRICT mode or an invalid cap at define time; or (2a.3) an out-of-bounds
+		// pacing/timing param at define/grant time — a bad argument, not a transient fault.
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	case errors.Is(err, ErrWrongHolder):
+		// Stage-2.x: a Report/Return whose bound holder_id does not match the lease's grantee — first-party
+		// tampering or a nodeID collision. PermissionDenied: the caller is not authorized for this lease.
+		return connect.NewError(connect.CodePermissionDenied, err)
+	case errors.Is(err, ErrLeaseSettled):
+		// 2b.3/§3.7: the grant's lease_id was already settled (returned/expired) and is tombstoned —
+		// it is never re-granted. AlreadyExists tells the node-side lease cache (§4.2) to mint a fresh
+		// lease_id (rotate its nonce) rather than retry the same id, which would keep hitting the
+		// tombstone. Distinct from the missing-pool/lease FailedPrecondition above.
+		return connect.NewError(connect.CodeAlreadyExists, err)
 	}
 	return connect.NewError(connect.CodeInternal, err)
 }
@@ -336,6 +365,124 @@ func (s *Service) TierInfo(_ context.Context, _ *connect.Request[wavespanv1.Tier
 		})
 	}
 	return connect.NewResponse(res), nil
+}
+
+// --- Leased budget (design/35, Stage 1) ---
+
+// budStatResult builds a BudgetStatResult from the pool accounting plus this node's ResponseMeta.
+func (s *Service) budStatResult(st BudStat) *wavespanv1.BudgetStatResult {
+	return &wavespanv1.BudgetStatResult{
+		Meta:               s.meta(),
+		Exists:             st.Exists,
+		CapUnits:           st.Cap,
+		AvailableUnits:     st.Available,
+		LeasedOutUnits:     st.LeasedOut,
+		SpentUnits:         st.Spent,
+		SpentReportedUnits: st.SpentReported,
+		Epoch:              st.Epoch,
+		Mode:               wavespanv1.BudgetMode(st.Mode),
+	}
+}
+
+// BudgetDefine creates a STRICT escrow pool and returns the resulting pool accounting.
+func (s *Service) BudgetDefine(ctx context.Context, req *connect.Request[wavespanv1.BudgetDefineRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
+	m := req.Msg
+	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
+	cfg := BudgetConfig{
+		Rate:               m.GetRateUnitsPerSec(),
+		Burst:              m.GetBurstUnits(),
+		SelfGuardMs:        m.GetSelfGuardMs(),
+		MaxPauseMs:         m.GetMaxPauseMs(),
+		DefaultTTLMs:       m.GetDefaultTtlMs(),
+		DedupRetryWindowMs: m.GetDedupRetryWindowMs(),
+	}
+	if err := s.cols.BudgetDefine(ctx, ns, coll, m.GetCapUnits(), uint8(m.GetMode()), cfg); err != nil {
+		return nil, collErr(err)
+	}
+	st, err := s.cols.BudgetStat(ctx, ns, coll, false)
+	if err != nil {
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(s.budStatResult(st)), nil
+}
+
+// BudgetGrant atomically leases up to amount_units. A depleted STRICT pool is reported as a normal
+// result with no_capacity set (not an error), so callers can distinguish "nothing right now" from a fault.
+func (s *Service) BudgetGrant(ctx context.Context, req *connect.Request[wavespanv1.BudgetGrantRequest]) (*connect.Response[wavespanv1.BudgetGrantResult], error) {
+	m := req.Msg
+	// ttl_ms is the per-grant TTL override (0 ⇒ the budget's DefaultTTLMs); self_guard/max_pause come
+	// from the budget config and ride back on the result echo below.
+	gr, err := s.cols.BudgetGrant(ctx, []byte(m.GetNamespace()), m.GetBudget(), []byte(m.GetHolderId()), m.GetAmountUnits(), m.GetLeaseId(), m.GetTtlMs())
+	if err != nil {
+		if errors.Is(err, ErrNoCapacity) {
+			return connect.NewResponse(&wavespanv1.BudgetGrantResult{Meta: s.meta(), NoCapacity: true}), nil
+		}
+		return nil, collErr(err)
+	}
+	// Echo the effective leader-stamped timing so the node lease cache can run its freshness gate, stamp
+	// its suspend-aware deadline, and set the self-fence (§5 M-4). Zero for a non-timed grant.
+	return connect.NewResponse(&wavespanv1.BudgetGrantResult{
+		Meta: s.meta(), GrantedUnits: gr.Granted, Partial: gr.Granted < m.GetAmountUnits(),
+		GrantedMs: gr.GrantedMs, TtlMs: gr.TTLMs, SelfGuardMs: gr.SelfGuardMs, MaxPauseBudgetMs: gr.MaxPauseMs,
+	}), nil
+}
+
+// BudgetReport folds a cumulative-per-lease spent total and returns the pool accounting.
+func (s *Service) BudgetReport(ctx context.Context, req *connect.Request[wavespanv1.BudgetReportRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
+	m := req.Msg
+	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
+	if err := s.cols.BudgetReport(ctx, ns, coll, m.GetLeaseId(), []byte(m.GetHolderId()), m.GetSpentCumulative()); err != nil {
+		return nil, collErr(err)
+	}
+	st, err := s.cols.BudgetStat(ctx, ns, coll, false)
+	if err != nil {
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(s.budStatResult(st)), nil
+}
+
+// BudgetReturn releases a lease's unspent remainder and returns the pool accounting.
+func (s *Service) BudgetReturn(ctx context.Context, req *connect.Request[wavespanv1.BudgetReturnRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
+	m := req.Msg
+	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
+	if err := s.cols.BudgetReturn(ctx, ns, coll, m.GetLeaseId(), []byte(m.GetHolderId()), m.GetSpentCumulative()); err != nil {
+		return nil, collErr(err)
+	}
+	st, err := s.cols.BudgetStat(ctx, ns, coll, false)
+	if err != nil {
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(s.budStatResult(st)), nil
+}
+
+// BudgetReconcile re-credits a budget to its authoritative external Σ-acked spend (§3.8), recovering the
+// headroom a forced lease expiry stranded as underspend — without overspend. Controller/admin surface; it
+// is mounted on the gRPC data plane and the Connect admin port, NOT the read-only HTTP gateway. The result
+// carries the recovered amount (old spent - new spent) alongside the post-reconcile pool accounting.
+func (s *Service) BudgetReconcile(ctx context.Context, req *connect.Request[wavespanv1.BudgetReconcileRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
+	m := req.Msg
+	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
+	recovered, err := s.cols.BudgetReconcile(ctx, ns, coll, m.GetTrueAckedUnits())
+	if err != nil {
+		return nil, collErr(err)
+	}
+	st, err := s.cols.BudgetStat(ctx, ns, coll, false)
+	if err != nil {
+		return nil, collErr(err)
+	}
+	res := s.budStatResult(st)
+	res.RecoveredUnits = recovered
+	return connect.NewResponse(res), nil
+}
+
+// BudgetStat reads the pool accounting (bounded-stale unless linearizable).
+func (s *Service) BudgetStat(ctx context.Context, req *connect.Request[wavespanv1.BudgetStatRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
+	m := req.Msg
+	st, err := s.cols.BudgetStat(ctx, []byte(m.GetNamespace()), m.GetBudget(), m.GetLinearizable())
+	if err != nil {
+		return nil, collErr(err)
+	}
+	return connect.NewResponse(s.budStatResult(st)), nil
 }
 
 // ProposeForward applies a write forwarded by a peer that was not the shard's leader (node-side leader
