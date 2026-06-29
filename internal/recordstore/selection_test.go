@@ -1,0 +1,27 @@
+package recordstore
+
+import (
+	"testing"
+
+	"github.com/yannick/wavespan/internal/version"
+)
+
+func TestNamespaceOfKey(t *testing.T) {
+	cases := map[string][]byte{
+		"dataKey":   dataKey("ns", []byte("k"), version.Version{}),
+		"latestKey": latestKey("ns", []byte("k")),
+		"ttlKey":    ttlKey(1719000000000, "ns", []byte("k")),
+	}
+	for name, k := range cases {
+		ns, ok := NamespaceOfKey(k)
+		if !ok || ns != "ns" {
+			t.Fatalf("%s: ns=%q ok=%v, want ns/true", name, ns, ok)
+		}
+	}
+	if _, ok := NamespaceOfKey(nil); ok {
+		t.Fatal("empty key must decode ok=false")
+	}
+	if _, ok := NamespaceOfKey([]byte{0xff, 0x01}); ok {
+		t.Fatal("short ttl-sentinel key must decode ok=false")
+	}
+}
