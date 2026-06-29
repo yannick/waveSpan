@@ -36,6 +36,10 @@ type Contributor interface {
 	// RebuildAfterRestore rebuilds this contributor's derived indexes (and, in
 	// later phases, reconciles time-relative state) after raw data is restored.
 	RebuildAfterRestore(dst storage.LocalStore, ri RestoreInfo) error
+	// Selects reports whether a key in cf should be included under sel (consulted
+	// only when sel is non-empty — see ExportLogical). It decodes the key's
+	// selector entity (namespace / graph / collection) for its CF.
+	Selects(cf storage.ColumnFamily, key []byte, sel Selector) bool
 }
 
 // Registry holds the registered contributors.

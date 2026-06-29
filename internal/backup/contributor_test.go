@@ -34,3 +34,6 @@ func (s staticContributor) CFs() []CFSpec { return s.cfs }
 func (s staticContributor) RebuildAfterRestore(dst storage.LocalStore, ri RestoreInfo) error {
 	return nil
 }
+func (s staticContributor) Selects(cf storage.ColumnFamily, key []byte, sel Selector) bool {
+	return true
+}
