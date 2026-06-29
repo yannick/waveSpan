@@ -28,8 +28,10 @@ type NodeManifest struct {
 	CFs                []CFEntry `json:"cfs"`
 }
 
-// WriteTo marshals the manifest as indented JSON to w.
-func (m *NodeManifest) WriteTo(w io.Writer) error {
+// Encode marshals the manifest as indented JSON to w. (Named Encode rather than
+// WriteTo to avoid colliding with the io.WriterTo convention, which expects an
+// (int64, error) return — a single-error return is clearer for callers here.)
+func (m *NodeManifest) Encode(w io.Writer) error {
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err

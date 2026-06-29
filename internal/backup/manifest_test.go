@@ -16,7 +16,7 @@ func TestNodeManifestRoundTrip(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	if err := m.WriteTo(&buf); err != nil {
+	if err := m.Encode(&buf); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ReadNodeManifest(bytes.NewReader(buf.Bytes()))

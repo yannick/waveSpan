@@ -67,7 +67,7 @@ func ExportLogical(src storage.LocalStore, store ObjectStore, keyPrefix string, 
 		CFs:                entries,
 	}
 	var mbuf bytes.Buffer
-	if err := man.WriteTo(&mbuf); err != nil {
+	if err := man.Encode(&mbuf); err != nil {
 		return nil, err
 	}
 	if err := store.Put(keyPrefix+"/node.manifest.json", bytes.NewReader(mbuf.Bytes()), int64(mbuf.Len())); err != nil {
