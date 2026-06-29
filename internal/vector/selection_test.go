@@ -21,3 +21,15 @@ func TestCollectionOfKey(t *testing.T) {
 		t.Fatal("short key must decode ok=false")
 	}
 }
+
+func TestCollectionOfKeyNeverPanicsOnOverflow(t *testing.T) {
+	// uvarint(2^63) — a length prefix that overflows a lossy int() cast. For "va"
+	// the overflow is in the first (nodeID) chunk, for "vr"/"vm" in the collection.
+	overflow := []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01}
+	for _, pfx := range []string{pfxRaw, pfxMeta, pfxAttach} {
+		k := append([]byte(pfx), overflow...)
+		if _, ok := CollectionOfKey(k); ok {
+			t.Fatalf("overflow length after %s must decode ok=false (and not panic)", pfx)
+		}
+	}
+}

@@ -19,7 +19,9 @@ func NamespaceOfKey(key []byte) (string, bool) {
 		return ns, ok
 	}
 	nsLen, n := binary.Uvarint(key)
-	if n <= 0 || int(nsLen) > len(key)-n {
+	// Unsigned compare (no lossy int() cast): a length in (2^63, 2^64) would make
+	// int(nsLen) negative and slip past a signed guard, panicking the slice below.
+	if n <= 0 || nsLen > uint64(len(key)-n) {
 		return "", false
 	}
 	return string(key[n : n+int(nsLen)]), true

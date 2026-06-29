@@ -29,3 +29,14 @@ func TestGraphOfKey(t *testing.T) {
 		t.Fatal("empty key must decode ok=false")
 	}
 }
+
+func TestGraphOfKeyNeverPanicsOnOverflow(t *testing.T) {
+	// uvarint(2^63) — a length prefix that overflows a lossy int() cast.
+	overflow := []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01}
+	for _, pfx := range [][]byte{{'n'}, {'e'}, {'l'}, {'p'}, []byte("ao"), []byte("ai")} {
+		k := append(append([]byte{}, pfx...), overflow...)
+		if _, ok := GraphOfKey(k); ok {
+			t.Fatalf("overflow graph-name length after %q must decode ok=false (and not panic)", pfx)
+		}
+	}
+}

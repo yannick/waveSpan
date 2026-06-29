@@ -25,6 +25,12 @@ func RerouteSuffix(suffix []byte, newN uint64) (shardID uint64, keep bool, err e
 	default:
 		return 0, false, fmt.Errorf("collections: cannot re-route unknown CFReplData sub-prefix %#x", suffix[0])
 	}
+	switch suffix[0] {
+	case subTTL, subBudExp, subBudTombGC:
+		if len(suffix) < 9 {
+			return 0, false, fmt.Errorf("collections: short %#x suffix", suffix[0])
+		}
+	}
 	ns, coll, ok := nsCollOfSuffix(suffix)
 	if !ok {
 		return 0, false, fmt.Errorf("collections: cannot decode (ns,coll) from %#x CFReplData suffix", suffix[0])

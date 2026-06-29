@@ -42,7 +42,9 @@ func prefixEnd(p []byte) []byte {
 
 func decodeLP(b []byte) (string, []byte) {
 	n, sz := binary.Uvarint(b)
-	if sz <= 0 || int(n) > len(b)-sz {
+	// Unsigned compare (no lossy int() cast): a length in (2^63, 2^64) would go
+	// negative as an int and slip past a signed guard, panicking the slice below.
+	if sz <= 0 || n > uint64(len(b)-sz) {
 		return "", nil
 	}
 	return string(b[sz : sz+int(n)]), b[sz+int(n):]
