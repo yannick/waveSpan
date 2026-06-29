@@ -417,6 +417,59 @@ func TestIdempotentTimedGrantEchoesSameTiming(t *testing.T) {
 	}
 }
 
+// --- Task 2b.3: tombstone settlement symmetry on graceful Return ---
+
+func TestReturnWritesTombstoneAndCredits(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmdFull(ns, coll, 1000, 0, 1000, maxClockSkewMs, 2000, 0, minDedupRetryWindowMs))
+	mustGrant(t, u, ns, coll, "L", 100, 1_000_000, 3000) // timed lease
+	_, _ = u.applyBudReport(reportCmd(ns, coll, "L", 30))
+	// graceful return folds final spent 40 -> CREDITS the unspent 60 back to available
+	r, err := u.applyBudReturn(returnCmd(ns, coll, "L", 40))
+	if err != nil {
+		t.Fatalf("return: %v", err)
+	}
+	if r.Value != 60 {
+		t.Fatalf("return remainder = %d, want 60", r.Value)
+	}
+	p, _, _ := u.getPool(ns, coll)
+	assertInv(t, p)
+	if p.Available != 960 || p.LeasedOut != 0 || p.Spent != 40 { // 1000 -100 grant +60 unspent credit
+		t.Fatalf("after return: avail=%d leased=%d spent=%d want 960/0/40", p.Available, p.LeasedOut, p.Spent)
+	}
+	if _, found, _ := u.getLease(ns, coll, []byte("L")); found {
+		t.Fatal("lease row not deleted")
+	}
+	tr, found, _ := u.getTomb(ns, coll, []byte("L"))
+	if !found || tr.FinalSpent != 40 || tr.Reason != reasonReturn {
+		t.Fatalf("tombstone = %+v found=%v, want finalSpent40 reasonReturn", tr, found)
+	}
+	wantReclaim := int64(1_000_000) + 3000 + 3*maxClockSkewMs + 2000
+	if op, ok := findOp(u, u.s.budExpKey(wantReclaim, ns, coll, []byte("L"))); !ok || !op.Delete {
+		t.Fatalf("expiry index entry not deleted on return (ok=%v delete=%v)", ok, op.Delete)
+	}
+}
+
+// A timed lease that has been returned is SETTLED: re-granting the same leaseID returns budSettled, never
+// a fresh grant (B5 closure for the timed path, contrast the Stage-1 untimed hazard test below).
+func TestGrantAfterReturnSettledNoRegrant(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	_, _ = u.applyBudInit(initCmdFull(ns, coll, 1000, 0, 1000, maxClockSkewMs, 2000, 0, minDedupRetryWindowMs))
+	mustGrant(t, u, ns, coll, "L", 100, 1_000_000, 3000)
+	_, _ = u.applyBudReturn(returnCmd(ns, coll, "L", 0)) // settle: credit 100 back
+	r, _ := u.applyBudGrant(grantCmdT(ns, coll, "L", 100, 2_000_000, 3000))
+	if string(r.Data) != string(budSettled) {
+		t.Fatalf("re-grant after settle Data = %q, want BUDSETTLED", r.Data)
+	}
+	p, _, _ := u.getPool(ns, coll)
+	assertInv(t, p)
+	if p.Available != 1000 || p.LeasedOut != 0 {
+		t.Fatalf("settled re-grant changed pool: avail=%d leased=%d want 1000/0", p.Available, p.LeasedOut)
+	}
+}
+
 // --- Task 2a.2: token-bucket pacing ---
 
 func TestApplyBudGrantPaced(t *testing.T) {

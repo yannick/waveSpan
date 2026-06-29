@@ -48,6 +48,10 @@ var (
 	ErrBudgetNotFound = errors.New("collections: budget not found")
 	// ErrLeaseUnknown is returned when report/return names a lease that does not exist (or was returned).
 	ErrLeaseUnknown = errors.New("collections: lease unknown")
+	// ErrLeaseSettled is returned when a grant targets a leaseID whose lease has already been settled (a
+	// graceful Return or a forced expiry left a tombstone). The lease is single-use-forever; never re-grant
+	// it (§3.7, closes B5 for the timed path). Maps to FailedPrecondition in the typed API.
+	ErrLeaseSettled = errors.New("collections: lease already settled")
 	// ErrUnsupportedMode is returned when BudgetDefine asks for a non-STRICT mode or an invalid cap (B3/B4);
 	// Stage 1 ships STRICT only.
 	ErrUnsupportedMode = errors.New("collections: budget mode not supported in stage 1")

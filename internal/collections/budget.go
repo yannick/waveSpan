@@ -42,12 +42,21 @@ var (
 	budNoBudget   = []byte("BUDNOBUDGET") // grant against a pool that does not exist (B9: distinct from budNoLease)
 	budBadMode    = []byte("BUDBADMODE")  // init with a non-STRICT mode, or invalid cap (B3/B4)
 	budBadParam   = []byte("BUDBADPARAM") // init/grant with an out-of-bounds pacing/timing param (2a.3)
+	budSettled    = []byte("BUDSETTLED")  // grant against a leaseID with a settled tombstone (2b.3; never re-grant)
 )
 
 var (
 	errShortPool   = errors.New("collections: short budget pool record")
 	errShortLease  = errors.New("collections: short budget lease record")
+	errShortTomb   = errors.New("collections: short budget tombstone record")
 	errMissingPool = errors.New("collections: budget lease without a pool (corrupt state)")
+)
+
+// Tombstone reasons (§3.5/§3.6): a settlement is either a holder-ATTESTED graceful Return (credit the
+// true remainder to available) or a forced UN-attested expiry (debit the whole remainder to spent).
+const (
+	reasonReturn byte = 1
+	reasonExpire byte = 2
 )
 
 // poolRec is the budget pool. Quantities are int64 micro-units.
@@ -269,6 +278,28 @@ func decodeLease(b []byte) (leaseRec, error) {
 	return l, nil
 }
 
+// tombRec is a settled-lease tombstone: the final booked spent + how it settled (return vs expire). It
+// is retained for >= the dedup retry window so a late retried Draw on the same leaseID returns
+// budSettled instead of re-granting fresh money (closes B5 for the timed path, §3.6/§3.7).
+type tombRec struct {
+	FinalSpent int64
+	Reason     byte
+}
+
+func encodeTomb(t tombRec) []byte {
+	b := make([]byte, 9)
+	putI64(b[0:], t.FinalSpent)
+	b[8] = t.Reason
+	return b
+}
+
+func decodeTomb(b []byte) (tombRec, error) {
+	if len(b) < 9 {
+		return tombRec{}, errShortTomb
+	}
+	return tombRec{FinalSpent: getI64(b[0:]), Reason: b[8]}, nil
+}
+
 // --- Task 3: overlay-aware budget helpers (mirror fieldVal/setFieldVal in hincr.go) ---
 //
 // Writes go to u.ops AND the in-batch overlay (u.vals, keyed by the full storage key) so two budget ops
@@ -327,6 +358,46 @@ func (u *updateCtx) delLease(ns, coll, id []byte) {
 	k := u.s.budLeaseKey(ns, coll, id)
 	u.vals[string(k)] = nil
 	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: k, Delete: true})
+}
+
+// getTomb / setTomb / delTomb are overlay-aware tombstone helpers (mirror getLease/setLease/delLease).
+func (u *updateCtx) getTomb(ns, coll, id []byte) (tombRec, bool, error) {
+	k := u.s.budTombKey(ns, coll, id)
+	if v, ok := u.vals[string(k)]; ok {
+		if v == nil {
+			return tombRec{}, false, nil
+		}
+		tr, err := decodeTomb(v)
+		return tr, err == nil, err
+	}
+	v, found, err := u.s.getData(k)
+	if err != nil || !found {
+		return tombRec{}, false, err
+	}
+	tr, err := decodeTomb(v)
+	return tr, err == nil, err
+}
+
+func (u *updateCtx) setTomb(ns, coll, id []byte, tr tombRec) {
+	k := u.s.budTombKey(ns, coll, id)
+	enc := encodeTomb(tr)
+	u.vals[string(k)] = enc
+	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: k, Value: enc})
+}
+
+func (u *updateCtx) delTomb(ns, coll, id []byte) {
+	k := u.s.budTombKey(ns, coll, id)
+	u.vals[string(k)] = nil
+	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: k, Delete: true})
+}
+
+// setBudTombGC / delBudTombGC write or drop the shard-level tombstone-GC index entry (value-less); the
+// sweep (2b.5) deletes the tombstone + this entry once gcDueMs passes.
+func (u *updateCtx) setBudTombGC(ns, coll, leaseID []byte, gcDueMs int64) {
+	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: u.s.budTombGCKey(gcDueMs, ns, coll, leaseID), Value: []byte{}})
+}
+func (u *updateCtx) delBudTombGC(ns, coll, leaseID []byte, gcDueMs int64) {
+	u.ops = append(u.ops, storage.StoreOp{CF: storage.CFReplData, Key: u.s.budTombGCKey(gcDueMs, ns, coll, leaseID), Delete: true})
 }
 
 // --- Task 4: apply logic — init / grant / report / return ---
@@ -407,6 +478,14 @@ func (u *updateCtx) applyBudGrant(c command) (ProposeResult, error) {
 	holder := c.Items[0].Val[24:]
 	if amount < 0 { // B4: reject a negative draw (deterministic guard; never trust the caller)
 		return ProposeResult{Data: budNoCapacity}, nil
+	}
+	// Step 0 (§3.7): a settled tombstone for this leaseID -> NEVER re-grant. Closes B5 for the timed path:
+	// a late retried Draw on a returned/expired lease returns budSettled instead of minting fresh money.
+	// Non-timed leases never get a tombstone, so this is transparent to the Stage-1 (untimed) re-grant path.
+	if _, settled, err := u.getTomb(c.NS, c.Coll, leaseID); err != nil {
+		return ProposeResult{}, err
+	} else if settled {
+		return ProposeResult{Data: budSettled}, nil
 	}
 	// idempotency: an existing lease row for this leaseID -> echo its grant with the SAME effective timing
 	// (Gap#2, load-bearing for 2c.4's exactly-once refill): grantedMs/ttl reconstructed from the stored
@@ -526,40 +605,30 @@ func (u *updateCtx) applyBudReport(c command) (ProposeResult, error) {
 	return ProposeResult{Value: uint64(l.Amount - l.Spent)}, nil
 }
 
-// applyBudReturn folds the final spent, returns the unspent remainder to available, deletes the lease.
+// applyBudReturn is the holder-ATTESTED graceful settlement (§3.6, terminal-symmetric): tombstone-check
+// first (idempotent no-op if already settled), fold the final report, then CREDIT the true remainder back
+// to available and — in ONE entry — delete the lease row, delete the shard-level expiry index, and write a
+// tombstone (+ its GC index for a timed lease). Crediting is safe ONLY here because the holder's final
+// report is authoritative; forced expiry (§3.5) debits instead.
 func (u *updateCtx) applyBudReturn(c command) (ProposeResult, error) {
 	if len(c.Items) == 0 || len(c.Items[0].Key) == 0 {
 		return ProposeResult{}, errShortCommand
 	}
 	leaseID := c.Items[0].Key
+	// terminal-symmetric: a settled lease (returned OR expired) is a tombstone no-op — a late return after
+	// an expiry must not double-settle (§3.6).
+	if _, settled, err := u.getTomb(c.NS, c.Coll, leaseID); err != nil {
+		return ProposeResult{}, err
+	} else if settled {
+		return ProposeResult{Value: 0}, nil
+	}
 	l, found, err := u.getLease(c.NS, c.Coll, leaseID)
 	if err != nil {
 		return ProposeResult{}, err
 	}
 	if !found {
-		return ProposeResult{Data: budNoLease}, nil // already returned / unknown
+		return ProposeResult{Data: budNoLease}, nil // unknown lease (never granted)
 	}
-	// fold final report if present and larger
-	if len(c.Items[0].Val) >= 8 {
-		if reported := getI64(c.Items[0].Val); reported > l.Spent {
-			if reported > l.Amount {
-				reported = l.Amount
-			}
-			delta := reported - l.Spent
-			l.Spent = reported
-			p, found, err := u.getPool(c.NS, c.Coll)
-			if err != nil {
-				return ProposeResult{}, err
-			}
-			if !found {
-				return ProposeResult{}, errMissingPool
-			}
-			p.LeasedOut -= delta
-			p.Spent += delta
-			u.setPool(c.NS, c.Coll, p)
-		}
-	}
-	rem := l.Amount - l.Spent
 	p, found, err := u.getPool(c.NS, c.Coll)
 	if err != nil {
 		return ProposeResult{}, err
@@ -567,10 +636,29 @@ func (u *updateCtx) applyBudReturn(c command) (ProposeResult, error) {
 	if !found { // a lease implies a pool in Stage 1 — fail loud on corruption rather than write a bad bucket
 		return ProposeResult{}, errMissingPool
 	}
+	// fold final report if present and larger (max fold; clamp to amount) — leasedOut -> spent
+	if len(c.Items[0].Val) >= 8 {
+		if reported := getI64(c.Items[0].Val); reported > l.Spent {
+			if reported > l.Amount {
+				reported = l.Amount
+			}
+			delta := reported - l.Spent
+			l.Spent = reported
+			p.LeasedOut -= delta
+			p.Spent += delta
+		}
+	}
+	// CREDIT the attested remainder back to available (the ONLY settlement path that does so).
+	rem := l.Amount - l.Spent
 	p.Available += rem
 	p.LeasedOut -= rem
 	u.setPool(c.NS, c.Coll, p)
 	u.delLease(c.NS, c.Coll, leaseID)
+	if l.ReclaimNotBeforeMs > 0 { // timed lease: drop its expiry-index entry + leave a settled tombstone
+		u.delBudExp(c.NS, c.Coll, leaseID, l.ReclaimNotBeforeMs)
+		u.setTomb(c.NS, c.Coll, leaseID, tombRec{FinalSpent: l.Spent, Reason: reasonReturn})
+		u.setBudTombGC(c.NS, c.Coll, leaseID, l.ReclaimNotBeforeMs+p.DedupRetryWindowMs)
+	}
 	return ProposeResult{Value: uint64(rem)}, nil
 }
 

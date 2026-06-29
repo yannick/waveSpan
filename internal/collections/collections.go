@@ -439,6 +439,9 @@ func (c *Collections) BudgetGrant(ctx context.Context, ns, coll, holder []byte, 
 		// I2 grant-apply gate: a timed grant (resolved ttl>0) whose pool self_guard is below the
 		// clock-skew bound. Distinct sentinel; must not be misdecoded as a success grant.
 		return GrantResult{}, ErrBudgetBadParam
+	case string(budSettled):
+		// 2b.3: the lease was already settled (returned/expired); re-granting it is refused (B5 closure).
+		return GrantResult{}, ErrLeaseSettled
 	}
 	return decodeGrantResult(data), nil
 }
