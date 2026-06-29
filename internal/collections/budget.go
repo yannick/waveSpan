@@ -662,6 +662,64 @@ func (u *updateCtx) applyBudReturn(c command) (ProposeResult, error) {
 	return ProposeResult{Value: uint64(rem)}, nil
 }
 
+// applyBudExpire is the leader-proposed FORCED settlement of a timed lease whose replicated reclaim
+// deadline has passed (§3.5). The holder is UN-attested (it may have served impressions it never
+// reported), so the whole outstanding remainder is DEBITED to spent — NOTHING returns to available. This
+// is the money-safety crux: a credit here would re-grant already-consumed budget (the C2 overspend). The
+// genuinely-unspent portion is stranded as bounded underspend (the safe direction). sweepNowMs is
+// leader-stamped pre-propose (carried in Val); no wall clock is read in apply.
+func (u *updateCtx) applyBudExpire(c command) (ProposeResult, error) {
+	if len(c.Items) == 0 || len(c.Items[0].Key) == 0 || len(c.Items[0].Val) < 8 {
+		return ProposeResult{}, errShortCommand
+	}
+	leaseID := c.Items[0].Key
+	sweepNowMs := getI64(c.Items[0].Val)
+	// 1. tombstone check first — a settled lease (returned/expired) is an idempotent no-op (§3.5 #1).
+	if _, settled, err := u.getTomb(c.NS, c.Coll, leaseID); err != nil {
+		return ProposeResult{}, err
+	} else if settled {
+		return ProposeResult{Value: 0}, nil
+	}
+	l, found, err := u.getLease(c.NS, c.Coll, leaseID)
+	if err != nil {
+		return ProposeResult{}, err
+	}
+	p, pf, perr := u.getPool(c.NS, c.Coll)
+	if perr != nil {
+		return ProposeResult{}, perr
+	}
+	// 2. lease absent (already returned without a tombstone — anomalous) -> ensure a tombstone so a late
+	//    retried Draw still settles, and schedule its GC. No accounting change (the row is already gone).
+	if !found {
+		u.setTomb(c.NS, c.Coll, leaseID, tombRec{Reason: reasonExpire})
+		if pf {
+			u.setBudTombGC(c.NS, c.Coll, leaseID, sweepNowMs+p.DedupRetryWindowMs)
+		}
+		return ProposeResult{Value: 0}, nil
+	}
+	// 3. re-check the REPLICATED deadline: a renewed/re-drawn lease has a later ReclaimNotBeforeMs -> skip
+	//    (the sweep saw a stale index entry; a fresh grant rewrote the deadline). Never read a live clock.
+	if sweepNowMs < l.ReclaimNotBeforeMs {
+		return ProposeResult{Value: uint64(l.Amount - l.Spent)}, nil
+	}
+	if !pf { // a lease implies a pool — fail loud on corruption rather than write a bad bucket
+		return ProposeResult{}, errMissingPool
+	}
+	// 4. DEBIT settlement: book the ENTIRE remainder as spent (un-attested holder), nothing to available.
+	rem := l.Amount - l.Spent
+	p.Spent += rem
+	p.LeasedOut -= rem
+	u.setPool(c.NS, c.Coll, p)
+	// 5. same entry: delete the lease row, delete the shard-level expiry index, write the tombstone + GC.
+	u.delLease(c.NS, c.Coll, leaseID)
+	if l.ReclaimNotBeforeMs > 0 {
+		u.delBudExp(c.NS, c.Coll, leaseID, l.ReclaimNotBeforeMs)
+	}
+	u.setTomb(c.NS, c.Coll, leaseID, tombRec{FinalSpent: l.Spent, Reason: reasonExpire})
+	u.setBudTombGC(c.NS, c.Coll, leaseID, l.ReclaimNotBeforeMs+p.DedupRetryWindowMs)
+	return ProposeResult{Value: uint64(rem)}, nil
+}
+
 // GrantResult is the effective grant echoed back from apply to Collections.BudgetGrant. The timing
 // fields are only meaningful once timed leases land (2b); in 2a only Granted/GrantedMs are populated.
 type GrantResult struct {
@@ -755,4 +813,51 @@ func (s *shardSM) lookupBudCheck(snap storage.Snapshot, q budCheckQuery) (budChe
 	ok := p.Available+p.LeasedOut+p.Spent == p.Cap &&
 		p.Spent <= p.Cap && p.Available >= 0 && p.LeasedOut >= 0 && p.Spent >= 0
 	return budCheck{Exists: true, OK: ok, Cap: p.Cap, Available: p.Available, LeasedOut: p.LeasedOut, Spent: p.Spent}, nil
+}
+
+// --- Task 2b.4/2b.5: shard-level due scans for the expiry sweep + tombstone GC ---
+
+// budExpiryDueQuery scans the shard's auto-reclaim index for leases due at or before NowMs (Limit 0 = all).
+type budExpiryDueQuery struct {
+	NowMs int64
+	Limit int
+}
+
+// budTombGCDueQuery scans the shard's tombstone-GC index for tombstones due at or before NowMs.
+type budTombGCDueQuery struct {
+	NowMs int64
+	Limit int
+}
+
+// scanBudDue reads a shard-level budget due index (expiry or tombstone-GC) for entries whose big-endian
+// time component is <= nowMs, returning ns/coll/leaseID-tagged tuples (exact analogue of ttl.go's
+// scanDue). space is budExpSpace() or budTombGCSpace().
+func (s *shardSM) scanBudDue(snap storage.Snapshot, space []byte, nowMs int64, limit int) ([]dueBudLease, error) {
+	end := append(append([]byte{}, space...), u64(uint64(nowMs)+1)...) // include time == now
+	it, err := snap.Scan(storage.CFReplData, space, end, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = it.Close() }()
+	var out []dueBudLease
+	for it.Valid() {
+		suffix := it.Key()[len(space):]
+		if len(suffix) >= 8 {
+			due := binary.BigEndian.Uint64(suffix[:8])
+			ns, rest, err := takeChunk(suffix[8:])
+			if err == nil {
+				coll, leaseID, err2 := takeChunk(rest)
+				if err2 == nil {
+					out = append(out, dueBudLease{
+						NS:        append([]byte(nil), ns...),
+						Coll:      append([]byte(nil), coll...),
+						LeaseID:   append([]byte(nil), leaseID...),
+						ReclaimMs: int64(due),
+					})
+				}
+			}
+		}
+		it.Next()
+	}
+	return out, it.Err()
 }

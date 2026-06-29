@@ -237,6 +237,13 @@ func returnCmd(ns, coll []byte, leaseID string, cum int64) command {
 	putI64(v, cum)
 	return command{Op: opBudReturn, NS: ns, Coll: coll, Items: []item{{Key: []byte(leaseID), Val: v}}}
 }
+
+// expireCmd builds a leader-proposed forced-expiry command carrying the leader-stamped sweepNowMs.
+func expireCmd(ns, coll []byte, leaseID string, sweepNowMs int64) command {
+	v := make([]byte, 8)
+	putI64(v, sweepNowMs)
+	return command{Op: opBudExpire, NS: ns, Coll: coll, Items: []item{{Key: []byte(leaseID), Val: v}}}
+}
 func decodeGrant(b []byte) int64 {
 	if len(b) < 8 {
 		return -1
@@ -414,6 +421,141 @@ func TestIdempotentTimedGrantEchoesSameTiming(t *testing.T) {
 	g := decodeGrantResult(r2.Data)
 	if g.Granted != 100 || g.GrantedMs != 1_000_000 || g.TTLMs != 3000 || g.SelfGuardMs != maxClockSkewMs || g.MaxPauseMs != 2000 {
 		t.Fatalf("echo = %+v, want granted100 granted@1e6 ttl3000 guard500 pause2000", g)
+	}
+}
+
+// --- Task 2b.4: opBudExpire DEBIT settlement (the money-critical path) ---
+
+// reclaimOf is the replicated reclaim deadline a timed grant stamps: grantedMs + ttl + 3*skew + maxPause.
+func reclaimOf(grantedMs, ttl, maxPause int64) int64 {
+	return grantedMs + ttl + 3*maxClockSkewMs + maxPause
+}
+
+// timedBudget defines a properly-configured timed budget (selfGuard>=skew, dedup>=floor) so the I2 grant
+// gate admits a timed lease — maxPause is explicit so tests can compute the reclaim deadline.
+func timedBudget(u *updateCtx, ns, coll []byte, capUnits, maxPause int64) {
+	_, _ = u.applyBudInit(initCmdFull(ns, coll, capUnits, 0, capUnits, maxClockSkewMs, maxPause, 0, minDedupRetryWindowMs))
+}
+
+func TestApplyBudExpireDebits(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	timedBudget(u, ns, coll, 1000, 2000)
+	mustGrant(t, u, ns, coll, "L", 100, 1000, 3000) // grantedMs=1000 ttl=3000
+	_, _ = u.applyBudReport(reportCmd(ns, coll, "L", 50))
+	// expire at a sweepNow past the reclaim deadline
+	if _, err := u.applyBudExpire(expireCmd(ns, coll, "L", 9_999_999)); err != nil {
+		t.Fatalf("expire: %v", err)
+	}
+	p, _, _ := u.getPool(ns, coll)
+	assertInv(t, p)
+	// DEBIT: the unreported 50 is booked as spent, NOT returned to available
+	if p.Spent != 100 || p.Available != 900 || p.LeasedOut != 0 {
+		t.Fatalf("expire debit: spent=%d avail=%d leased=%d want 100/900/0", p.Spent, p.Available, p.LeasedOut)
+	}
+	if _, found, _ := u.getLease(ns, coll, []byte("L")); found {
+		t.Fatal("lease row not deleted")
+	}
+	tr, found, _ := u.getTomb(ns, coll, []byte("L"))
+	if !found || tr.Reason != reasonExpire || tr.FinalSpent != 50 {
+		t.Fatalf("tombstone = %+v found=%v, want reasonExpire finalSpent50", tr, found)
+	}
+	if op, ok := findOp(u, u.s.budExpKey(reclaimOf(1000, 3000, 2000), ns, coll, []byte("L"))); !ok || !op.Delete {
+		t.Fatalf("expiry index not deleted (ok=%v delete=%v)", ok, op.Delete)
+	}
+}
+
+// sweepNow BEFORE the replicated reclaim deadline -> no-op (a renewed lease's later deadline; the sweep
+// saw a stale index): lease intact, no tombstone, pool untouched.
+func TestApplyBudExpireStaleSkips(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	timedBudget(u, ns, coll, 1000, 2000)
+	mustGrant(t, u, ns, coll, "L", 100, 1000, 3000)
+	reclaim := reclaimOf(1000, 3000, 2000)
+	if _, err := u.applyBudExpire(expireCmd(ns, coll, "L", reclaim-1)); err != nil {
+		t.Fatalf("expire: %v", err)
+	}
+	p, _, _ := u.getPool(ns, coll)
+	assertInv(t, p)
+	if p.LeasedOut != 100 || p.Spent != 0 {
+		t.Fatalf("stale expire mutated pool: leased=%d spent=%d want 100/0", p.LeasedOut, p.Spent)
+	}
+	if _, found, _ := u.getLease(ns, coll, []byte("L")); !found {
+		t.Fatal("stale expire deleted the lease")
+	}
+	if _, settled, _ := u.getTomb(ns, coll, []byte("L")); settled {
+		t.Fatal("stale expire wrote a tombstone")
+	}
+}
+
+// expire (DEBIT), then a late graceful return on the same lease -> tombstone no-op (single settlement;
+// the late return must NOT credit on top of the debit).
+func TestExpireThenReturnIdempotent(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	timedBudget(u, ns, coll, 1000, 2000)
+	mustGrant(t, u, ns, coll, "L", 100, 1000, 3000)
+	_, _ = u.applyBudExpire(expireCmd(ns, coll, "L", 9_999_999)) // DEBIT 100
+	p1, _, _ := u.getPool(ns, coll)
+	r, err := u.applyBudReturn(returnCmd(ns, coll, "L", 30))
+	if err != nil {
+		t.Fatalf("return after expire: %v", err)
+	}
+	if r.Value != 0 {
+		t.Fatalf("return after expire credited %d, want 0 (tombstone no-op)", r.Value)
+	}
+	p2, _, _ := u.getPool(ns, coll)
+	assertInv(t, p2)
+	if p2 != p1 || p2.Spent != 100 || p2.Available != 900 {
+		t.Fatalf("double settlement: %+v -> %+v (want spent100 avail900 unchanged)", p1, p2)
+	}
+}
+
+// return (CREDIT), then a late forced expiry on the same lease -> tombstone no-op (must NOT debit on top
+// of the credit; the graceful settlement stands).
+func TestReturnThenExpireIdempotent(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	timedBudget(u, ns, coll, 1000, 2000)
+	mustGrant(t, u, ns, coll, "L", 100, 1000, 3000)
+	_, _ = u.applyBudReport(reportCmd(ns, coll, "L", 30))
+	_, _ = u.applyBudReturn(returnCmd(ns, coll, "L", 40)) // CREDIT remainder 60
+	p1, _, _ := u.getPool(ns, coll)
+	if _, err := u.applyBudExpire(expireCmd(ns, coll, "L", 9_999_999)); err != nil {
+		t.Fatalf("expire after return: %v", err)
+	}
+	p2, _, _ := u.getPool(ns, coll)
+	assertInv(t, p2)
+	if p2 != p1 || p2.Spent != 40 || p2.Available != 960 || p2.LeasedOut != 0 {
+		t.Fatalf("late expire mutated settlement: %+v -> %+v (want spent40 avail960 leased0)", p1, p2)
+	}
+	tr, found, _ := u.getTomb(ns, coll, []byte("L"))
+	if !found || tr.Reason != reasonReturn {
+		t.Fatalf("late expire changed tombstone reason: %+v", tr)
+	}
+}
+
+// budExpiryDueQuery scans the FLUSHED shard-level index (real Update->BatchRC path, then a snapshot
+// Lookup) and returns due leases at or before NowMs — proving the index is persisted, not just queued.
+func TestBudExpiryDueQueryScans(t *testing.T) {
+	sm := newTestSM(t)
+	ns, coll := []byte("p"), []byte("c")
+	mustApply(t, sm, initCmdFull(ns, coll, 1000, 0, 1000, maxClockSkewMs, 2000, 0, minDedupRetryWindowMs))
+	mustApply(t, sm, grantCmdT(ns, coll, "L", 100, 1000, 3000))
+	reclaim := reclaimOf(1000, 3000, 2000)
+	res, err := sm.Lookup(budExpiryDueQuery{NowMs: reclaim - 1, Limit: 0})
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if due, _ := res.([]dueBudLease); len(due) != 0 {
+		t.Fatalf("premature due = %d, want 0", len(due))
+	}
+	res, _ = sm.Lookup(budExpiryDueQuery{NowMs: reclaim, Limit: 0})
+	due, _ := res.([]dueBudLease)
+	if len(due) != 1 || string(due[0].LeaseID) != "L" || string(due[0].NS) != "p" ||
+		string(due[0].Coll) != "c" || due[0].ReclaimMs != reclaim {
+		t.Fatalf("due = %+v, want one L/p/c@%d", due, reclaim)
 	}
 }
 
