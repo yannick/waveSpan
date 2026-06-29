@@ -38,6 +38,17 @@ func (m *NodeManifest) WriteTo(w io.Writer) error {
 	return err
 }
 
+// CFEntryCount returns the recorded entry count for the named CF, or 0 if the CF
+// is absent from the manifest.
+func (m *NodeManifest) CFEntryCount(name string) int64 {
+	for _, e := range m.CFs {
+		if e.CF == name {
+			return e.Entries
+		}
+	}
+	return 0
+}
+
 // ReadNodeManifest decodes a NodeManifest from r. Unknown fields are ignored
 // (forward-compatible).
 func ReadNodeManifest(r io.Reader) (*NodeManifest, error) {
