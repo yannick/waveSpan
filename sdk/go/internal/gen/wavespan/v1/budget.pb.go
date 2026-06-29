@@ -199,12 +199,15 @@ func (x *BudgetDefineRequest) GetDedupRetryWindowMs() int64 {
 }
 
 type BudgetGrantRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	Budget        []byte                 `protobuf:"bytes,2,opt,name=budget,proto3" json:"budget,omitempty"`
-	HolderId      string                 `protobuf:"bytes,3,opt,name=holder_id,json=holderId,proto3" json:"holder_id,omitempty"`
-	AmountUnits   int64                  `protobuf:"varint,4,opt,name=amount_units,json=amountUnits,proto3" json:"amount_units,omitempty"`
-	LeaseId       []byte                 `protobuf:"bytes,5,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"` // idempotency key for the grant (single-use-forever in Stage 1)
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Namespace   string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Budget      []byte                 `protobuf:"bytes,2,opt,name=budget,proto3" json:"budget,omitempty"`
+	HolderId    string                 `protobuf:"bytes,3,opt,name=holder_id,json=holderId,proto3" json:"holder_id,omitempty"`
+	AmountUnits int64                  `protobuf:"varint,4,opt,name=amount_units,json=amountUnits,proto3" json:"amount_units,omitempty"`
+	LeaseId     []byte                 `protobuf:"bytes,5,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"` // idempotency key for the grant (single-use-forever in Stage 1)
+	// Per-grant TTL override (0 ⇒ use the budget's default_ttl_ms). self_guard / max_pause are NOT
+	// per-grant — they are Define-time config (BudgetDefineRequest) and ride back on the result echo.
+	TtlMs         int64 `protobuf:"varint,6,opt,name=ttl_ms,json=ttlMs,proto3" json:"ttl_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -274,14 +277,28 @@ func (x *BudgetGrantRequest) GetLeaseId() []byte {
 	return nil
 }
 
+func (x *BudgetGrantRequest) GetTtlMs() int64 {
+	if x != nil {
+		return x.TtlMs
+	}
+	return 0
+}
+
 type BudgetGrantResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Meta          *ResponseMeta          `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
-	GrantedUnits  int64                  `protobuf:"varint,2,opt,name=granted_units,json=grantedUnits,proto3" json:"granted_units,omitempty"`
-	Partial       bool                   `protobuf:"varint,3,opt,name=partial,proto3" json:"partial,omitempty"`                         // granted_units < amount_units (saturated at available)
-	NoCapacity    bool                   `protobuf:"varint,4,opt,name=no_capacity,json=noCapacity,proto3" json:"no_capacity,omitempty"` // STRICT pool had nothing to give
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Meta         *ResponseMeta          `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
+	GrantedUnits int64                  `protobuf:"varint,2,opt,name=granted_units,json=grantedUnits,proto3" json:"granted_units,omitempty"`
+	Partial      bool                   `protobuf:"varint,3,opt,name=partial,proto3" json:"partial,omitempty"`                         // granted_units < amount_units (saturated at available)
+	NoCapacity   bool                   `protobuf:"varint,4,opt,name=no_capacity,json=noCapacity,proto3" json:"no_capacity,omitempty"` // STRICT pool had nothing to give
+	// Effective timing echoed from the leader-stamped apply so the node-side lease cache can run the
+	// freshness gate, stamp its suspend-aware deadline, and set the self-fence (§5 M-4). All zero for a
+	// non-timed grant (ttl resolved to 0).
+	GrantedMs        int64 `protobuf:"varint,5,opt,name=granted_ms,json=grantedMs,proto3" json:"granted_ms,omitempty"`                          // leader-stamped grant time (UnixMilli)
+	TtlMs            int64 `protobuf:"varint,6,opt,name=ttl_ms,json=ttlMs,proto3" json:"ttl_ms,omitempty"`                                      // effective lease TTL (override or budget default)
+	SelfGuardMs      int64 `protobuf:"varint,7,opt,name=self_guard_ms,json=selfGuardMs,proto3" json:"self_guard_ms,omitempty"`                  // holder self-fence band (budget config)
+	MaxPauseBudgetMs int64 `protobuf:"varint,8,opt,name=max_pause_budget_ms,json=maxPauseBudgetMs,proto3" json:"max_pause_budget_ms,omitempty"` // holder max pause before self-fence (budget config)
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *BudgetGrantResult) Reset() {
@@ -340,6 +357,34 @@ func (x *BudgetGrantResult) GetNoCapacity() bool {
 		return x.NoCapacity
 	}
 	return false
+}
+
+func (x *BudgetGrantResult) GetGrantedMs() int64 {
+	if x != nil {
+		return x.GrantedMs
+	}
+	return 0
+}
+
+func (x *BudgetGrantResult) GetTtlMs() int64 {
+	if x != nil {
+		return x.TtlMs
+	}
+	return 0
+}
+
+func (x *BudgetGrantResult) GetSelfGuardMs() int64 {
+	if x != nil {
+		return x.SelfGuardMs
+	}
+	return 0
+}
+
+func (x *BudgetGrantResult) GetMaxPauseBudgetMs() int64 {
+	if x != nil {
+		return x.MaxPauseBudgetMs
+	}
+	return 0
 }
 
 type BudgetReportRequest struct {
@@ -658,19 +703,25 @@ const file_wavespan_v1_budget_proto_rawDesc = "" +
 	"\x0edefault_ttl_ms\x18\n" +
 	" \x01(\x03R\fdefaultTtlMs\x121\n" +
 	"\x15dedup_retry_window_ms\x18\v \x01(\x03R\x12dedupRetryWindowMsB\x12\n" +
-	"\x10_idempotency_key\"\xa5\x01\n" +
+	"\x10_idempotency_key\"\xbc\x01\n" +
 	"\x12BudgetGrantRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x16\n" +
 	"\x06budget\x18\x02 \x01(\fR\x06budget\x12\x1b\n" +
 	"\tholder_id\x18\x03 \x01(\tR\bholderId\x12!\n" +
 	"\famount_units\x18\x04 \x01(\x03R\vamountUnits\x12\x19\n" +
-	"\blease_id\x18\x05 \x01(\fR\aleaseId\"\xa2\x01\n" +
+	"\blease_id\x18\x05 \x01(\fR\aleaseId\x12\x15\n" +
+	"\x06ttl_ms\x18\x06 \x01(\x03R\x05ttlMs\"\xab\x02\n" +
 	"\x11BudgetGrantResult\x12-\n" +
 	"\x04meta\x18\x01 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\x12#\n" +
 	"\rgranted_units\x18\x02 \x01(\x03R\fgrantedUnits\x12\x18\n" +
 	"\apartial\x18\x03 \x01(\bR\apartial\x12\x1f\n" +
 	"\vno_capacity\x18\x04 \x01(\bR\n" +
-	"noCapacity\"\x91\x01\n" +
+	"noCapacity\x12\x1d\n" +
+	"\n" +
+	"granted_ms\x18\x05 \x01(\x03R\tgrantedMs\x12\x15\n" +
+	"\x06ttl_ms\x18\x06 \x01(\x03R\x05ttlMs\x12\"\n" +
+	"\rself_guard_ms\x18\a \x01(\x03R\vselfGuardMs\x12-\n" +
+	"\x13max_pause_budget_ms\x18\b \x01(\x03R\x10maxPauseBudgetMs\"\x91\x01\n" +
 	"\x13BudgetReportRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x16\n" +
 	"\x06budget\x18\x02 \x01(\fR\x06budget\x12\x19\n" +

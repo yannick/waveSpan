@@ -95,3 +95,73 @@ func TestBudgetServiceHandlers(t *testing.T) {
 		t.Fatalf("re-define err = %v (code %v), want FailedPrecondition", err, got)
 	}
 }
+
+// TestBudgetGrantEchoesTiming asserts the 2c.1 grant-result timing echo: a grant against a timed budget
+// returns the effective leader-stamped granted_ms plus the budget's self_guard/max_pause config and the
+// resolved ttl, so the node lease cache can run its freshness gate and stamp its deadline (§5 M-4). The
+// per-grant ttl_ms override wins over the budget default.
+func TestBudgetGrantEchoesTiming(t *testing.T) {
+	mem := storage.NewMemStore()
+	t.Cleanup(func() { _ = mem.Close() })
+	addr := freeAddr(t)
+	m := newMgr(t, t.TempDir(), addr, mem)
+	if err := m.StartShard(2, 1, map[uint64]string{1: addr}, false); err != nil {
+		t.Fatalf("StartShard: %v", err)
+	}
+	defer m.Stop()
+	cols := New(m, SingleShardDirectory(2))
+	waitReady(t, cols)
+	svc := NewService(cols, membership.Member{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	ns, budget := "pacing", []byte("li/echo/total")
+
+	// A timed budget: default_ttl 60s, self_guard 700ms (>= maxClockSkewMs), max_pause 2s, dedup 30s.
+	if _, err := svc.BudgetDefine(ctx, connect.NewRequest(&wavespanv1.BudgetDefineRequest{
+		Namespace: ns, Budget: budget, CapUnits: 1000, Mode: wavespanv1.BudgetMode_BUDGET_MODE_STRICT,
+		SelfGuardMs: 700, MaxPauseMs: 2000, DefaultTtlMs: 60_000, DedupRetryWindowMs: 30_000,
+	})); err != nil {
+		t.Fatalf("BudgetDefine: %v", err)
+	}
+
+	before := time.Now().UnixMilli()
+	// Grant with a per-grant ttl override of 30s (wins over the 60s default).
+	gRes, err := svc.BudgetGrant(ctx, connect.NewRequest(&wavespanv1.BudgetGrantRequest{
+		Namespace: ns, Budget: budget, HolderId: "node-A", AmountUnits: 100, LeaseId: []byte("lease-echo"),
+		TtlMs: 30_000,
+	}))
+	if err != nil {
+		t.Fatalf("BudgetGrant: %v", err)
+	}
+	after := time.Now().UnixMilli()
+	g := gRes.Msg
+	if g.GetGrantedUnits() != 100 {
+		t.Fatalf("granted = %d, want 100", g.GetGrantedUnits())
+	}
+	if g.GetGrantedMs() < before || g.GetGrantedMs() > after {
+		t.Fatalf("granted_ms = %d, want within [%d,%d]", g.GetGrantedMs(), before, after)
+	}
+	if g.GetTtlMs() != 30_000 {
+		t.Fatalf("ttl_ms echo = %d, want 30000 (per-grant override)", g.GetTtlMs())
+	}
+	if g.GetSelfGuardMs() != 700 {
+		t.Fatalf("self_guard_ms echo = %d, want 700", g.GetSelfGuardMs())
+	}
+	if g.GetMaxPauseBudgetMs() != 2000 {
+		t.Fatalf("max_pause_budget_ms echo = %d, want 2000", g.GetMaxPauseBudgetMs())
+	}
+
+	// An idempotent retry (same lease_id) re-echoes byte-identical timing (Gap#2, load-bearing for 2c.4).
+	rRes, err := svc.BudgetGrant(ctx, connect.NewRequest(&wavespanv1.BudgetGrantRequest{
+		Namespace: ns, Budget: budget, HolderId: "node-A", AmountUnits: 100, LeaseId: []byte("lease-echo"),
+		TtlMs: 30_000,
+	}))
+	if err != nil {
+		t.Fatalf("BudgetGrant(retry): %v", err)
+	}
+	if r := rRes.Msg; r.GetGrantedMs() != g.GetGrantedMs() || r.GetTtlMs() != g.GetTtlMs() ||
+		r.GetSelfGuardMs() != g.GetSelfGuardMs() || r.GetMaxPauseBudgetMs() != g.GetMaxPauseBudgetMs() {
+		t.Fatalf("retry echo = %+v, want identical to %+v", r, g)
+	}
+}
