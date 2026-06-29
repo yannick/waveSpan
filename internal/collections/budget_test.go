@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"testing"
 	"time"
 
@@ -1049,6 +1050,140 @@ func TestBudgetConservationFuzz(t *testing.T) {
 			}
 			checkInv(i, "return")
 		}
+	}
+}
+
+// fuzzLease models the harness's GROUND TRUTH for one timed lease in the conservation fuzz: the granted
+// amount, what the holder has actually SERVED (un-attested local spend, the impressions the adserver
+// really delivered), what it has REPORTED to the server so far, and the replicated reclaim deadline. The
+// served total is the externally-acked ledger entry — distinct from the pool's internal spent.
+type fuzzLease struct {
+	granted   int64
+	served    int64 // ground-truth impressions delivered (>= reported; the excess is un-attested)
+	reported  int64 // last cumulative attested to the server
+	reclaimMs int64 // replicated forced-expiry deadline (grantedMs + ttl + 3*skew + maxPause)
+}
+
+// TestBudgetConservationFuzzTimed is the Stage-2e (Task 2e.1) timed extension of the conservation fuzz: it
+// drives the REAL shard SM (so it can run the actual budExpiryDueQuery + opBudExpire sweep path, not an
+// overlay) and interleaves TIMED grants (random ttl, leader-stamped grantedMs from a deterministic
+// counter), un-attested SERVE steps, partial REPORTs, graceful RETURNs, and forced EXPIRY SWEEPS (advance
+// the stamped clock, scan the shard expiry index, apply opBudExpire). After EVERY op it asserts both:
+//
+//	(1) budCheck.OK — the internal equality cap == available + leasedOut + spent (+ no bucket < 0); and
+//	(2) Σ served (the EXTERNAL acked ledger) <= cap — the ground-truth bound the equality alone CANNOT
+//	    enforce. A forced expiry DEBITS the whole remainder (served-but-unreported + genuinely-unspent), so
+//	    consumed budget is never recycled; were it to CREDIT instead (the C2 debit->credit regression),
+//	    un-attested-served budget would return to available, be re-granted, re-served, and Σ served would
+//	    eventually exceed cap while the equality (1) still held. This test is the regression's tripwire.
+func TestBudgetConservationFuzzTimed(t *testing.T) {
+	sm := newTestSM(t)
+	ns, coll := []byte("p"), []byte("c")
+	const capUnits = int64(10_000)
+	const maxPause = int64(1000)
+	// Timed budget: selfGuard == skew (passes the I2 gate), dedup >= floor; per-grant ttl drives timing.
+	mustApply(t, sm, initCmdFull(ns, coll, capUnits, 0, capUnits, maxClockSkewMs, maxPause, 0, minDedupRetryWindowMs))
+
+	r := newDetRand(0xB0DDE7)
+	clock := int64(1_000_000) // deterministic leader-stamped clock; never time.Now()
+	leaseSeq := 0
+	live := map[string]*fuzzLease{}      // leaseID -> ground truth for un-settled leases
+	served := map[string]int64{}         // leaseID -> total impressions delivered (acked ledger, all leases)
+	var totalServed int64                // Σ served across ALL lease IDs ever
+
+	liveIDs := func() []string {
+		ids := make([]string, 0, len(live))
+		for id := range live {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+
+	checkInv := func(step int, op string) {
+		res, err := sm.Lookup(budCheckQuery{NS: ns, Coll: coll})
+		if err != nil {
+			t.Fatalf("step %d (%s): budCheck lookup: %v", step, op, err)
+		}
+		chk := res.(budCheck)
+		if !chk.Exists || !chk.OK {
+			t.Fatalf("step %d (%s): INV-LOCAL violated: %+v", step, op, chk)
+		}
+		// The ground-truth bound: total externally-acked impressions never exceed the cap.
+		if totalServed > capUnits {
+			t.Fatalf("step %d (%s): Σ served %d > cap %d (overspend!) chk=%+v", step, op, totalServed, capUnits, chk)
+		}
+	}
+
+	for i := 0; i < 6000; i++ {
+		// Occasionally advance the leader clock (models real-time passing between proposes).
+		if r.intn(3) == 0 {
+			clock += int64(r.intn(4000))
+		}
+		switch r.intn(6) {
+		case 0, 1: // GRANT a fresh timed lease (fresh id: settled ids tombstone, never re-grant).
+			id := fmt.Sprintf("L%d", leaseSeq)
+			leaseSeq++
+			amt := int64(r.intn(4000) - 500) // negatives exercise the B4 guard
+			ttl := int64(1000 + r.intn(8000))
+			res := mustApply(t, sm, grantCmdT(ns, coll, id, amt, clock, ttl))
+			if len(res.Data) == 40 { // a success grant result (sentinels are never 40 bytes)
+				g := decodeGrantResult(res.Data)
+				if g.Granted > 0 {
+					live[id] = &fuzzLease{granted: g.Granted, reclaimMs: reclaimOf(clock, ttl, maxPause)}
+				}
+			}
+			checkInv(i, "grant")
+		case 2: // SERVE: the holder delivers impressions locally (un-attested) up to its granted amount.
+			if ids := liveIDs(); len(ids) > 0 {
+				id := ids[r.intn(len(ids))]
+				fl := live[id]
+				if room := fl.granted - fl.served; room > 0 {
+					d := int64(r.intn(int(room) + 1))
+					fl.served += d
+					served[id] += d
+					totalServed += d
+				}
+			}
+			checkInv(i, "serve")
+		case 3: // REPORT the current cumulative served (attest part of what was delivered).
+			if ids := liveIDs(); len(ids) > 0 {
+				id := ids[r.intn(len(ids))]
+				fl := live[id]
+				mustApply(t, sm, reportCmd(ns, coll, id, fl.served))
+				fl.reported = fl.served
+			}
+			checkInv(i, "report")
+		case 4: // RETURN gracefully: attest the final served and CREDIT the true unspent remainder.
+			if ids := liveIDs(); len(ids) > 0 {
+				id := ids[r.intn(len(ids))]
+				fl := live[id]
+				mustApply(t, sm, returnCmd(ns, coll, id, fl.served))
+				delete(live, id)
+			}
+			checkInv(i, "return")
+		case 5: // EXPIRY SWEEP: advance the clock past some deadlines, scan the index, force-expire (DEBIT).
+			clock += int64(r.intn(6000))
+			res, err := sm.Lookup(budExpiryDueQuery{NowMs: clock, Limit: 0})
+			if err != nil {
+				t.Fatalf("step %d expiry due query: %v", i, err)
+			}
+			for _, due := range res.([]dueBudLease) {
+				mustApply(t, sm, expireCmd(due.NS, due.Coll, string(due.LeaseID), clock))
+				delete(live, string(due.LeaseID))
+			}
+			checkInv(i, "sweep")
+		}
+	}
+
+	// Final drain: sweep everything still live far in the future, then re-assert the ground-truth bound.
+	clock += 1 << 40
+	res, _ := sm.Lookup(budExpiryDueQuery{NowMs: clock, Limit: 0})
+	for _, due := range res.([]dueBudLease) {
+		mustApply(t, sm, expireCmd(due.NS, due.Coll, string(due.LeaseID), clock))
+	}
+	checkInv(6000, "final-drain")
+	if totalServed == 0 {
+		t.Fatal("fuzz served nothing — the acked-ledger bound was never exercised")
 	}
 }
 
