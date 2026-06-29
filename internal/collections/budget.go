@@ -28,6 +28,7 @@ var (
 	budNoLease    = []byte("BUDNOLEASE")  // report/return on unknown lease
 	budNoBudget   = []byte("BUDNOBUDGET") // grant against a pool that does not exist (B9: distinct from budNoLease)
 	budBadMode    = []byte("BUDBADMODE")  // init with a non-STRICT mode, or invalid cap (B3/B4)
+	budBadParam   = []byte("BUDBADPARAM") // init/grant with an out-of-bounds pacing/timing param (2a.3)
 )
 
 var (
@@ -49,7 +50,27 @@ type poolRec struct {
 	// Stage-2 pacing tail (append-only; a Stage-1 57-byte record decodes these as 0).
 	LastRefillMs int64 // leader-stamped ms of the last token accrual (lazy-init on first paced grant)
 	Tokens       int64 // current paced tokens available to grant (≤ Burst)
+	// Stage-2 timing config tail (append-only; a 73-byte 2a.1 record decodes these as 0). These feed the
+	// expiry/reclaim window (2b) and are echoed to the holder (2c); a grant's ttlOverride falls back to
+	// DefaultTTLMs when 0.
+	SelfGuardMs        int64 // holder-side self-fence band; >= maxClockSkewMs when any TTL is in play (I2)
+	MaxPauseMs         int64 // holder-side max pause before self-fence; widens the reclaim deadline (2b)
+	DefaultTTLMs       int64 // default per-lease TTL when a grant carries no ttlOverride (0 = non-expiring)
+	DedupRetryWindowMs int64 // tombstone GC window; sizes B5 dedup safety (>= minDedupRetryWindowMs, I3)
 }
+
+// Pacing/timing admission bounds (money-load-bearing; consumed by applyBudInit + applyBudGrant).
+const (
+	// maxClockSkewMs is the HLC mesh clock-skew bound (matches internal/version/hlc.go's default). The
+	// reclaim formula (2b) and the self_guard floor are gated on it.
+	maxClockSkewMs int64 = 500
+	// pacingBurstCeil bounds burst so pacingMaxElapsedMs's product k*burst*1000 cannot overflow int64
+	// (4 * (1<<50) * 1000 ≈ 4.5e18 < 9.2e18).
+	pacingBurstCeil int64 = 1 << 50
+	// minDedupRetryWindowMs is the cluster RPC-retry budget floor for the tombstone dedup window (I3):
+	// a TTL'd budget whose window is shorter than the retry budget could re-grant a settled lease.
+	minDedupRetryWindowMs int64 = 30_000
+)
 
 func (s *shardSM) budPoolKey(ns, coll []byte) []byte {
 	return append(s.collScope(ns, coll), scopeBudPool)
@@ -98,7 +119,7 @@ func pacingMaxElapsedMs(rate, burst int64) int64 {
 }
 
 func encodePool(p poolRec) []byte {
-	b := make([]byte, 8*4+8+1+8*2+8*2) // [prefix 57] | lastRefillMs,tokens (Stage-2 tail) -> 73
+	b := make([]byte, 8*4+8+1+8*2+8*2+8*4) // [prefix 57] | pacing(16) | timing config(32) -> 105
 	putI64(b[0:], p.Cap)
 	putI64(b[8:], p.Available)
 	putI64(b[16:], p.LeasedOut)
@@ -109,6 +130,10 @@ func encodePool(p poolRec) []byte {
 	putI64(b[49:], p.Burst)
 	putI64(b[57:], p.LastRefillMs)
 	putI64(b[65:], p.Tokens)
+	putI64(b[73:], p.SelfGuardMs)
+	putI64(b[81:], p.MaxPauseMs)
+	putI64(b[89:], p.DefaultTTLMs)
+	putI64(b[97:], p.DedupRetryWindowMs)
 	return b
 }
 
@@ -126,6 +151,12 @@ func decodePool(b []byte) (poolRec, error) {
 	if len(b) >= 73 { // Stage-2 pacing tail present (a Stage-1 record stops at 57 -> fields stay 0)
 		p.LastRefillMs = getI64(b[57:])
 		p.Tokens = getI64(b[65:])
+	}
+	if len(b) >= 105 { // Stage-2 timing-config tail present (a 2a.1 record stops at 73 -> fields stay 0)
+		p.SelfGuardMs = getI64(b[73:])
+		p.MaxPauseMs = getI64(b[81:])
+		p.DefaultTTLMs = getI64(b[89:])
+		p.DedupRetryWindowMs = getI64(b[97:])
 	}
 	return p, nil
 }
@@ -242,10 +273,25 @@ func (u *updateCtx) applyBudInit(c command) (ProposeResult, error) {
 	capacity := getI64(k[1:])
 	rate := getI64(k[9:])
 	burst := getI64(k[17:])
-	// B3: Stage 1 only supports STRICT. B4: reject negative cap/rate/burst (admission-validates at the SM
-	// too, since the in-process API and direct proposers bypass the CRD layer; apply is deterministic).
-	if mode != modeStrict || capacity < 0 || rate < 0 || burst < 0 {
+	// Timing config (append-tolerant: a 25-byte Stage-1 key leaves these 0 -> non-paced, non-expiring).
+	var selfGuardMs, maxPauseMs, defaultTTLMs, dedupRetryWindowMs int64
+	if len(k) >= 57 {
+		selfGuardMs = getI64(k[25:])
+		maxPauseMs = getI64(k[33:])
+		defaultTTLMs = getI64(k[41:])
+		dedupRetryWindowMs = getI64(k[49:])
+	}
+	// B3: Stage 1 only supports STRICT. B4: reject a negative cap. (admission-validates at the SM too,
+	// since the in-process API and direct proposers bypass the CRD layer; apply is deterministic).
+	if mode != modeStrict || capacity < 0 {
 		return ProposeResult{Data: budBadMode}, nil
+	}
+	// 2a.3 pacing/timing admission (budBadParam): keep the numerator bounded and never accept a TTL'd
+	// budget whose guard band / dedup window is too small to be money-safe (I2/I3).
+	if rate < 0 || burst < 0 || burst > pacingBurstCeil ||
+		(defaultTTLMs > 0 && selfGuardMs < maxClockSkewMs) ||
+		(defaultTTLMs > 0 && dedupRetryWindowMs < minDedupRetryWindowMs) {
+		return ProposeResult{Data: budBadParam}, nil
 	}
 	if _, found, err := u.getPool(c.NS, c.Coll); err != nil {
 		return ProposeResult{}, err
@@ -261,7 +307,8 @@ func (u *updateCtx) applyBudInit(c command) (ProposeResult, error) {
 	} else if !ok {
 		return ProposeResult{Data: wrongType}, nil
 	}
-	p := poolRec{Cap: capacity, Available: capacity, LeasedOut: 0, Spent: 0, Epoch: 1, Mode: mode, Rate: rate, Burst: burst}
+	p := poolRec{Cap: capacity, Available: capacity, LeasedOut: 0, Spent: 0, Epoch: 1, Mode: mode, Rate: rate, Burst: burst,
+		SelfGuardMs: selfGuardMs, MaxPauseMs: maxPauseMs, DefaultTTLMs: defaultTTLMs, DedupRetryWindowMs: dedupRetryWindowMs}
 	if rate > 0 { // seed the token bucket full; lastRefillMs lazy-inits on the first paced grant (M-3, §3.1)
 		p.Tokens = burst
 	}
@@ -300,7 +347,18 @@ func (u *updateCtx) applyBudGrant(c command) (ProposeResult, error) {
 	if !found {
 		return ProposeResult{Data: budNoBudget}, nil // B9: budget pool does not exist (distinct from budNoLease)
 	}
-	_ = ttlOverride // resolved + self_guard-gated in Task 2a.3 (kept in the Val layout from 2a.2)
+	// I2 authoritative gate: resolve the effective ttl (override, else the budget default) and refuse to
+	// write a timed lease whose self_guard band is too small to be safe. A per-grant ttlOverride can make
+	// ANY budget timed, so this apply-time check — not just the friendlier Define-time reject — is the
+	// single authoritative gate (2b must not add a second one). 2a stores no reclaim deadline yet; this
+	// only enforces the invariant so it holds the moment timing lands.
+	ttl := ttlOverride
+	if ttl == 0 {
+		ttl = p.DefaultTTLMs
+	}
+	if ttl > 0 && p.SelfGuardMs < maxClockSkewMs {
+		return ProposeResult{Data: budBadParam}, nil
+	}
 	// §3.2 token-bucket pacing (rate==0 => Stage-1 behavior, pacing state untouched).
 	if p.Rate > 0 {
 		if p.LastRefillMs == 0 { // lazy-init (M-3): the first grant accrues 0, never rate*grantedMs

@@ -51,6 +51,10 @@ var (
 	// ErrUnsupportedMode is returned when BudgetDefine asks for a non-STRICT mode or an invalid cap (B3/B4);
 	// Stage 1 ships STRICT only.
 	ErrUnsupportedMode = errors.New("collections: budget mode not supported in stage 1")
+	// ErrBudgetBadParam is returned when BudgetDefine/BudgetGrant carries an out-of-bounds pacing/timing
+	// parameter (negative rate, burst over the ceiling, or a TTL'd budget with too small a self_guard /
+	// dedup window). Maps to InvalidArgument, like ErrUnsupportedMode (2a.3).
+	ErrBudgetBadParam = errors.New("collections: budget pacing/timing parameter out of range")
 
 	wrongType  = []byte("WRONGTYPE") // Result.Data sentinel set by the state machine
 	frozenMark = []byte("FROZEN")    // Result.Data sentinel: mutation rejected, subrange is migrating

@@ -102,8 +102,9 @@ func collErr(err error) error {
 		// Precondition violations: defining an existing pool, or grant/report/return against a missing
 		// pool/lease (B9). FailedPrecondition, like WRONGTYPE.
 		return connect.NewError(connect.CodeFailedPrecondition, err)
-	case errors.Is(err, ErrUnsupportedMode):
-		// B3/B4: a non-STRICT mode or an invalid cap at define time — a bad argument, not a transient fault.
+	case errors.Is(err, ErrUnsupportedMode), errors.Is(err, ErrBudgetBadParam):
+		// B3/B4: a non-STRICT mode or an invalid cap at define time; or (2a.3) an out-of-bounds
+		// pacing/timing param at define/grant time — a bad argument, not a transient fault.
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return connect.NewError(connect.CodeInternal, err)
@@ -376,7 +377,15 @@ func (s *Service) budStatResult(st BudStat) *wavespanv1.BudgetStatResult {
 func (s *Service) BudgetDefine(ctx context.Context, req *connect.Request[wavespanv1.BudgetDefineRequest]) (*connect.Response[wavespanv1.BudgetStatResult], error) {
 	m := req.Msg
 	ns, coll := []byte(m.GetNamespace()), m.GetBudget()
-	if err := s.cols.BudgetDefine(ctx, ns, coll, m.GetCapUnits(), uint8(m.GetMode())); err != nil {
+	cfg := BudgetConfig{
+		Rate:               m.GetRateUnitsPerSec(),
+		Burst:              m.GetBurstUnits(),
+		SelfGuardMs:        m.GetSelfGuardMs(),
+		MaxPauseMs:         m.GetMaxPauseMs(),
+		DefaultTTLMs:       m.GetDefaultTtlMs(),
+		DedupRetryWindowMs: m.GetDedupRetryWindowMs(),
+	}
+	if err := s.cols.BudgetDefine(ctx, ns, coll, m.GetCapUnits(), uint8(m.GetMode()), cfg); err != nil {
 		return nil, collErr(err)
 	}
 	st, err := s.cols.BudgetStat(ctx, ns, coll, false)

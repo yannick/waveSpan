@@ -72,6 +72,21 @@ func TestPoolRecPacingFieldsRoundTripAndBackCompat(t *testing.T) {
 	}
 }
 
+func TestPoolRecConfigRoundTripAndBackCompat(t *testing.T) {
+	p := poolRec{Cap: 1000, Available: 1000, Epoch: 1, Mode: modeStrict, Rate: 50, Burst: 100, LastRefillMs: 1, Tokens: 100,
+		SelfGuardMs: 500, MaxPauseMs: 2000, DefaultTTLMs: 3000, DedupRetryWindowMs: 30000}
+	got, err := decodePool(encodePool(p))
+	if err != nil || got != p {
+		t.Fatalf("round-trip = %+v err=%v, want %+v", got, err, p)
+	}
+	// a 2a.1-era record (73 bytes: pacing tail only, no config) decodes config fields as 0
+	short := encodePool(poolRec{Cap: 1000, Available: 1000, Epoch: 1, Mode: modeStrict})[:73]
+	g2, err := decodePool(short)
+	if err != nil || g2.SelfGuardMs != 0 || g2.MaxPauseMs != 0 || g2.DefaultTTLMs != 0 || g2.DedupRetryWindowMs != 0 {
+		t.Fatalf("73-byte config back-compat: %+v err=%v", g2, err)
+	}
+}
+
 func TestLeaseRecRoundTrip(t *testing.T) {
 	l := leaseRec{Holder: []byte("node-7"), Amount: 600_000, Spent: 250_000, Epoch: 3}
 	got, err := decodeLease(encodeLease(l))
@@ -133,7 +148,7 @@ func initCmd(ns, coll []byte, capacity int64) command {
 
 // initCmdFull builds an init key carrying the full Stage-2 config:
 // mode(1) | cap(8) | rate(8) | burst(8) | selfGuard(8) | maxPause(8) | defaultTtl(8) | dedupRetryWindow(8).
-func initCmdFull(ns, coll []byte, capacity, rate, burst, selfGuardMs, maxPauseMs, defaultTtlMs, dedupRetryWindowMs int64) command {
+func initCmdFull(ns, coll []byte, capacity, rate, burst, selfGuardMs, maxPauseMs, defaultTTLMs, dedupRetryWindowMs int64) command {
 	k := make([]byte, 1+8*7)
 	k[0] = modeStrict
 	putI64(k[1:], capacity)
@@ -141,7 +156,7 @@ func initCmdFull(ns, coll []byte, capacity, rate, burst, selfGuardMs, maxPauseMs
 	putI64(k[17:], burst)
 	putI64(k[25:], selfGuardMs)
 	putI64(k[33:], maxPauseMs)
-	putI64(k[41:], defaultTtlMs)
+	putI64(k[41:], defaultTTLMs)
 	putI64(k[49:], dedupRetryWindowMs)
 	return command{Op: opBudInit, NS: ns, Coll: coll, Items: []item{{Key: k}}}
 }
@@ -361,6 +376,73 @@ func TestPacingRateAboveBurst(t *testing.T) {
 	}
 }
 
+// --- Task 2a.3: admission guards + per-budget timing config ---
+
+func TestBudgetDefineRejectsOverflowBurst(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	r, _ := u.applyBudInit(initCmdFull(ns, coll, 1000, 100, pacingBurstCeil+1, 0, 0, 0, 0))
+	if string(r.Data) != string(budBadParam) {
+		t.Fatalf("overflow burst Data=%q want BUDBADPARAM", r.Data)
+	}
+	if _, found, _ := u.getPool(ns, coll); found {
+		t.Fatal("rejected init created a pool")
+	}
+}
+
+func TestBudgetDefineRejectsLowSelfGuard(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	// defaultTtl > 0 with self_guard below the clock-skew bound is rejected (I2: TTL-gated, not rate-gated).
+	r, _ := u.applyBudInit(initCmdFull(ns, coll, 1000, 0, 1000, maxClockSkewMs-1, 0, 5000, minDedupRetryWindowMs))
+	if string(r.Data) != string(budBadParam) {
+		t.Fatalf("low self_guard Data=%q want BUDBADPARAM", r.Data)
+	}
+}
+
+func TestBudgetDefineRejectsLowDedupWindow(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	// defaultTtl > 0 with dedup window below the RPC-retry budget is rejected (I3).
+	r, _ := u.applyBudInit(initCmdFull(ns, coll, 1000, 0, 1000, maxClockSkewMs, 0, 5000, minDedupRetryWindowMs-1))
+	if string(r.Data) != string(budBadParam) {
+		t.Fatalf("low dedup window Data=%q want BUDBADPARAM", r.Data)
+	}
+}
+
+// I2 authoritative gate: a per-grant ttlOverride makes ANY budget timed, so even a pool that passed
+// Define with self_guard=0 (because defaultTtl=0) must reject a timed grant at apply.
+func TestTimedGrantRejectsSmallSelfGuard(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	if _, err := u.applyBudInit(initCmdFull(ns, coll, 1000, 0, 1000, 0, 0, 0, 0)); err != nil {
+		t.Fatalf("init: %v", err) // defaultTtl=0 -> passes Define even with self_guard=0
+	}
+	r := mustGrant(t, u, ns, coll, "A", 100, 1000, 5000) // ttlOverride=5000 makes the lease timed
+	if string(r.Data) != string(budBadParam) {
+		t.Fatalf("timed grant on small self_guard Data=%q want BUDBADPARAM", r.Data)
+	}
+	p, _, _ := u.getPool(ns, coll)
+	if p.Available != 1000 { // the rejected grant must not have debited
+		t.Fatalf("rejected timed grant debited available to %d", p.Available)
+	}
+}
+
+// Gap#1: every budget sentinel returned in ProposeResult.Data must be length-distinguishable from a
+// success encodeGrantResult payload, so Collections.BudgetGrant can switch sentinels first and never
+// misdecode one as a grant. (The I2 gate makes budBadParam reachable on the grant path.)
+func TestGrantSentinelsDistinctFromSuccess(t *testing.T) {
+	success := encodeGrantResult(GrantResult{Granted: 123, GrantedMs: 456})
+	for _, s := range [][]byte{budNoCapacity, budNoBudget, budBadParam, budBadMode, budExists, budNoLease} {
+		if len(s) == len(success) {
+			t.Fatalf("sentinel %q has the success length %d -> would be misdecoded as a grant", s, len(success))
+		}
+	}
+	if got := decodeGrantResult(success); got.Granted != 123 || got.GrantedMs != 456 {
+		t.Fatalf("decodeGrantResult round-trip = %+v, want 123/456", got)
+	}
+}
+
 // B3: a non-STRICT mode is rejected at init (Stage 1 is STRICT-only).
 func TestApplyBudInitRejectsNonStrict(t *testing.T) {
 	u := newTestUpdateCtx(t)
@@ -490,7 +572,7 @@ func TestBudgetEndToEnd(t *testing.T) {
 	defer cancel()
 	ns, coll := []byte("pacing"), []byte("li/42/total")
 
-	if err := c.BudgetDefine(ctx, ns, coll, 1000, modeStrict); err != nil {
+	if err := c.BudgetDefine(ctx, ns, coll, 1000, modeStrict, BudgetConfig{}); err != nil {
 		t.Fatalf("define: %v", err)
 	}
 	g, err := c.BudgetGrant(ctx, ns, coll, []byte("node-A"), 600, []byte("lease-A1"), 0)

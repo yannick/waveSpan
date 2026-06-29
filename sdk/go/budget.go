@@ -79,14 +79,35 @@ type BudgetStat struct {
 	Mode           BudgetMode
 }
 
-// Define creates a budget pool with the given cap and mode (Stage 1: STRICT only). An invalid cap or a
-// non-STRICT mode fails with InvalidArgument; defining an existing pool fails with FailedPrecondition.
-func (bc *BudgetClient) Define(ctx context.Context, namespace string, budget []byte, capUnits int64, mode BudgetMode) error {
-	_, err := bc.writeClient(ctx, namespace, budget).BudgetDefine(ctx, &wavespanv1.BudgetDefineRequest{
+// BudgetDefineOptions carries the Stage-2 pacing + timing config for Define. The zero value reproduces
+// the Stage-1 non-paced, non-expiring budget. A timed budget (DefaultTtlMs > 0) requires SelfGuardMs and
+// DedupRetryWindowMs above the server's safety floors, else Define fails with InvalidArgument (I2/I3).
+type BudgetDefineOptions struct {
+	RateUnitsPerSec    int64
+	BurstUnits         int64
+	SelfGuardMs        int64
+	MaxPauseMs         int64
+	DefaultTTLMs       int64
+	DedupRetryWindowMs int64
+}
+
+// Define creates a budget pool with the given cap and mode (Stage 1: STRICT only). An invalid cap, a
+// non-STRICT mode, or an out-of-bounds pacing/timing param fails with InvalidArgument; defining an
+// existing pool fails with FailedPrecondition. Pass nil opts for a non-paced, non-expiring budget.
+func (bc *BudgetClient) Define(ctx context.Context, namespace string, budget []byte, capUnits int64, mode BudgetMode, opts *BudgetDefineOptions) error {
+	req := &wavespanv1.BudgetDefineRequest{
 		Namespace: namespace, Budget: budget, CapUnits: capUnits,
 		Mode: wavespanv1.BudgetMode(mode), IdempotencyKey: bc.idemPtr(),
-	})
-	if err != nil {
+	}
+	if opts != nil {
+		req.RateUnitsPerSec = opts.RateUnitsPerSec
+		req.BurstUnits = opts.BurstUnits
+		req.SelfGuardMs = opts.SelfGuardMs
+		req.MaxPauseMs = opts.MaxPauseMs
+		req.DefaultTtlMs = opts.DefaultTTLMs
+		req.DedupRetryWindowMs = opts.DedupRetryWindowMs
+	}
+	if _, err := bc.writeClient(ctx, namespace, budget).BudgetDefine(ctx, req); err != nil {
 		return wrapErr("BudgetDefine", bc.noteWriteErr(ctx, err))
 	}
 	return nil

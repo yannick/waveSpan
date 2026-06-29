@@ -364,16 +364,37 @@ func (c *Collections) CardCheck(ctx context.Context, ns, coll []byte, linearizab
 
 // --- Leased budget (design/35, Stage 1: single-cluster STRICT escrow) ---
 
+// BudgetConfig carries the Stage-2 pacing + timing parameters for BudgetDefine. The zero value reproduces
+// Stage-1 behavior: no pacing (Rate 0 ⇒ Burst defaults to the cap) and non-expiring leases (DefaultTTLMs
+// 0). When DefaultTTLMs > 0 the budget is timed and admission requires SelfGuardMs >= the clock-skew
+// bound and DedupRetryWindowMs >= the RPC-retry floor (I2/I3), else BudgetDefine returns ErrBudgetBadParam.
+type BudgetConfig struct {
+	Rate               int64 // token-bucket refill rate in micro-units/sec (0 = no pacing)
+	Burst              int64 // token-bucket ceiling (0 = default to the cap)
+	SelfGuardMs        int64 // holder self-fence band (>= maxClockSkewMs when any TTL is in play)
+	MaxPauseMs         int64 // holder max pause before self-fence (widens the 2b reclaim deadline)
+	DefaultTTLMs       int64 // per-lease TTL when a grant carries no override (0 = non-expiring)
+	DedupRetryWindowMs int64 // tombstone GC / dedup window (>= minDedupRetryWindowMs when timed)
+}
+
 // BudgetDefine creates a STRICT escrow pool with the given cap (int64 micro-units). Stage 1 is
 // STRICT-only: a non-STRICT mode or a negative cap returns ErrUnsupportedMode; defining an existing pool
 // returns ErrBudgetExists. The whole define is one Raft entry. rate/burst are reserved for Stage-2 pacing
 // (rate=0, burst=cap here).
-func (c *Collections) BudgetDefine(ctx context.Context, ns, coll []byte, capUnits int64, mode uint8) error {
-	k := make([]byte, 1+8*3)
+func (c *Collections) BudgetDefine(ctx context.Context, ns, coll []byte, capUnits int64, mode uint8, cfg BudgetConfig) error {
+	burst := cfg.Burst
+	if burst == 0 { // Stage-1 default: burst == cap (an unspecified burst means "the whole pool")
+		burst = capUnits
+	}
+	k := make([]byte, 1+8*7) // mode | cap | rate | burst | selfGuard | maxPause | defaultTtl | dedupWindow
 	k[0] = mode
-	putI64(k[1:], capUnits)  // cap
-	putI64(k[9:], 0)         // rate (Stage 1: none)
-	putI64(k[17:], capUnits) // burst = cap
+	putI64(k[1:], capUnits)
+	putI64(k[9:], cfg.Rate)
+	putI64(k[17:], burst)
+	putI64(k[25:], cfg.SelfGuardMs)
+	putI64(k[33:], cfg.MaxPauseMs)
+	putI64(k[41:], cfg.DefaultTTLMs)
+	putI64(k[49:], cfg.DedupRetryWindowMs)
 	_, data, err := c.proposeCmd(ctx, command{Op: opBudInit, NS: ns, Coll: coll, Items: []item{{Key: k}}})
 	if err != nil {
 		return err
@@ -383,6 +404,8 @@ func (c *Collections) BudgetDefine(ctx context.Context, ns, coll []byte, capUnit
 		return ErrBudgetExists
 	case string(budBadMode): // B3/B4: non-STRICT mode or invalid cap
 		return ErrUnsupportedMode
+	case string(budBadParam): // 2a.3: out-of-bounds pacing/timing param
+		return ErrBudgetBadParam
 	}
 	return nil
 }
@@ -394,7 +417,7 @@ func (c *Collections) BudgetDefine(ctx context.Context, ns, coll []byte, capUnit
 // ErrNoCapacity. Stage-1 contract: a lease_id is single-use-forever — never reuse one after BudgetReturn.
 // The leader stamps grantedMs (UnixMilli) before propose — mirroring SAddTTL — so every replica applies
 // the same deterministic time for pacing/expiry; never read a wall clock inside apply. ttlMs is a
-// per-grant TTL override (0 ⇒ use the budget's DefaultTtlMs). The returned GrantResult echoes the
+// per-grant TTL override (0 ⇒ use the budget's DefaultTTLMs). The returned GrantResult echoes the
 // effective grant + leader timing (only Granted/GrantedMs are populated until timed leases land, 2b).
 func (c *Collections) BudgetGrant(ctx context.Context, ns, coll, holder []byte, amount int64, leaseID []byte, ttlMs int64) (GrantResult, error) {
 	grantedMs := time.Now().UnixMilli()
@@ -412,6 +435,10 @@ func (c *Collections) BudgetGrant(ctx context.Context, ns, coll, holder []byte, 
 		return GrantResult{}, ErrNoCapacity
 	case string(budNoBudget):
 		return GrantResult{}, ErrBudgetNotFound // B9: budget pool does not exist
+	case string(budBadParam):
+		// I2 grant-apply gate: a timed grant (resolved ttl>0) whose pool self_guard is below the
+		// clock-skew bound. Distinct sentinel; must not be misdecoded as a success grant.
+		return GrantResult{}, ErrBudgetBadParam
 	}
 	return decodeGrantResult(data), nil
 }

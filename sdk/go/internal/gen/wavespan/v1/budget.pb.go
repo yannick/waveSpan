@@ -78,8 +78,17 @@ type BudgetDefineRequest struct {
 	CapUnits       int64                  `protobuf:"varint,3,opt,name=cap_units,json=capUnits,proto3" json:"cap_units,omitempty"`
 	Mode           BudgetMode             `protobuf:"varint,4,opt,name=mode,proto3,enum=wavespan.v1.BudgetMode" json:"mode,omitempty"`
 	IdempotencyKey *string                `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3,oneof" json:"idempotency_key,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Stage-2 pacing + timing config (all optional; zeros reproduce the Stage-1 non-paced, non-expiring
+	// budget). A timed budget (default_ttl_ms > 0) requires self_guard_ms >= the clock-skew bound and
+	// dedup_retry_window_ms >= the RPC-retry floor, else the define fails with InvalidArgument (I2/I3).
+	RateUnitsPerSec    int64 `protobuf:"varint,6,opt,name=rate_units_per_sec,json=rateUnitsPerSec,proto3" json:"rate_units_per_sec,omitempty"`           // token-bucket refill rate (0 = no pacing)
+	BurstUnits         int64 `protobuf:"varint,7,opt,name=burst_units,json=burstUnits,proto3" json:"burst_units,omitempty"`                              // token-bucket ceiling (0 = default to cap_units)
+	SelfGuardMs        int64 `protobuf:"varint,8,opt,name=self_guard_ms,json=selfGuardMs,proto3" json:"self_guard_ms,omitempty"`                         // holder self-fence band
+	MaxPauseMs         int64 `protobuf:"varint,9,opt,name=max_pause_ms,json=maxPauseMs,proto3" json:"max_pause_ms,omitempty"`                            // holder max pause before self-fence
+	DefaultTtlMs       int64 `protobuf:"varint,10,opt,name=default_ttl_ms,json=defaultTtlMs,proto3" json:"default_ttl_ms,omitempty"`                     // default per-lease TTL (0 = non-expiring)
+	DedupRetryWindowMs int64 `protobuf:"varint,11,opt,name=dedup_retry_window_ms,json=dedupRetryWindowMs,proto3" json:"dedup_retry_window_ms,omitempty"` // tombstone GC / dedup window
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *BudgetDefineRequest) Reset() {
@@ -145,6 +154,48 @@ func (x *BudgetDefineRequest) GetIdempotencyKey() string {
 		return *x.IdempotencyKey
 	}
 	return ""
+}
+
+func (x *BudgetDefineRequest) GetRateUnitsPerSec() int64 {
+	if x != nil {
+		return x.RateUnitsPerSec
+	}
+	return 0
+}
+
+func (x *BudgetDefineRequest) GetBurstUnits() int64 {
+	if x != nil {
+		return x.BurstUnits
+	}
+	return 0
+}
+
+func (x *BudgetDefineRequest) GetSelfGuardMs() int64 {
+	if x != nil {
+		return x.SelfGuardMs
+	}
+	return 0
+}
+
+func (x *BudgetDefineRequest) GetMaxPauseMs() int64 {
+	if x != nil {
+		return x.MaxPauseMs
+	}
+	return 0
+}
+
+func (x *BudgetDefineRequest) GetDefaultTtlMs() int64 {
+	if x != nil {
+		return x.DefaultTtlMs
+	}
+	return 0
+}
+
+func (x *BudgetDefineRequest) GetDedupRetryWindowMs() int64 {
+	if x != nil {
+		return x.DedupRetryWindowMs
+	}
+	return 0
 }
 
 type BudgetGrantRequest struct {
@@ -591,13 +642,22 @@ var File_wavespan_v1_budget_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_budget_proto_rawDesc = "" +
 	"\n" +
-	"\x18wavespan/v1/budget.proto\x12\vwavespan.v1\x1a\x18wavespan/v1/common.proto\"\xd7\x01\n" +
+	"\x18wavespan/v1/budget.proto\x12\vwavespan.v1\x1a\x18wavespan/v1/common.proto\"\xc4\x03\n" +
 	"\x13BudgetDefineRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x16\n" +
 	"\x06budget\x18\x02 \x01(\fR\x06budget\x12\x1b\n" +
 	"\tcap_units\x18\x03 \x01(\x03R\bcapUnits\x12+\n" +
 	"\x04mode\x18\x04 \x01(\x0e2\x17.wavespan.v1.BudgetModeR\x04mode\x12,\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tH\x00R\x0eidempotencyKey\x88\x01\x01B\x12\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tH\x00R\x0eidempotencyKey\x88\x01\x01\x12+\n" +
+	"\x12rate_units_per_sec\x18\x06 \x01(\x03R\x0frateUnitsPerSec\x12\x1f\n" +
+	"\vburst_units\x18\a \x01(\x03R\n" +
+	"burstUnits\x12\"\n" +
+	"\rself_guard_ms\x18\b \x01(\x03R\vselfGuardMs\x12 \n" +
+	"\fmax_pause_ms\x18\t \x01(\x03R\n" +
+	"maxPauseMs\x12$\n" +
+	"\x0edefault_ttl_ms\x18\n" +
+	" \x01(\x03R\fdefaultTtlMs\x121\n" +
+	"\x15dedup_retry_window_ms\x18\v \x01(\x03R\x12dedupRetryWindowMsB\x12\n" +
 	"\x10_idempotency_key\"\xa5\x01\n" +
 	"\x12BudgetGrantRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x16\n" +
