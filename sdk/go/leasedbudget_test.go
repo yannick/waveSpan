@@ -17,7 +17,6 @@ func newFakeClock(t int64) *fakeClock {
 
 func (c *fakeClock) now() int64  { return c.ns.Load() }
 func (c *fakeClock) set(v int64) { c.ns.Store(v) }
-func (c *fakeClock) add(d int64) { c.ns.Add(d) }
 
 // newTestCell builds a cell with a single installed cur chunk, an injected clock, and pacing disabled
 // (rate 0). maxPauseNs == 0 disables the self-fence.

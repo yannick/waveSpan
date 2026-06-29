@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -138,6 +140,7 @@ type budgetCell struct {
 	triggerRefill func()
 
 	// --- refill machinery (§4.2) ---
+	closed    atomic.Bool // set by Return: Spend stops serving and no further refills start
 	refilling atomic.Bool // single-flight guard: at most one in-flight Draw per cell
 	holder    []byte      // node identity; the lease_id namespace (holder || be(nonce))
 	nonce     uint64      // per-refill nonce; rotated after a committed refill, bumped on redraw
@@ -247,11 +250,51 @@ func (b *Budget) Remaining() int64 {
 	return r
 }
 
+// Return settles the node cache on graceful shutdown (§3.6, the attested path). It closes the Budget (no
+// further Spend serves, no further refills start), drains any single in-flight refill, then folds each
+// held chunk's final cumulative spent into a BudgetReturn so the server CREDITS the true unspent remainder
+// back to available. Return is idempotent: a chunk that already auto-expired is a server-side tombstone
+// no-op. After Return the Budget must not be reused. The first settlement error (if any) is reported.
+func (b *Budget) Return(ctx context.Context) error {
+	c := b.cell
+	c.closed.Store(true)
+	// Let any in-flight single-flight refill finish installing so its chunk is settled here rather than
+	// stranded to a forced expiry (shutdown path; the at-most-one refill resolves quickly).
+	for i := 0; i < 1_000_000 && c.refilling.Load(); i++ {
+		runtime.Gosched()
+	}
+
+	c.mu.Lock()
+	chunks := make([]*leaseChunk, 0, 2)
+	if c.cur != nil {
+		chunks = append(chunks, c.cur)
+	}
+	if c.next != nil {
+		chunks = append(chunks, c.next)
+	}
+	c.cur, c.next = nil, nil
+	c.mu.Unlock()
+
+	var firstErr error
+	for _, ch := range chunks {
+		if len(ch.leaseID) == 0 {
+			continue
+		}
+		if err := b.lb.c.Budget().Return(ctx, b.key.Namespace, b.key.Budget, ch.leaseID, ch.spent); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 // Spend implements the §4.1 fast path EXACTLY in order. now is re-read under the lock immediately before
 // the decrement (not latched earlier). The lock is never held across the refill trigger (run after unlock).
 func (c *budgetCell) Spend(n int64) error {
 	if n <= 0 {
 		return nil
+	}
+	if c.closed.Load() {
+		return ErrBudgetUnavailable // Returned: terminal, never re-acquires
 	}
 	c.mu.Lock()
 	now := c.now() // re-read under the lock, immediately before the decrement (§16 #6/#B)
@@ -359,7 +402,7 @@ func (c *budgetCell) promoteLocked(now int64) {
 // requestRefill kicks an off-path, single-flight background refill. If a refill is already in flight it is
 // a no-op (the double buffer means at most one extra chunk is ever in flight). Never blocks the caller.
 func (c *budgetCell) requestRefill() {
-	if c.drawFn == nil {
+	if c.drawFn == nil || c.closed.Load() {
 		return
 	}
 	if !c.refilling.CompareAndSwap(false, true) {
@@ -489,12 +532,15 @@ func makeLeaseID(holder []byte, nonce uint64) []byte {
 	return id
 }
 
-// randomHolder mints a per-process-per-Budget node identity that namespaces this holder's lease ids.
+// randomHolder mints a per-process-per-Budget node identity that namespaces this holder's lease ids. It is
+// hex-encoded so it is a valid proto3 string (holder_id) — random binary would fail UTF-8 marshaling.
 func randomHolder() []byte {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
 		// Best-effort fallback; lease-id uniqueness within a budget still holds via the rotating nonce.
-		binary.BigEndian.PutUint64(b, uint64(time.Now().UnixNano()))
+		binary.BigEndian.PutUint64(raw, uint64(time.Now().UnixNano()))
 	}
-	return b
+	enc := make([]byte, hex.EncodedLen(len(raw)))
+	hex.Encode(enc, raw)
+	return enc
 }
