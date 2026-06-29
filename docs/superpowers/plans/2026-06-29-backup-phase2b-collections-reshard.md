@@ -16,7 +16,14 @@
 Worktree **/Volumes/HOME/code/storage-engines/waveSpan-backup** (branch `backup`). Commit per task. Tests: `go test ./internal/collections/... ./internal/backup/...`.
 
 ## Confirmed API reference
-- Shard prefix = `be8(shardID)`. Sub-prefix bytes (first byte of the suffix after the prefix): `subMeta=0x00` (base_sm.go:14, per-shard `applied` raft index — drop on re-shard), `subData=0x01` (statemachine.go:34), `subTTL=0x02` (ttl.go:16), `subBudExp=0x05` (budget.go:28), `subBudTombGC=0x06` (budget.go:29).
+- Shard prefix = `be8(shardID)`. The COMPLETE shard-level sub-prefix space is `0x00..0x06` (first byte of the suffix after the prefix):
+  - `subMeta=0x00` (base_sm.go:14) — per-shard `applied` raft index (+ `subMeta|"dedupseq"`, dedup.go:25); **drop** on re-shard.
+  - `subData=0x01` (statemachine.go:34) — collection data (incl. budget pool/lease/tomb, which build on `collScope=dataSpace+chunk(ns)+chunk(coll)`); re-route, body=`suffix[1:]`.
+  - `subTTL=0x02` (ttl.go:16) — re-route, body=`suffix[9:]` (skip 8-byte expiry).
+  - `subDedup=0x03` (dedup.go:19) — idempotency dedup, keyed `prefix|subDedup|<client-idempotency-key>` (NO ns/coll); **drop** (target rebuilds dedup window fresh).
+  - `subDedupRing=0x04` (dedup.go:20) — dedup FIFO ring, keyed `prefix|subDedupRing|be(slot)` (NO ns/coll); **drop**.
+  - `subBudExp=0x05` (budget.go:28) — re-route, body=`suffix[9:]` (skip 8-byte reclaimMs).
+  - `subBudTombGC=0x06` (budget.go:29) — re-route, body=`suffix[9:]` (skip 8-byte gcDueMs).
 - Routing-key extraction model: `routeKeyOf(suffix []byte) ([]byte, bool)` (migrate.go:39) already handles `subData` (`body=suffix[1:]`) and `subTTL` (`body=suffix[9:]`, skip the 8-byte expiry), then `takeChunk`→ns, `takeChunk`→coll. The budget shard-level index keys are `…|subBudExp|be8(reclaimMs)|chunk(ns)|chunk(coll)|leaseID` and `…|subBudTombGC|be8(gcDueMs)|chunk(ns)|chunk(coll)|leaseID` (budget.go:25-26) — i.e. `body=suffix[9:]` like `subTTL`. (Budget pool/lease/tomb DATA rows live under `subData`, so they're already covered by the `subData` case.)
 - `ShardForKey(ns, coll []byte, dataShards uint64) uint64` (directory.go:62) = `FirstDataShard + fnv64a(routeKey(ns,coll)) % dataShards`. `RouteKey(ns,coll)` (meta.go:150). `FirstDataShard` (directory.go:56). Codec helpers `takeChunk`/`appendChunk` (command.go:312/319), `prefixEnd` (command.go:358) — all package `collections`.
 - Backup (Phase 2a): `RestoreLogical(dst storage.LocalStore, store ObjectStore, keyPrefix string, reg *Registry, ri RestoreInfo) error`; `RestoreInfo` struct (add a field here); CFReplData rows restored via batched `storage.StoreOp{CF, Key, Value}`.
@@ -73,12 +80,14 @@ func TestRerouteSuffix(t *testing.T) {
 		t.Fatalf("subBudExp reroute: id=%d keep=%v err=%v want id=%d", id2, keep2, err2, want)
 	}
 
-	// subMeta (per-shard applied index) is dropped.
-	if _, keep3, err3 := RerouteSuffix([]byte{subMeta, 'a'}, newN); err3 != nil || keep3 {
-		t.Fatalf("subMeta should drop: keep=%v err=%v", keep3, err3)
+	// Shard-local bookkeeping is dropped: applied index + dedup window/ring (no (ns,coll)).
+	for _, sp := range []byte{subMeta, subDedup, subDedupRing} {
+		if _, keep, err := RerouteSuffix([]byte{sp, 'a'}, newN); err != nil || keep {
+			t.Fatalf("sub-prefix %#x should drop: keep=%v err=%v", sp, keep, err)
+		}
 	}
 
-	// Unknown sub-prefix is a loud error (never silently dropped or misplaced).
+	// A genuinely unused sub-prefix is a loud error (never silently dropped or misplaced).
 	if _, _, err4 := RerouteSuffix([]byte{0x7f, 'x'}, newN); err4 == nil {
 		t.Fatal("unknown sub-prefix must return an error")
 	}
@@ -105,8 +114,11 @@ func RerouteSuffix(suffix []byte, newN uint64) (shardID uint64, keep bool, err e
 	}
 	var body []byte
 	switch suffix[0] {
-	case subMeta:
-		return 0, false, nil // per-shard raft bookkeeping; target shard starts fresh
+	case subMeta, subDedup, subDedupRing:
+		// Shard-local bookkeeping with no (ns,coll): the applied raft index and the
+		// idempotency dedup window/ring. Not re-routable; the target shards rebuild them
+		// fresh (mirrors how the dropped applied index is re-established).
+		return 0, false, nil
 	case subData:
 		body = suffix[1:]
 	case subTTL, subBudExp, subBudTombGC:
@@ -147,11 +159,11 @@ func RerouteSuffix(suffix []byte, newN uint64) (shardID uint64, keep bool, err e
 
 - [ ] **Step 2: run → FAIL.**
 
-- [ ] **Step 3: implement** — add `CollectionsDataShards uint64` to `RestoreInfo` (0 = verbatim, same as today). In `RestoreLogical`'s per-CF restore loop, when `cf == storage.CFReplData && ri.CollectionsDataShards > 0`, transform each key before adding the `StoreOp`:
-  - split `key` into `prefix8 := key[:8]` and `suffix := key[8:]`;
-  - `newShard, keep, err := collections.RerouteSuffix(suffix, ri.CollectionsDataShards)`; on `err` → abort restore (return it — loud, never silent); on `!keep` → skip the row; else write `StoreOp{CF: CFReplData, Key: append(be8(newShard), suffix...), Value: value}`.
-  - For all other CFs, and for `CFReplData` when `CollectionsDataShards == 0`, keep the existing verbatim path. (Add a small `be8(uint64) []byte` helper in backup, or import one.)
-  Keep the entry-count integrity check intact: count decoded rows against the manifest BEFORE the re-route drop/skip (decoded-count, not applied-count — same rule as the identity-key skip in Phase 2a).
+- [ ] **Step 3: implement** — add `CollectionsDataShards uint64` to `RestoreInfo` (0 = verbatim, same as today). The actual per-key loop is in `restoreCFObject` (logical_restore.go:84-133), which is CF-generic — thread the target-N (and the CF identity) into it, so that when `cf == storage.CFReplData && ri.CollectionsDataShards > 0`, it transforms each key before adding the `StoreOp`:
+  - split `key` into `prefix8 := key[:8]` and `suffix := key[8:]` (guard `len(key) >= 8`);
+  - `newShard, keep, err := collections.RerouteSuffix(suffix, ri.CollectionsDataShards)`; on `err` → return it (abort restore — loud, never silent); on `!keep` → skip the row (do not emit a `StoreOp`); else emit `StoreOp{CF: CFReplData, Key: append(be8(newShard), suffix...), Value: value}`.
+  - For all other CFs, and for `CFReplData` when `CollectionsDataShards == 0`, keep the existing verbatim path. Add a small `be8(uint64) []byte` helper in `internal/backup`.
+  - **Entry-count integrity (preserve the Phase 2a check):** keep incrementing `decoded` at logical_restore.go:117 (right after a successful decode) — BEFORE the re-route drop/skip — so the existing `decoded != wantEntries` check still compares decoded-count to the manifest, exactly as the identity-key skip is already counted. The drop/skip affects only which `StoreOp`s are emitted, not the decoded count.
 
 - [ ] **Step 4: run → PASS** (re-shard places rows correctly; subMeta dropped; zero-N still verbatim).
 - [ ] **Step 5: commit** — `git commit -am "feat(backup): RestoreLogical re-shards CFReplData to a target N (RestoreInfo.CollectionsDataShards)"`
@@ -167,7 +179,7 @@ Prove a realistic re-shard: several collections whose shard assignment actually 
 **Files:**
 - Test: `internal/backup/reshard_roundtrip_test.go`
 
-- [ ] **Step 1: failing test** — pick ~6 `(ns,coll)` pairs; for each, at source N=4 write a `subData` row and a `subBudExp` index row under `be8(ShardForKey(ns,coll,4))`. Export to an FS object store. Restore into `dst` with `CollectionsDataShards: 8`. For every `(ns,coll)`: assert both rows are present in `dst` under `be8(ShardForKey(ns,coll,8))` with their original suffixes+values, and absent under the old N=4 prefix when the shard differs. Assert at least one pair actually changed shard between N=4 and N=8 (so the test exercises real movement, not a no-op). Confirm no `CFReplData` rows are lost (count in == count out, minus any subMeta).
+- [ ] **Step 1: failing test** — pick ~6 `(ns,coll)` pairs; for each, at source N=4 write a `subData` row and a `subBudExp` index row under `be8(ShardForKey(ns,coll,4))`. Also write one `subMeta` (`prefix|subMeta|"applied"`) and one `subDedup` (`prefix|subDedup|<idem-key>`) row under some shard — to exercise the drop path on data a real cluster would contain. Export to an FS object store. Restore into `dst` with `CollectionsDataShards: 8`. Assertions: (a) for every `(ns,coll)` both data + budget-index rows are present in `dst` under `be8(ShardForKey(ns,coll,8))` with original suffixes+values, and absent under the old N=4 prefix when the shard differs; (b) at least one pair actually changed shard between N=4 and N=8 (real movement, not a no-op); (c) the `subMeta` and `subDedup` rows are ABSENT in `dst` (dropped); (d) no `(ns,coll)` data row is lost.
 
 - [ ] **Step 2: run → FAIL** (until Tasks 1–2 correct).
 - [ ] **Step 3: make it pass.**
@@ -177,7 +189,7 @@ Prove a realistic re-shard: several collections whose shard assignment actually 
 ---
 
 ## Done criteria for Phase 2b
-- [ ] `collections.RerouteSuffix` maps every `(ns,coll)`-bearing `CFReplData` row (`subData`/`subTTL`/`subBudExp`/`subBudTombGC`) to its shard under a new `N`, drops `subMeta`, and errors loudly on an unknown sub-prefix.
+- [ ] `collections.RerouteSuffix` maps every `(ns,coll)`-bearing `CFReplData` row (`subData`/`subTTL`/`subBudExp`/`subBudTombGC`) to its shard under a new `N`, drops shard-local bookkeeping (`subMeta`/`subDedup`/`subDedupRing`), and errors loudly on a genuinely unknown sub-prefix.
 - [ ] `RestoreLogical` re-shards `CFReplData` when `RestoreInfo.CollectionsDataShards > 0`; verbatim (Phase 2a behavior) when 0; entry-count integrity check preserved.
 - [ ] Re-shard round-trip test passes with real shard movement; no rows lost; budget index rows re-routed; `subMeta` dropped.
 - [ ] All collections + backup tests green; vet + build clean. No hot-path change.
