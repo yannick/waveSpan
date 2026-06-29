@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A single-node, datatype-agnostic **logical** backup/restore engine in waveSpan: stream a node's authoritative state to an object store (full backup) and restore it into a fresh same-shape store, with derived indexes rebuilt and node identity preserved — driven by a `Contributor` registry so new datatypes need zero backup-core changes.
+**Goal:** A single-node, datatype-agnostic **logical** backup/restore engine in waveSpan: stream a node's non-transient state to an object store (full backup) and restore it into a fresh same-shape store — every datatype intact, node identity preserved — driven by a `Contributor` registry so new datatypes need zero backup-core changes. (Derived indexes are copied verbatim in 2a; exclude-and-rebuild is Phase 2b.)
 
-**Architecture:** Reorganize the existing flat `internal/backup` codec into a **registry-driven** engine. Each subsystem registers a `Contributor` declaring its column families (authoritative vs derived) and a post-restore rebuild hook. Export iterates each authoritative CF over a consistent `LocalStore.Snapshot()` and streams `(cf,key,value)` chunks to an object store (reusing `wavesdb/objstore` — no new S3 client), writing a versioned manifest. Restore reads the manifest, raw-restores authoritative CFs (blind `(cf,key,value)` — invariant D), skips node-local identity, and invokes each contributor's rebuild hook. Same-shape only here; re-shard/partial = Phase 2b, cluster-coordination/incrementals = Phase 3.
+**Architecture:** Reorganize the existing flat `internal/backup` codec into a **registry-driven** engine. Each subsystem registers a `Contributor` declaring its column families and a post-restore rebuild hook. Export iterates each backed-up CF over a consistent `LocalStore.Snapshot()` and streams `(cf,key,value)` chunks to an object store (reusing `wavesdb/objstore` — no new S3 client), writing a versioned manifest. Restore reads the manifest, raw-restores CFs (blind `(cf,key,value)` — invariant D), skips node-local identity, and invokes each contributor's rebuild hook (no-ops in 2a). Same-shape only here; re-shard/partial = Phase 2b, cluster-coordination/incrementals = Phase 3.
+
+**Derived-index handling in 2a (deliberate sequencing):** the design's end-state excludes derived indexes (`CFGraphIndex`, `CFVectorIndex`) from backup and rebuilds them on restore. But rebuild needs context that isn't available yet: there is **no enumeration API** for graph names / vector collections, and — critically — **vector ANN specs (metric/params) live in config/CRD, not in the backed-up data**, so a same-shape restore cannot reconstruct them from the store alone. For **same-shape** restore (all of Phase 2a), copying the derived index CFs **verbatim** is correct and complete (the index is consistent with its data at the snapshot). So 2a backs up **all non-transient CFs verbatim** and exercises rebuild hooks as no-ops. The design-faithful exclude-and-rebuild path becomes mandatory only under **re-shard** (re-routed data invalidates copied indexes) — Phase 2b, where enumeration + vector-spec capture are solved together. The `RebuildAfterRestore` hook is defined and called now as the stable extension seam 2b fills.
 
 **Tech Stack:** Go (module `github.com/yannick/wavespan`), `internal/storage` (`LocalStore`, `ColumnFamily` enum, per-CF `Scan`/`Snapshot`), `internal/recordstore`, `internal/graph`, `internal/vector`, `wavesdb/objstore` (FS backend for tests). Spec: `docs/superpowers/specs/2026-06-27-snapshot-backups-design.md` (§3 invariants, §5 contributors, §6 export, §7 restore, §8 manifest).
 
@@ -188,19 +190,14 @@ func TestDefaultRegistryCoverage(t *testing.T) {
 	for _, cf := range reg.AuthoritativeCFs() {
 		auth[cf] = true
 	}
-	// Authoritative data CFs must be covered.
+	// Every non-transient CF must be covered (2a backs up derived indexes verbatim).
 	for _, cf := range []storage.ColumnFamily{
 		storage.CFSys, storage.CFKVData, storage.CFKVMeta,
-		storage.CFGraphData, storage.CFVectorRaw, storage.CFReplData,
+		storage.CFGraphData, storage.CFGraphIndex,
+		storage.CFVectorRaw, storage.CFVectorIndex, storage.CFReplData,
 	} {
 		if !auth[cf] {
-			t.Errorf("authoritative CF %v not covered by DefaultRegistry", cf)
-		}
-	}
-	// Derived index CFs must NOT be authoritative (they are rebuilt).
-	for _, cf := range []storage.ColumnFamily{storage.CFGraphIndex, storage.CFVectorIndex} {
-		if auth[cf] {
-			t.Errorf("derived CF %v must not be authoritative", cf)
+			t.Errorf("CF %v not covered by DefaultRegistry", cf)
 		}
 	}
 	// Transient CFs are owned by nobody (never backed up).
@@ -216,12 +213,12 @@ func TestDefaultRegistryCoverage(t *testing.T) {
 
 - [ ] **Step 3: Implement** `internal/backup/contributors.go`
 
-Define one small struct per contributor (or reuse a generic `funcContributor`). Each `RebuildAfterRestore` returns nil for now EXCEPT graph/vector get a `// TODO(phase2a Task 6): rebuild indexes` placeholder. `DefaultRegistry()` registers all five:
+Define one small struct per contributor (or reuse a generic `funcContributor`). Every `RebuildAfterRestore` returns nil in 2a (graph/vector carry a `// TODO(phase2b): flip index CF to derived + rebuild here` comment). `DefaultRegistry()` registers all five:
 - **System**: `CFSpec{CFSys, true}`.
 - **KV**: `{CFKVData, true}`, `{CFKVMeta, true}`.
 - **Collections**: `{CFReplData, true}`.
-- **Graph**: `{CFGraphData, true}`, `{CFGraphIndex, false}` (derived).
-- **Vector**: `{CFVectorRaw, true}`, `{CFVectorIndex, false}` (derived).
+- **Graph**: `{CFGraphData, true}`, `{CFGraphIndex, true}` — 2a copies the index verbatim; Phase 2b flips this to `false` (derived) and wires the rebuild hook.
+- **Vector**: `{CFVectorRaw, true}`, `{CFVectorIndex, true}` — same; 2b flips to `false` + rebuild (and solves vector index-spec capture).
 
 `CFReplLog`/`CFCacheMeta` are owned by no contributor → never exported. Use a small generic:
 ```go
@@ -242,8 +239,8 @@ func DefaultRegistry() *Registry {
 	r.Register(funcContributor{name: "system", cfs: []CFSpec{{storage.CFSys, true}}})
 	r.Register(funcContributor{name: "kv", cfs: []CFSpec{{storage.CFKVData, true}, {storage.CFKVMeta, true}}})
 	r.Register(funcContributor{name: "collections", cfs: []CFSpec{{storage.CFReplData, true}}})
-	r.Register(funcContributor{name: "graph", cfs: []CFSpec{{storage.CFGraphData, true}, {storage.CFGraphIndex, false}}}) // rebuild in Task 6
-	r.Register(funcContributor{name: "vector", cfs: []CFSpec{{storage.CFVectorRaw, true}, {storage.CFVectorIndex, false}}}) // rebuild in Task 6
+	r.Register(funcContributor{name: "graph", cfs: []CFSpec{{storage.CFGraphData, true}, {storage.CFGraphIndex, true}}})   // 2b: flip index to derived + rebuild
+	r.Register(funcContributor{name: "vector", cfs: []CFSpec{{storage.CFVectorRaw, true}, {storage.CFVectorIndex, true}}}) // 2b: flip index to derived + rebuild
 	return r
 }
 ```
@@ -349,8 +346,8 @@ func TestExportLogicalWritesObjectsAndManifest(t *testing.T) {
 	mustPut(t, src, storage.CFKVData, []byte("k1"), []byte("v1"))
 	mustPut(t, src, storage.CFKVData, []byte("k2"), []byte("v2"))
 	mustPut(t, src, storage.CFReplData, []byte("\x00\x00\x00\x00\x00\x00\x00\x02coll"), []byte("set"))
-	mustPut(t, src, storage.CFGraphIndex, []byte("idx"), []byte("derived")) // must NOT be exported
-	mustPut(t, src, storage.CFCacheMeta, []byte("c"), []byte("transient"))  // must NOT be exported
+	mustPut(t, src, storage.CFGraphIndex, []byte("idx"), []byte("derived")) // 2a: copied verbatim
+	mustPut(t, src, storage.CFCacheMeta, []byte("c"), []byte("transient"))  // transient: must NOT be exported
 
 	store, err := objstore.NewFS(t.TempDir())
 	if err != nil { t.Fatal(err) }
@@ -360,7 +357,7 @@ func TestExportLogicalWritesObjectsAndManifest(t *testing.T) {
 
 	if man.CFEntryCount("kv_data") != 2 { t.Fatalf("want 2 kv_data entries, got %d", man.CFEntryCount("kv_data")) }
 	if man.CFEntryCount("repl_data") != 1 { t.Fatalf("want 1 repl_data entry, got %d", man.CFEntryCount("repl_data")) }
-	if man.CFEntryCount("graph_index") != 0 { t.Fatal("derived graph_index must not be exported") }
+	if man.CFEntryCount("graph_index") != 1 { t.Fatal("2a copies graph_index verbatim — want 1") }
 	if man.CFEntryCount("cache_meta") != 0 { t.Fatal("transient cache_meta must not be exported") }
 	if ok, _ := store.Exists("bk/node.manifest.json"); !ok { t.Fatal("manifest object missing") }
 }
@@ -382,7 +379,7 @@ Steps:
 5. Build `NodeManifest{FormatVersion: manifestFormatVersion, CaptureWallClockMs: captureMs, StorageUUID: uuid, CFs: entries}`; write it to `keyPrefix + "/node.manifest.json"` via `man.WriteTo` into a buffer → `store.Put`.
 6. Return the manifest.
 
-Reuse `writeBytes`/`readBytes` from backup.go (same package). Per-CF object format: repeating `lenPrefix(key) || lenPrefix(value)` (no cf tag needed — the object IS the CF). Confirm `cf.Name()` exists (cf.go maps CF→string; if the method is named differently, e.g. a `cfNames[cf]` map, expose a small `func cfName(cf storage.ColumnFamily) string`).
+Reuse `writeBytes`/`readBytes` from backup.go (same package). **Note (confirmed by review):** `writeBytes` takes a `*bufio.Writer` and `readBytes` a `*bufio.Reader` — wrap the `bytes.Buffer` with `bufio.NewWriter(&buf)` and `Flush()` before `store.Put` (and `bufio.NewReader` on the download side in Task 5). Per-CF object format: repeating `writeBytes(key) || writeBytes(value)` (no cf tag — the object IS the CF). `cf.Name() string` exists (confirmed cf.go:25) and returns the wavesdb name string used in object keys + manifest entries.
 
 - [ ] **Step 4: Run to verify it passes** — PASS.
 
@@ -462,60 +459,25 @@ func RestoreLogical(dst storage.LocalStore, store ObjectStore, keyPrefix string,
 ```
 Steps:
 1. Read `keyPrefix + "/node.manifest.json"` via `store.Get` → `ReadNodeManifest`. (Reject `FormatVersion > manifestFormatVersion` with a clear error — major-version guard.)
-2. For each `CFEntry` in the manifest: `cf := cfByName(entry.CF)` (map name→ColumnFamily; add `func cfByName(string) (storage.ColumnFamily, bool)` in cf-helper). `store.Get(keyPrefix + "/cf/" + entry.CF)`, decode repeating `readBytes(key), readBytes(value)`, accumulate `storage.StoreOp{CF: cf, Key: key, Value: value}`, flushing via `dst.Batch(ops)` every 1000. **Skip the identity key**: if `cf == CFSys && string(key) == "/sys/storage_uuid"`, do not restore it.
-3. After all CFs: for each `c := range reg.Contributors()` call `c.RebuildAfterRestore(dst, ri)` (no-ops until Task 6); return first error.
+2. For each `CFEntry` in the manifest: `cf, ok := cfByName(entry.CF)`. **Note (review):** `storage.cfNames` is unexported, so build `cfByName` locally in `internal/backup` by iterating the known CF list (`CFSys..CFReplData`) and comparing `cf.Name() == name`; return `(cf, true)` on match. `store.Get(keyPrefix + "/cf/" + entry.CF)`, decode repeating `readBytes(key), readBytes(value)`, accumulate `storage.StoreOp{CF: cf, Key: key, Value: value}`, flushing via `dst.Batch(ops)` every 1000. **Skip the identity key**: if `cf == CFSys && string(key) == "/sys/storage_uuid"`, do not restore it.
+3. After all CFs: for each `c := range reg.Contributors()` call `c.RebuildAfterRestore(dst, ri)` (all no-ops in 2a — the extension seam Phase 2b fills); return first error.
 
 Use `storage.StoreOp` (confirm its field names: `{CF, Key, Value}` and that `Batch([]StoreOp)` is the restore path — backup.go's Restore uses it). For unknown CF names in the manifest (future datatype), `cfByName` returns false → restore the object **blind** into a CF created by name if the store supports it; for Phase 2a, log-and-skip unknown CFs with a clear message (full blind-restore of unknown CFs is a Phase 3 concern — note it). 
 
 - [ ] **Step 4: Run to verify it passes** — `go test ./internal/backup/ -run TestLogicalRoundTrip -v` → PASS.
 
-- [ ] **Step 5: Commit** — `git commit -am "feat(backup): RestoreLogical — raw same-shape restore, node identity preserved"`
+- [ ] **Step 5: Add a graph+vector verbatim round-trip assertion** to the same test file: seed graph data (CFGraphData) + a vector (CFVectorRaw) + a graph index entry (CFGraphIndex) in `src`, export, restore into a fresh `dst`, and assert all four CF values are present verbatim in `dst` (same-shape verbatim copy — no rebuild needed). This proves every datatype round-trips in 2a.
 
----
-
-## Task 6: Graph + vector rebuild hooks + round-trip
-
-Wire the Graph and Vector contributors' `RebuildAfterRestore` to actually rebuild their derived indexes, and prove it with a round-trip that exports graph+vector raw data (no index), restores, and confirms the index is rebuilt and queryable.
-
-@superpowers:test-driven-development
-
-**Files:**
-- Modify: `internal/backup/contributors.go` (wire graph/vector rebuild)
-- Test: `internal/backup/rebuild_test.go`
-
-- [ ] **Step 1: Investigate enumeration APIs**
-
-The rebuild hooks must enumerate which graphs / vector collections exist in the restored data. Run:
-`grep -rn "func.*Store.*Graph\|ListGraphs\|forEachNode\|ScanCollection\|ListCollections" internal/graph internal/vector | head -40`
-Determine how to (a) construct a `*graph.Store` / `*vector.Store` over a `storage.LocalStore`, and (b) enumerate graph names and vector collections from the restored authoritative data. If a clean enumeration API exists, use it. If not, report `NEEDS_CONTEXT` describing exactly what's missing — do NOT invent an enumeration by guessing key layouts.
-
-- [ ] **Step 2: Write the failing test** (shape — adjust constructor calls to the real graph/vector Store APIs found in Step 1)
-
-```go
-// Seed a graph (nodes/edges) and a vector collection in src via the real
-// graph.Store / vector.Store write APIs; build their indexes; export; restore
-// into a fresh dst (whose CFGraphIndex/CFVectorIndex are EMPTY because export
-// excluded them); then assert a label/adjacency graph query and a vector search
-// return correct results on dst — proving the rebuild hook reconstructed the index.
-```
-Concrete assertions: after `RestoreLogical(dst, ...)`, a graph query that depends on `CFGraphIndex` (e.g. lookup by label) returns the seeded node, and a `vector` search returns the seeded vector — both impossible unless the hook rebuilt the index, since export wrote no index objects.
-
-- [ ] **Step 3: Run to verify it fails** — FAIL (rebuild hooks are no-ops → index empty → queries return nothing).
-
-- [ ] **Step 4: Implement the rebuild wiring** in `contributors.go`: graph contributor's `rebuild` constructs a `*graph.Store` over `dst`, enumerates graphs, calls `RebuildIndexes(name)` for each; vector contributor's `rebuild` constructs a `*vector.Store` over `dst`, enumerates collections, calls `RebuildLiveIndex(store, coll, metric, params)` for each (use the collection's stored metric/params if available, else the documented defaults). Keep datatype specifics inside these hooks (invariant B).
-
-- [ ] **Step 5: Run to verify it passes** — PASS (queries succeed on the restored, rebuilt indexes).
-
-- [ ] **Step 6: Commit** — `git commit -am "feat(backup): graph + vector rebuild-after-restore hooks (derived indexes reconstructed)"`
+- [ ] **Step 6: Commit** — `git commit -am "feat(backup): RestoreLogical — raw same-shape restore, node identity preserved, all datatypes"`
 
 ---
 
 ## Done criteria for Phase 2a
 
-- [ ] Registry-driven logical backup: `DefaultRegistry` covers all authoritative CFs incl. `CFReplData`; derived (`CFGraphIndex`, `CFVectorIndex`) excluded + rebuilt; transient (`CFReplLog`, `CFCacheMeta`) never exported.
-- [ ] `ExportLogical` → object store + versioned manifest; `RestoreLogical` raw-restores, preserves node identity, rebuilds derived indexes.
-- [ ] Round-trips pass: KV+collections+system (Task 5), graph+vector with index rebuild (Task 6).
+- [ ] Registry-driven logical backup: `DefaultRegistry` covers every non-transient CF incl. `CFReplData` and (verbatim in 2a) `CFGraphIndex`/`CFVectorIndex`; transient (`CFReplLog`, `CFCacheMeta`) never exported.
+- [ ] `ExportLogical` → object store + versioned manifest; `RestoreLogical` raw-restores all backed-up CFs, preserves node identity (`/sys/storage_uuid` skipped), and calls each contributor's `RebuildAfterRestore` (no-ops in 2a — the extension seam Phase 2b fills).
+- [ ] Round-trips pass: KV+collections+system+graph+vector all restore verbatim same-shape (Task 5).
 - [ ] `go test ./internal/backup/...` green; `go vet ./internal/backup/...` clean; `go build ./...` green.
 - [ ] No change to existing hot-path code; existing `backup.Backup`/`Restore` left intact (superseded by the registry engine but not removed in 2a — removal/migration is a later cleanup).
 
-Phase 2a delivers a demonstrable single-node logical backup→restore for every datatype. Phase 2b adds re-shard (collections re-route by `(ns,coll)` under a new N) + partial selection; Phase 3 adds the cluster coordinator, incrementals, and physical-plane integration.
+Phase 2a delivers a demonstrable single-node logical backup→restore for every datatype (same-shape, verbatim). Phase 2b adds re-shard (collections re-route by `(ns,coll)` under a new N), flips the index CFs to derived + wires the `RebuildAfterRestore` hooks (solving graph-name/vector-collection enumeration + vector index-spec capture), and adds partial selection. Phase 3 adds the cluster coordinator, incrementals, and physical-plane integration.
