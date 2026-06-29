@@ -98,6 +98,41 @@ func TestLeaseRecRoundTrip(t *testing.T) {
 	}
 }
 
+// encodeLeaseStage1 writes EXACTLY the original Stage-1 lease record (amount|spent|epoch|chunk(holder))
+// with no timing tail, proving the append-tolerance contract: a Stage-1 lease must decode under the
+// Stage-2 decoder with GrantedMs/ReclaimNotBeforeMs/ExpiresMs = 0 (§3.3).
+func encodeLeaseStage1(l leaseRec) []byte {
+	b := make([]byte, 0, 8*3+4+len(l.Holder))
+	var num [8]byte
+	putI64(num[:], l.Amount)
+	b = append(b, num[:]...)
+	putI64(num[:], l.Spent)
+	b = append(b, num[:]...)
+	binary.BigEndian.PutUint64(num[:], l.Epoch)
+	b = append(b, num[:]...)
+	return appendChunk(b, l.Holder)
+}
+
+func TestLeaseRecTimingFieldsRoundTripAndBackCompat(t *testing.T) {
+	l := leaseRec{Holder: []byte("node-7"), Amount: 600_000, Spent: 250_000, Epoch: 3,
+		GrantedMs: 1_700_000_000_000, ReclaimNotBeforeMs: 1_700_000_004_100, ExpiresMs: 1_700_000_000_600}
+	got, err := decodeLease(encodeLease(l))
+	if err != nil {
+		t.Fatalf("decodeLease: %v", err)
+	}
+	if string(got.Holder) != string(l.Holder) || got.Amount != l.Amount || got.Spent != l.Spent ||
+		got.Epoch != l.Epoch || got.GrantedMs != l.GrantedMs ||
+		got.ReclaimNotBeforeMs != l.ReclaimNotBeforeMs || got.ExpiresMs != l.ExpiresMs {
+		t.Fatalf("round-trip = %+v, want %+v", got, l)
+	}
+	// a Stage-1 lease (no timing tail) decodes the three fields as 0
+	old := encodeLeaseStage1(leaseRec{Holder: []byte("node-7"), Amount: 600_000, Spent: 250_000, Epoch: 3})
+	g2, err := decodeLease(old)
+	if err != nil || g2.GrantedMs != 0 || g2.ReclaimNotBeforeMs != 0 || g2.ExpiresMs != 0 {
+		t.Fatalf("stage-1 lease back-compat: %+v err=%v", g2, err)
+	}
+}
+
 // --- Task 7: test harness ---
 
 // newTestSM builds a shardSM over an in-memory store with the same prefix/applied plumbing tests use.

@@ -167,10 +167,16 @@ type leaseRec struct {
 	Amount int64
 	Spent  int64
 	Epoch  uint64
+	// Stage-2 timing tail (append-only; a Stage-1 lease with no tail decodes these as 0). These are
+	// encoded AFTER the trailing holder chunk so the Stage-1 holder offset is unshifted (§3.3). They are
+	// only populated for a timed grant (resolved ttl>0); a non-timed lease leaves them 0.
+	GrantedMs          int64 // leader-stamped grant time (also feeds pacing); 0 for a Stage-1 lease
+	ReclaimNotBeforeMs int64 // replicated logical reclaim deadline (§2); the expiry-index key + sweep gate
+	ExpiresMs          int64 // = GrantedMs+ttl; INFORMATIONAL only (§3.3 M2) — never feeds a stop/reclaim
 }
 
 func encodeLease(l leaseRec) []byte {
-	b := make([]byte, 0, 8*2+8+4+len(l.Holder))
+	b := make([]byte, 0, 8*3+4+len(l.Holder)+8*3)
 	var num [8]byte
 	putI64(num[:], l.Amount)
 	b = append(b, num[:]...)
@@ -178,7 +184,14 @@ func encodeLease(l leaseRec) []byte {
 	b = append(b, num[:]...)
 	binary.BigEndian.PutUint64(num[:], l.Epoch)
 	b = append(b, num[:]...)
-	b = appendChunk(b, l.Holder) // uint32 len-prefixed (command.go:276)
+	b = appendChunk(b, l.Holder) // uint32 len-prefixed (command.go:300)
+	// Stage-2 timing tail AFTER the holder chunk (append-tolerant: a Stage-1 decoder stops at the holder).
+	putI64(num[:], l.GrantedMs)
+	b = append(b, num[:]...)
+	putI64(num[:], l.ReclaimNotBeforeMs)
+	b = append(b, num[:]...)
+	putI64(num[:], l.ExpiresMs)
+	b = append(b, num[:]...)
 	return b
 }
 
@@ -187,11 +200,16 @@ func decodeLease(b []byte) (leaseRec, error) {
 		return leaseRec{}, errShortLease
 	}
 	l := leaseRec{Amount: getI64(b[0:]), Spent: getI64(b[8:]), Epoch: binary.BigEndian.Uint64(b[16:])}
-	holder, _, err := takeChunk(b[24:]) // command.go:283
+	holder, rest, err := takeChunk(b[24:]) // command.go:307
 	if err != nil {
 		return leaseRec{}, err
 	}
 	l.Holder = append([]byte{}, holder...)
+	if len(rest) >= 24 { // Stage-2 timing tail present (a Stage-1 lease ends at the holder -> fields stay 0)
+		l.GrantedMs = getI64(rest[0:])
+		l.ReclaimNotBeforeMs = getI64(rest[8:])
+		l.ExpiresMs = getI64(rest[16:])
+	}
 	return l, nil
 }
 
