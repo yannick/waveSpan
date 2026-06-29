@@ -41,6 +41,37 @@ func replDataKey(ns, coll, tail string, n uint64) []byte {
 	return append(be8(collections.ShardForKey([]byte(ns), []byte(coll), n)), suffix...)
 }
 
+func TestReshardKey(t *testing.T) {
+	const n = 8
+
+	// A data-shard subData row re-routes to its shard under n (prefix rewritten, suffix kept).
+	dataKey := replDataKey("ns1", "c1", "row", 4)
+	gotKey, keep, err := reshardKey(dataKey, n)
+	wantKey := append(be8(collections.ShardForKey([]byte("ns1"), []byte("c1"), n)), dataKey[8:]...)
+	if err != nil || !keep || !bytes.Equal(gotKey, wantKey) {
+		t.Fatalf("data-shard reroute: keep=%v err=%v key=%x want=%x", keep, err, gotKey, wantKey)
+	}
+
+	// A meta-shard subData row with an EMPTY routing body must DROP, not error.
+	metaEmpty := append(be8(collections.MetaShardID), subDataByte)
+	if _, keep, err := reshardKey(metaEmpty, n); err != nil || keep {
+		t.Fatalf("meta-shard empty subData must drop (no error): keep=%v err=%v", keep, err)
+	}
+
+	// A subMeta row on a data shard drops (shard-local bookkeeping).
+	sm := append(be8(collections.FirstDataShard), subMetaByte)
+	sm = append(sm, []byte("applied")...)
+	if _, keep, err := reshardKey(sm, n); err != nil || keep {
+		t.Fatalf("subMeta must drop: keep=%v err=%v", keep, err)
+	}
+
+	// An unknown sub-prefix on a DATA shard is a loud error.
+	unknown := append(be8(collections.FirstDataShard), 0x7f, 'x')
+	if _, _, err := reshardKey(unknown, n); err == nil {
+		t.Fatal("unknown sub-prefix on a data shard must error")
+	}
+}
+
 func TestRestoreLogicalReshardsCFReplData(t *testing.T) {
 	const srcN, dstN = 4, 8
 	src, _ := storage.OpenWavesdb(t.TempDir())

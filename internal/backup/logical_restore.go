@@ -18,6 +18,39 @@ func be8(v uint64) []byte {
 	return b
 }
 
+// reshardKey computes the re-routed CFReplData key for a row under target shard
+// count n, or reports that the row should be dropped (keep=false, nil err).
+//
+// It drops two kinds of rows the target cluster rebuilds for itself:
+//   - meta/system-shard rows (shardID < collections.FirstDataShard) — the meta
+//     shard shares CFReplData; its range directory (be8(1)|subData|<rangeStart>,
+//     whose initial [-inf,+inf) range has an EMPTY routing body that RerouteSuffix
+//     could not decode) and its applied index are re-established at bootstrap. This
+//     guard runs BEFORE RerouteSuffix precisely because RerouteSuffix sees only the
+//     suffix and cannot tell a meta-shard row from a data-shard row.
+//   - shard-local bookkeeping on data shards (subMeta/subDedup/subDedupRing), via
+//     RerouteSuffix returning keep=false.
+//
+// It errors only on a genuinely un-routable data-shard row (unknown sub-prefix or
+// corrupt suffix), so re-shard fails loudly rather than misrouting data.
+func reshardKey(key []byte, n uint64) (newKey []byte, keep bool, err error) {
+	if len(key) < 8 {
+		return nil, false, fmt.Errorf("backup: CFReplData key too short to re-shard (%d bytes)", len(key))
+	}
+	if binary.BigEndian.Uint64(key[:8]) < collections.FirstDataShard {
+		return nil, false, nil // meta/system shard: not a data shard
+	}
+	suffix := key[8:]
+	newShard, keep, err := collections.RerouteSuffix(suffix, n)
+	if err != nil {
+		return nil, false, err
+	}
+	if !keep {
+		return nil, false, nil
+	}
+	return append(be8(newShard), suffix...), true, nil
+}
+
 // knownColumnFamilies is the full set of logical CFs, used to resolve a manifest
 // CF name back to its ColumnFamily (storage.cfNames is unexported, so we build
 // the reverse lookup here).
@@ -137,18 +170,14 @@ func restoreCFObject(dst storage.LocalStore, store ObjectStore, objKey string, c
 			continue
 		}
 		if reshard {
-			if len(key) < 8 {
-				return fmt.Errorf("backup: CFReplData key too short to re-shard (%d bytes)", len(key))
-			}
-			suffix := key[8:]
-			newShard, keep, err := collections.RerouteSuffix(suffix, ri.CollectionsDataShards)
+			newKey, keep, err := reshardKey(key, ri.CollectionsDataShards)
 			if err != nil {
 				return fmt.Errorf("backup: re-shard CFReplData: %w", err)
 			}
 			if !keep {
-				continue // shard-local bookkeeping; the target rebuilds it fresh
+				continue // meta/system shard or shard-local bookkeeping; rebuilt fresh
 			}
-			key = append(be8(newShard), suffix...)
+			key = newKey
 		}
 		ops = append(ops, storage.StoreOp{CF: cf, Key: key, Value: val})
 		if len(ops) >= batchSize {

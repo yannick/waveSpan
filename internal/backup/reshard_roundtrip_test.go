@@ -28,6 +28,48 @@ func budExpKey(ns, coll, lease string, reclaimMs, n uint64) []byte {
 	return append(be8(collections.ShardForKey([]byte(ns), []byte(coll), n)), budExpSuffix(ns, coll, lease, reclaimMs)...)
 }
 
+// TestReshardDropsMetaShardRows reproduces the meta-shard blocker: the meta shard
+// (MetaShardID=1, below FirstDataShard) shares CFReplData. Its initial-range
+// directory row is be8(1)|subData with an EMPTY routing body — feeding that suffix
+// to RerouteSuffix would takeChunk-error and abort the whole restore. The shard-id
+// drop guard must skip every shardID < FirstDataShard before re-routing, so re-shard
+// neither aborts nor misroutes these rows; the target rebuilds its meta state fresh.
+func TestReshardDropsMetaShardRows(t *testing.T) {
+	src, _ := storage.OpenWavesdb(t.TempDir())
+	t.Cleanup(func() { _ = src.Close() })
+
+	// Meta-shard initial-range directory row: be8(1) || subData || <empty body>.
+	metaRange := append(be8(collections.MetaShardID), subDataByte)
+	mustPut(t, src, storage.CFReplData, metaRange, []byte("rangeval"))
+	// Meta-shard applied index: be8(1) || subMeta || "applied".
+	metaApplied := append(be8(collections.MetaShardID), subMetaByte)
+	metaApplied = append(metaApplied, []byte("applied")...)
+	mustPut(t, src, storage.CFReplData, metaApplied, []byte("7"))
+	// A normal data row so the CF also has re-routable content.
+	mustPut(t, src, storage.CFReplData, replDataKey("ns1", "c1", "doc", 4), []byte("v"))
+
+	store, _ := objstore.NewFS(t.TempDir())
+	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000); err != nil {
+		t.Fatal(err)
+	}
+
+	dst, _ := storage.OpenWavesdb(t.TempDir())
+	t.Cleanup(func() { _ = dst.Close() })
+	if err := RestoreLogical(dst, store, "bk", DefaultRegistry(), RestoreInfo{CollectionsDataShards: 8}); err != nil {
+		t.Fatalf("re-shard must not abort on meta-shard rows: %v", err)
+	}
+
+	if _, ok, _ := dst.Get(storage.CFReplData, metaRange); ok {
+		t.Fatal("meta-shard subData (initial range) must be dropped on re-shard")
+	}
+	if _, ok, _ := dst.Get(storage.CFReplData, metaApplied); ok {
+		t.Fatal("meta-shard subMeta (applied index) must be dropped on re-shard")
+	}
+	if _, ok, _ := dst.Get(storage.CFReplData, replDataKey("ns1", "c1", "doc", 8)); !ok {
+		t.Fatal("data row must survive re-shard")
+	}
+}
+
 // TestReshardRoundTripN4toN8 proves a realistic re-shard: several collections,
 // each with a data row and a budget secondary-index row, plus shard-local
 // bookkeeping (subMeta, subDedup), restored from a source N=4 layout into a target
