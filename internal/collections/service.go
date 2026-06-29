@@ -372,14 +372,15 @@ func (s *Service) TierInfo(_ context.Context, _ *connect.Request[wavespanv1.Tier
 // budStatResult builds a BudgetStatResult from the pool accounting plus this node's ResponseMeta.
 func (s *Service) budStatResult(st BudStat) *wavespanv1.BudgetStatResult {
 	return &wavespanv1.BudgetStatResult{
-		Meta:           s.meta(),
-		Exists:         st.Exists,
-		CapUnits:       st.Cap,
-		AvailableUnits: st.Available,
-		LeasedOutUnits: st.LeasedOut,
-		SpentUnits:     st.Spent,
-		Epoch:          st.Epoch,
-		Mode:           wavespanv1.BudgetMode(st.Mode),
+		Meta:               s.meta(),
+		Exists:             st.Exists,
+		CapUnits:           st.Cap,
+		AvailableUnits:     st.Available,
+		LeasedOutUnits:     st.LeasedOut,
+		SpentUnits:         st.Spent,
+		SpentReportedUnits: st.SpentReported,
+		Epoch:              st.Epoch,
+		Mode:               wavespanv1.BudgetMode(st.Mode),
 	}
 }
 

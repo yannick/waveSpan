@@ -88,6 +88,28 @@ func TestPoolRecConfigRoundTripAndBackCompat(t *testing.T) {
 	}
 }
 
+// TestPoolRecSpentReportedRoundTripAndBackCompat pins the Stage-2.x observability tail: SpentReported
+// round-trips, and a pre-2.x 105-byte record (full config, no observability tail) decodes it as 0.
+func TestPoolRecSpentReportedRoundTripAndBackCompat(t *testing.T) {
+	p := poolRec{Cap: 1000, Available: 700, LeasedOut: 100, Spent: 200, Epoch: 1, Mode: modeStrict, Burst: 1000,
+		SelfGuardMs: maxClockSkewMs, MaxPauseMs: 2000, DefaultTTLMs: 600, DedupRetryWindowMs: minDedupRetryWindowMs,
+		SpentReported: 150}
+	got, err := decodePool(encodePool(p))
+	if err != nil || got != p {
+		t.Fatalf("round-trip = %+v err=%v, want %+v", got, err, p)
+	}
+	// a pre-2.x record (105 bytes: full config, no observability tail) decodes SpentReported as 0
+	short := encodePool(p)[:105]
+	g2, err := decodePool(short)
+	if err != nil || g2.SpentReported != 0 {
+		t.Fatalf("105-byte back-compat: SpentReported = %d err=%v, want 0", g2.SpentReported, err)
+	}
+	// the rest of the config still decodes (105 >= 105), so only the new tail defaults to 0
+	if g2.DedupRetryWindowMs != minDedupRetryWindowMs {
+		t.Fatalf("105-byte record lost config: %+v", g2)
+	}
+}
+
 func TestLeaseRecRoundTrip(t *testing.T) {
 	l := leaseRec{Holder: []byte("node-7"), Amount: 600_000, Spent: 250_000, Epoch: 3}
 	got, err := decodeLease(encodeLease(l))
@@ -432,6 +454,60 @@ func TestApplyBudGrantIdempotent(t *testing.T) {
 	p, _, _ := u.getPool(ns, coll)
 	if p.LeasedOut != 600 || p.Available != 400 { // NOT 1200/-200
 		t.Fatalf("retry double-granted: leased=%d avail=%d", p.LeasedOut, p.Available)
+	}
+}
+
+// TestSpentReportedTracksReportsNotExpiry pins the Stage-2.x observability semantics: a holder report
+// grows BOTH Spent and SpentReported, while a forced expiry's pessimistic DEBIT grows Spent ONLY — never
+// SpentReported. The invariant SpentReported <= Spent holds throughout.
+func TestSpentReportedTracksReportsNotExpiry(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	timedBudget(u, ns, coll, 1000, 2000)
+	mustGrant(t, u, ns, coll, "L", 100, 1000, 3000) // grantedMs=1000 ttl=3000
+
+	// a report grows BOTH Spent and SpentReported by the delta.
+	if _, err := u.applyBudReport(reportCmd(ns, coll, "L", 40)); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	p, _, _ := u.getPool(ns, coll)
+	if p.Spent != 40 || p.SpentReported != 40 {
+		t.Fatalf("after report: spent=%d spentReported=%d, want 40/40", p.Spent, p.SpentReported)
+	}
+
+	// forced expiry DEBITS the remaining 60 into Spent (un-attested) but NOT SpentReported.
+	if _, err := u.applyBudExpire(expireCmd(ns, coll, "L", 9_999_999)); err != nil {
+		t.Fatalf("expire: %v", err)
+	}
+	p, _, _ = u.getPool(ns, coll)
+	if p.Spent != 100 {
+		t.Fatalf("after expiry: spent=%d, want 100 (debit remainder)", p.Spent)
+	}
+	if p.SpentReported != 40 {
+		t.Fatalf("after expiry: spentReported=%d, want 40 (forced expiry must not bump it)", p.SpentReported)
+	}
+	if p.SpentReported > p.Spent {
+		t.Fatalf("invariant broken: SpentReported %d > Spent %d", p.SpentReported, p.Spent)
+	}
+}
+
+// TestSpentReportedGrowsOnReturnFold pins that an ATTESTED graceful Return's final-report fold grows
+// SpentReported alongside Spent (the holder attested the spend), unlike a forced expiry.
+func TestSpentReportedGrowsOnReturnFold(t *testing.T) {
+	u := newTestUpdateCtx(t)
+	ns, coll := []byte("p"), []byte("c")
+	timedBudget(u, ns, coll, 1000, 2000)
+	mustGrant(t, u, ns, coll, "L", 100, 1000, 3000)
+	if _, err := u.applyBudReport(reportCmd(ns, coll, "L", 30)); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	// return folds a final cumulative of 70: Spent and SpentReported both advance to 70.
+	if _, err := u.applyBudReturn(returnCmd(ns, coll, "L", 70)); err != nil {
+		t.Fatalf("return: %v", err)
+	}
+	p, _, _ := u.getPool(ns, coll)
+	if p.Spent != 70 || p.SpentReported != 70 {
+		t.Fatalf("after return-fold: spent=%d spentReported=%d, want 70/70", p.Spent, p.SpentReported)
 	}
 }
 
@@ -1110,6 +1186,9 @@ func TestBudgetConservationFuzz(t *testing.T) {
 		if p.Available < 0 || p.LeasedOut < 0 || p.Spent < 0 {
 			t.Fatalf("step %d (%s): bucket < 0: %+v", step, op, p)
 		}
+		if p.SpentReported > p.Spent { // Stage-2.x invariant: only reports/attested returns bump SpentReported
+			t.Fatalf("step %d (%s): SpentReported %d > Spent %d", step, op, p.SpentReported, p.Spent)
+		}
 	}
 
 	for i := 0; i < 5000; i++ {
@@ -1195,6 +1274,11 @@ func TestBudgetConservationFuzzTimed(t *testing.T) {
 		// The ground-truth bound: total externally-acked impressions never exceed the cap.
 		if totalServed > capUnits {
 			t.Fatalf("step %d (%s): Σ served %d > cap %d (overspend!) chk=%+v", step, op, totalServed, capUnits, chk)
+		}
+		// Stage-2.x: SpentReported only ever advances by an actual report/attested return (never a forced
+		// expiry's debit), so it can never exceed Spent — the gap is the recoverable stranding.
+		if chk.SpentReported > chk.Spent {
+			t.Fatalf("step %d (%s): SpentReported %d > Spent %d chk=%+v", step, op, chk.SpentReported, chk.Spent, chk)
 		}
 	}
 

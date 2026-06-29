@@ -75,8 +75,11 @@ type BudgetStat struct {
 	AvailableUnits int64
 	LeasedOutUnits int64
 	SpentUnits     int64
-	Epoch          uint64
-	Mode           BudgetMode
+	// SpentReportedUnits is the cumulative spend actually attested by holders (<= SpentUnits). The gap
+	// SpentUnits - SpentReportedUnits is the maximum recoverable stranding from forced expiries.
+	SpentReportedUnits int64
+	Epoch              uint64
+	Mode               BudgetMode
 }
 
 // BudgetDefineOptions carries the Stage-2 pacing + timing config for Define. The zero value reproduces
@@ -165,12 +168,13 @@ func (bc *BudgetClient) Stat(ctx context.Context, namespace string, budget []byt
 		return BudgetStat{}, wrapErr("BudgetStat", err)
 	}
 	return BudgetStat{
-		Exists:         resp.GetExists(),
-		CapUnits:       resp.GetCapUnits(),
-		AvailableUnits: resp.GetAvailableUnits(),
-		LeasedOutUnits: resp.GetLeasedOutUnits(),
-		SpentUnits:     resp.GetSpentUnits(),
-		Epoch:          resp.GetEpoch(),
-		Mode:           BudgetMode(resp.GetMode()),
+		Exists:             resp.GetExists(),
+		CapUnits:           resp.GetCapUnits(),
+		AvailableUnits:     resp.GetAvailableUnits(),
+		LeasedOutUnits:     resp.GetLeasedOutUnits(),
+		SpentUnits:         resp.GetSpentUnits(),
+		SpentReportedUnits: resp.GetSpentReportedUnits(),
+		Epoch:              resp.GetEpoch(),
+		Mode:               BudgetMode(resp.GetMode()),
 	}, nil
 }

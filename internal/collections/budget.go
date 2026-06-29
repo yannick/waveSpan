@@ -81,6 +81,12 @@ type poolRec struct {
 	MaxPauseMs         int64 // holder-side max pause before self-fence; widens the reclaim deadline (2b)
 	DefaultTTLMs       int64 // default per-lease TTL when a grant carries no ttlOverride (0 = non-expiring)
 	DedupRetryWindowMs int64 // tombstone GC window; sizes B5 dedup safety (>= minDedupRetryWindowMs, I3)
+	// Stage-2.x observability tail (append-only; a 105-byte record decodes this as 0). SpentReported is the
+	// cumulative spend ACTUALLY attested by holders (report + attested return-fold); a forced expiry's
+	// pessimistic DEBIT never bumps it. The invariant SpentReported <= Spent always holds, so the gap
+	// Spent - SpentReported = the maximum recoverable stranding (basis for a future Σ-acked reconciliation).
+	// It is informational only — NOT a conservation term (cap == available + leasedOut + spent is unchanged).
+	SpentReported int64
 }
 
 // Pacing/timing admission bounds (money-load-bearing; consumed by applyBudInit + applyBudGrant).
@@ -186,7 +192,7 @@ func pacingMaxElapsedMs(rate, burst int64) int64 {
 }
 
 func encodePool(p poolRec) []byte {
-	b := make([]byte, 8*4+8+1+8*2+8*2+8*4) // [prefix 57] | pacing(16) | timing config(32) -> 105
+	b := make([]byte, 8*4+8+1+8*2+8*2+8*4+8) // [prefix 57] | pacing(16) | timing config(32) | spentReported(8) -> 113
 	putI64(b[0:], p.Cap)
 	putI64(b[8:], p.Available)
 	putI64(b[16:], p.LeasedOut)
@@ -201,6 +207,7 @@ func encodePool(p poolRec) []byte {
 	putI64(b[81:], p.MaxPauseMs)
 	putI64(b[89:], p.DefaultTTLMs)
 	putI64(b[97:], p.DedupRetryWindowMs)
+	putI64(b[105:], p.SpentReported)
 	return b
 }
 
@@ -224,6 +231,9 @@ func decodePool(b []byte) (poolRec, error) {
 		p.MaxPauseMs = getI64(b[81:])
 		p.DefaultTTLMs = getI64(b[89:])
 		p.DedupRetryWindowMs = getI64(b[97:])
+	}
+	if len(b) >= 113 { // Stage-2.x observability tail present (a pre-2.x record stops at 105 -> stays 0)
+		p.SpentReported = getI64(b[105:])
 	}
 	return p, nil
 }
@@ -612,6 +622,7 @@ func (u *updateCtx) applyBudReport(c command) (ProposeResult, error) {
 	}
 	p.LeasedOut -= delta
 	p.Spent += delta
+	p.SpentReported += delta // an ACTUAL holder report — keeps SpentReported <= Spent (forced expiry never bumps it)
 	u.setPool(c.NS, c.Coll, p)
 	u.setLease(c.NS, c.Coll, leaseID, l)
 	return ProposeResult{Value: uint64(l.Amount - l.Spent)}, nil
@@ -665,6 +676,7 @@ func (u *updateCtx) applyBudReturn(c command) (ProposeResult, error) {
 			l.Spent = reported
 			p.LeasedOut -= delta
 			p.Spent += delta
+			p.SpentReported += delta // attested final report — informational, keeps SpentReported <= Spent
 		}
 	}
 	// CREDIT the attested remainder back to available (the ONLY settlement path that does so).
@@ -805,8 +817,11 @@ type budStatQuery struct{ NS, Coll []byte }
 type BudStat struct {
 	Exists                           bool
 	Cap, Available, LeasedOut, Spent int64
-	Epoch                            uint64
-	Mode                             uint8
+	// SpentReported is the cumulative spend actually attested by holders (<= Spent); Spent - SpentReported
+	// is the maximum recoverable stranding from forced expiries. Informational, not a conservation term.
+	SpentReported int64
+	Epoch         uint64
+	Mode          uint8
 }
 
 // lookupBudStat reads the pool from a snapshot (called by shardSM.Lookup).
@@ -821,17 +836,21 @@ func (s *shardSM) lookupBudStat(snap storage.Snapshot, q budStatQuery) (BudStat,
 	if err != nil {
 		return BudStat{}, err
 	}
-	return BudStat{Exists: true, Cap: p.Cap, Available: p.Available, LeasedOut: p.LeasedOut, Spent: p.Spent, Epoch: p.Epoch, Mode: p.Mode}, nil
+	return BudStat{Exists: true, Cap: p.Cap, Available: p.Available, LeasedOut: p.LeasedOut, Spent: p.Spent,
+		SpentReported: p.SpentReported, Epoch: p.Epoch, Mode: p.Mode}, nil
 }
 
 // --- B2: conservation-invariant probe (design §6.8) ---
 type budCheckQuery struct{ NS, Coll []byte }
 
-// budCheck reports whether INV-LOCAL holds for the pool, with the buckets for diagnostics.
+// budCheck reports whether INV-LOCAL holds for the pool, with the buckets for diagnostics. SpentReported
+// is carried alongside (NOT part of the OK equality) so the gap Spent - SpentReported = max recoverable
+// stranding is observable on the probe.
 type budCheck struct {
 	Exists                           bool
 	OK                               bool // available+leasedOut+spent == cap AND spent <= cap AND no bucket < 0
 	Cap, Available, LeasedOut, Spent int64
+	SpentReported                    int64
 }
 
 // lookupBudCheck reads ONE consistent snapshot and asserts the conservation invariant. Read-only; the
@@ -847,7 +866,8 @@ func (s *shardSM) lookupBudCheck(snap storage.Snapshot, q budCheckQuery) (budChe
 	}
 	ok := p.Available+p.LeasedOut+p.Spent == p.Cap &&
 		p.Spent <= p.Cap && p.Available >= 0 && p.LeasedOut >= 0 && p.Spent >= 0
-	return budCheck{Exists: true, OK: ok, Cap: p.Cap, Available: p.Available, LeasedOut: p.LeasedOut, Spent: p.Spent}, nil
+	return budCheck{Exists: true, OK: ok, Cap: p.Cap, Available: p.Available, LeasedOut: p.LeasedOut, Spent: p.Spent,
+		SpentReported: p.SpentReported}, nil
 }
 
 // --- Task 2b.4/2b.5: shard-level due scans for the expiry sweep + tombstone GC ---
