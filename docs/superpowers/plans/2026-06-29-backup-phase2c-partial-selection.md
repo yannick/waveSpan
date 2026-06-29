@@ -14,28 +14,31 @@
 Worktree **/Volumes/HOME/code/storage-engines/waveSpan-backup** (branch `backup`). Commit per task. Tests: `go test ./internal/backup/... ./internal/recordstore/... ./internal/collections/... ./internal/graph/... ./internal/vector/...`.
 
 ## Confirmed API reference
-- KV keys (CFKVData `dataKey`, CFKVMeta `latestKey`) both START with `lenPrefix(ns)` = `uvarint(len(ns))||ns` (recordstore/encode.go:22,34,47). recordstore already decodes a namespace via `binary.Uvarint` (encode.go:92).
-- Collections CFReplData key = `be8(shardID)||subPrefix||…`; `(ns,coll)` is recoverable from the suffix for data rows via the Phase 2b parsing (`RerouteSuffix`/`routeKeyOf` in collections, which `takeChunk`→ns,coll for subData=suffix[1:] and subTTL/subBudExp/subBudTombGC=suffix[9:]; meta/bookkeeping rows have no ns). Shard id `< FirstDataShard` = meta/system.
-- Graph CFGraphData keys: `NodePrefix(graph)=lp([]byte("n"),graph)` / `EdgePrefix=lp([]byte("e"),graph)` (graph/keys.go:52,55); `lp(dst,s)=dst||uvarint(len(s))||s` (keys.go:24); graph has a uvarint decode at keys.go:44. So a node/edge key = `pfx(1 byte: 'n'/'e')||uvarint(len(graph))||graph||…`.
-- Vector CFVectorRaw keys: `rawPrefix(collection)=lp([]byte(pfxRaw),collection)` (store.go:56); `lp` + uvarint decode at store.go:18,26. Key = `pfxRaw||uvarint(len(coll))||coll||…`.
+- KV CFKVData (`dataKey`) + CFKVMeta (`latestKey`) START with `lenPrefix(ns)` = `uvarint(len(ns))||ns` (recordstore/encode.go:22,34,47). BUT CFKVMeta ALSO holds TTL-sentinel keys: `0xff||bucketStart(8B)||lenPrefix(ns)||userKey` (`ttlSentinel`=0xff, encode.go:54-66); decode ns via `parseTTLKey` (encode.go:87). recordstore decodes uvarint at encode.go:92.
+- Collections CFReplData key = `be8(shardID)||subPrefix||…`; `(ns,coll)` is recoverable from data sub-prefixes via the Phase 2b parsing (`takeChunk`→ns,coll for subData=suffix[1:] and subTTL/subBudExp/subBudTombGC=suffix[9:]); meta/bookkeeping rows (subMeta/subDedup/subDedupRing) and shard id `< FirstDataShard` have no ns. (Do not reuse `routeKeyOf` — incomplete; factor `nsCollOfSuffix` from `RerouteSuffix`.)
+- Graph CFGraphData + CFGraphIndex: graph name = the FIRST `lp` chunk after the prefix. Prefixes `pfxNode="n"`,`pfxEdge="e"`,`pfxLabel="l"`,`pfxProp="p"` are 1 byte; `pfxOutAdj="ao"`,`pfxInAdj="ai"` are 2 bytes (keys.go:16-21). `lp(dst,s)=dst||uvarint(len(s))||s` (keys.go:24), uvarint decode keys.go:44. e.g. `LabelKey=lp(lp(lp("l",graph),label),nodeID)` → after "l", first chunk=graph.
+- Vector CFVectorRaw + CFVectorIndex: ALL prefixes are 2 bytes — `pfxRaw="vr"`,`pfxMeta="vm"`,`pfxAttach="va"` (store.go:13-15). `rawKey=lp(lp("vr",coll),vec)`, `metaKey=lp(lp("vm",coll),vec)` → collection = 1st chunk after the 2-byte prefix. `attachKey=lp(lp(lp("va",nodeID),coll),vec)` → collection = **2nd** chunk after "va". `lp`+uvarint decode store.go:18,26.
 - Backup: `ExportLogical(src, store, keyPrefix, reg, captureMs)`; `Registry`/`funcContributor{name, cfs, rebuild}`; `cf.Name()`; CFs iterated via `reg.AuthoritativeCFs()` over `src.Snapshot()`.
 
 ---
 
 ## Task 1: Per-package key decoders (selector value ← CF key)
 
-Add a small exported decoder in each owning package (they own the key layout + already have a uvarint decoder). Each returns `ok=false` for keys it can't attribute (so the matcher can decide).
+Add an exported decoder in each owning package. **CRITICAL — each CF holds MULTIPLE key prefixes; the decoder must handle EVERY prefix in the CF(s) the contributor owns**, because the index CFs are exported verbatim (authoritative) and must be filterable consistently. The selector entity is always recoverable (indexes are per-graph/per-collection scoped). All packages use `lp(dst,s)=dst||uvarint(len(s))||s` and have a uvarint decoder. Every decoder is bounds-checked and returns `("",false)` on a short/garbage/unattributable key — never panics.
 
 @superpowers:test-driven-development
 
 **Files / signatures:**
-- `internal/recordstore/encode.go` (or a new `keys.go`): `func NamespaceOfKey(key []byte) (string, bool)` — read the leading `lenPrefix` chunk (uvarint len + bytes) of a CFKVData/CFKVMeta key. Test: `dataKey("ns","k",v)` and `latestKey("ns","k")` both decode to `"ns"`.
-- `internal/collections/reshard.go` (refactor): factor the suffix→(ns,coll) parsing out of `RerouteSuffix` into `nsCollOfSuffix(suffix) (ns, coll []byte, ok bool)`, and add `func NamespaceCollectionOfKey(key []byte) (ns, coll string, ok bool)` that drops the 8-byte prefix (ok=false if `len<8` or shardID `< FirstDataShard` or a bookkeeping sub-prefix). `RerouteSuffix` then reuses `nsCollOfSuffix`. Test: a `be8(ShardForKey("ns","c",4))||subData||chunk(ns)||chunk(coll)` key decodes to `("ns","c",true)`; a meta-shard / subMeta key → `ok=false`.
-- `internal/graph/keys.go`: `func GraphOfKey(key []byte) (string, bool)` — for a node/edge key, skip the 1-byte `pfxNode`/`pfxEdge`, read the uvarint graph chunk. Test: `NodeKey("g","n1")` and `EdgeKey("g","e1")` decode to `"g"`; a key with an unknown leading byte → `ok=false`.
-- `internal/vector/store.go`: `func CollectionOfKey(key []byte) (string, bool)` — skip the 1-byte `pfxRaw`, read the uvarint collection chunk. Test: `rawKey("coll","v1")` decodes to `"coll"`.
+- `internal/recordstore` (encode.go or new keys.go): `func NamespaceOfKey(key []byte) (string, bool)` covering BOTH KV CFs' key types:
+  - `0xff` TTL-sentinel keys (`ttlSentinel`, encode.go:60) → reuse `parseTTLKey` (encode.go:87) to get ns.
+  - otherwise (latest-pointer `latestKey` and versioned `dataKey`) → read the leading `lenPrefix` chunk → ns.
+  - Test: `dataKey("ns","k",v)`, `latestKey("ns","k")`, AND `ttlKey(t,"ns","k")` all decode to `"ns"`.
+- `internal/collections/reshard.go` (refactor): factor the suffix→(ns,coll) parse out of `RerouteSuffix` into `nsCollOfSuffix(suffix) (ns, coll []byte, ok bool)` (do NOT reuse migrate.go `routeKeyOf` — it only covers subData/subTTL and returns combined bytes); add `func NamespaceCollectionOfKey(key []byte) (ns, coll string, ok bool)` → `ok=false` if `len(key)<8`, shardID `< FirstDataShard`, or a bookkeeping sub-prefix (subMeta/subDedup/subDedupRing); else parse ns,coll from subData/subTTL/subBudExp/subBudTombGC bodies. `RerouteSuffix` then reuses `nsCollOfSuffix`. Test: `be8(ShardForKey("ns","c",4))||subData||chunk(ns)||chunk(coll)` → `("ns","c",true)`; meta-shard/subMeta → `ok=false`.
+- `internal/graph/keys.go`: `func GraphOfKey(key []byte) (string, bool)` covering ALL CFGraphData + CFGraphIndex prefixes. The graph name is the FIRST `lp` chunk after the prefix bytes; prefixes are `pfxNode/pfxEdge/pfxLabel/pfxProp` (1 byte: "n","e","l","p") and `pfxOutAdj/pfxInAdj` (2 bytes: "ao","ai"). Detect the 2-byte adjacency prefixes first, else the 1-byte ones; skip the prefix; read the uvarint chunk → graph. Test: `NodeKey/EdgeKey/LabelKey/PropKey/OutAdjKey/InAdjKey` for graph `"g"` all decode to `"g"`; unknown leading byte → `ok=false`.
+- `internal/vector/store.go`: `func CollectionOfKey(key []byte) (string, bool)` covering CFVectorRaw + CFVectorIndex. **All vector prefixes are 2 bytes** (`pfxRaw="vr"`, `pfxMeta="vm"`, `pfxAttach="va"`). For `vr`/`vm`: collection = 1st chunk after the 2-byte prefix. For `va` (`attachKey = lp(lp(lp("va",nodeID),collection),vectorID)`): collection = **2nd** chunk after the 2-byte prefix (skip the nodeID chunk first). Test: `rawKey("coll","v")`, `metaKey("coll","v")`, AND `attachKey("node","coll","v")` all decode to `"coll"`.
 
-- [ ] **Step 1–4 (per package): failing test → run fail → implement → run pass.** Do each package's decoder with its own test, reusing that package's existing uvarint decode helper. Keep each decoder defensive (bounds-checked; never panic on a short/garbage key — return `("", false)`).
-- [ ] **Step 5: commit** — `git commit -am "feat(recordstore,collections,graph,vector): key decoders for partial-backup selection"`
+- [ ] **Step 1–4 (per package): failing test → run fail → implement → run pass.** One decoder + test per package; reuse the package's uvarint decode helper.
+- [ ] **Step 5: commit** — `git commit -am "feat(recordstore,collections,graph,vector): prefix-aware key decoders for partial-backup selection"`
 
 ---
 
@@ -77,6 +80,7 @@ Drive these through the contributor matchers obtained from `DefaultRegistry()`.
     - **vector**: `c, ok := vector.CollectionOfKey(key); return ok && contains(sel.VectorCollections, c)`.
   - Note: each type checks ITS OWN selector set, so a non-empty selector that names only namespaces naturally excludes all graph/vector data (and vice-versa). The "empty selector ⇒ everything" shortcut is handled in ExportLogical (Task 3), so matchers are only consulted when a filter is active.
   - Import-cycle check: `internal/backup` importing recordstore/collections/graph/vector — confirm none import backup (they don't). If any cycle, define a decode-func type and inject it instead.
+  - Adding `Selects` to the `Contributor` interface also requires the test-only `staticContributor` (contributor_test.go) to implement it — add a trivial `Selects(...) bool { return true }` there so the package still compiles.
 
 - [ ] **Step 4: run → PASS.**
 - [ ] **Step 5: commit** — `git commit -am "feat(backup): Selector + per-contributor key matchers for partial backup"`
@@ -109,7 +113,7 @@ Drive these through the contributor matchers obtained from `DefaultRegistry()`.
 **Files:**
 - Test: `internal/backup/partial_roundtrip_test.go`
 
-- [ ] **Step 1: failing test** — seed two tenants' worth of data across all four datatypes (ns1/ns2, g1/g2, c1/c2). Partial-export selecting only ns1 + g1 + c1 to an FS object store. Restore into a fresh `dst`. Assert: ns1 KV + ns1 collections + g1 graph + c1 vector are present and correct in `dst`; ns2/g2/c2 data is ABSENT. (Restore is unchanged — this validates the export filter end-to-end through a real restore.)
+- [ ] **Step 1: failing test** — seed two tenants' worth of data across all four datatypes (ns1/ns2, g1/g2, c1/c2), building real graph + vector INDEXES (so CFGraphIndex/CFVectorIndex have entries). Partial-export selecting only ns1 + g1 + c1 to an FS object store. Restore into a fresh `dst`. Assert: (a) ns1 KV + ns1 collections + g1 graph + c1 vector data are present and correct in `dst`; ns2/g2/c2 data ABSENT; (b) **the copied indexes are consistent for the selected subset** — a g1 graph query that reads CFGraphIndex (e.g. label lookup / adjacency traversal) returns the seeded g1 node, and a c1 vector search returns the seeded c1 vector, while g2/c2 queries return nothing. This proves prefix-aware filtering kept index entries attributed to the selected entities (the index CFs are exported verbatim-but-filtered, no rebuild). (Restore is unchanged.)
 - [ ] **Step 2: run → FAIL (until Tasks 1–3).**
 - [ ] **Step 3: make pass.**
 - [ ] **Step 4:** `go test ./internal/backup/... ./internal/recordstore/... ./internal/collections/... ./internal/graph/... ./internal/vector/...` green; `go vet ./...` clean; `go build ./...` green.
