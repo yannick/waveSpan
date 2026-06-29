@@ -1,0 +1,49 @@
+package backup
+
+import (
+	"encoding/json"
+	"io"
+)
+
+// manifestFormatVersion is the current NodeManifest schema version. A reader
+// rejects manifests whose FormatVersion exceeds this (major-version guard);
+// unknown JSON fields are ignored, giving additive forward-compatibility.
+const manifestFormatVersion = 1
+
+// CFEntry summarizes one exported column family. CF is the wavesdb cf name
+// string (e.g. "kv_data"), matching cf.Name().
+type CFEntry struct {
+	CF      string `json:"cf"`
+	Entries int64  `json:"entries"`
+	Bytes   int64  `json:"bytes"`
+}
+
+// NodeManifest is the versioned, self-describing record of a single node's
+// logical backup: the format version, the capture cut time, the node's storage
+// identity, and per-CF entry/byte counts.
+type NodeManifest struct {
+	FormatVersion      int       `json:"format_version"`
+	CaptureWallClockMs int64     `json:"capture_wall_clock_ms"`
+	StorageUUID        string    `json:"storage_uuid,omitempty"`
+	CFs                []CFEntry `json:"cfs"`
+}
+
+// WriteTo marshals the manifest as indented JSON to w.
+func (m *NodeManifest) WriteTo(w io.Writer) error {
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(b)
+	return err
+}
+
+// ReadNodeManifest decodes a NodeManifest from r. Unknown fields are ignored
+// (forward-compatible).
+func ReadNodeManifest(r io.Reader) (*NodeManifest, error) {
+	var m NodeManifest
+	if err := json.NewDecoder(r).Decode(&m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
