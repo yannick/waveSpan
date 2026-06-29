@@ -86,6 +86,19 @@ func defineBudget(t *testing.T, cols *collections.Collections, coll []byte, cap 
 	}
 }
 
+// defineBudgetTTL defines a STRICT timed budget with an explicit (short) TTL and no holder pause budget, so
+// an abandoned lease force-expires (DEBIT) quickly — used by the reconciliation scenarios.
+func defineBudgetTTL(t *testing.T, cols *collections.Collections, coll []byte, cap, ttlMs int64) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := cols.BudgetDefine(ctx, []byte(budNS), coll, cap, 1 /*modeStrict*/, collections.BudgetConfig{
+		SelfGuardMs: budGuardMs, MaxPauseMs: 0, DefaultTTLMs: ttlMs, DedupRetryWindowMs: budDedupMs,
+	}); err != nil {
+		t.Fatalf("BudgetDefine: %v", err)
+	}
+}
+
 // collBackend adapts the real Collections budget API to budgetBackend.
 type collBackend struct {
 	cols   *collections.Collections
@@ -386,6 +399,175 @@ func TestNegControlMonotonicSuspend(t *testing.T) {
 		t.Fatalf("NEGATIVE CONTROL (CLOCK_MONOTONIC) FAILED TO GO RED: servedOnResume=%v violations=%d", servedNeg, len(dvNeg))
 	}
 	t.Logf("NEGATIVE (CLOCK_MONOTONIC under suspend): self-fence did not fire, disjointness RED: %s", dvNeg[0].Detail)
+}
+
+// --- §3.8: External Σ-acked reconciliation (recover forced-expiry stranding) ---
+
+// ledgerTotal sums the harness's ground-truth acked impressions — the SAME figure the BudgetCapChecker
+// walks, and the AUTHORITATIVE external Σ-acked total a correct controller feeds to BudgetReconcile.
+func ledgerTotal(lg *ledger) int64 {
+	var sum int64
+	for _, e := range lg.snapshot() {
+		sum += e.Units
+	}
+	return sum
+}
+
+// waitLeasedZero polls until the pool's leasedOut drains to 0 (the leader's sweep force-expired the
+// stranded lease, DEBITING its whole remainder to spent), returning the post-expiry stat.
+func waitLeasedZero(t *testing.T, cols *collections.Collections, coll []byte) collections.BudStat {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		st, err := cols.BudgetStat(ctx, []byte(budNS), coll, true)
+		cancel()
+		if err == nil && st.LeasedOut == 0 {
+			return st
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("lease never force-expired (leased=%d spent=%d)", st.LeasedOut, st.Spent)
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
+// TestReconcileRecoversStrandingSoak is the Part-B reconciliation scenario on a REAL Raft shard: a holder
+// strands budget (serves 600 acked impressions but reports only 200, then crashes; the server force-expires
+// the lease and DEBITS the whole grant to spent — leaving available at 0 with 400 of genuinely-unspent
+// headroom STRANDED). A controller then reconciles to the harness's GROUND-TRUTH Σ-acked total (the same
+// ledger the BudgetCapChecker uses). Assertions: (a) the budget-strict-cap checker stays GREEN across the
+// reconcile (Σ acked ≤ cap — reconcile introduces NO overspend); (b) RECOVERY — available rises from 0 and a
+// fresh lease can deliver further toward the true remaining cap (the stranded headroom is actually
+// recovered, not merely left safe).
+func TestReconcileRecoversStrandingSoak(t *testing.T) {
+	cols, stop := realShard(t)
+	defer stop()
+	coll := []byte("li/reconcile/total")
+	const cap = int64(1000)
+	defineBudgetTTL(t, cols, coll, cap, 300) // short TTL → quick forced expiry
+
+	lg := &ledger{}
+	be := &collBackend{cols: cols, coll: coll, holder: []byte("node-R")}
+
+	// 1. draw the whole pool, serve 600 acked impressions (ground truth) but report only 200 (under-attested).
+	g, e := be.grant("lease-1", cap)
+	if e != errNone || g.granted != cap {
+		t.Fatalf("initial grant = %d err=%v, want %d", g.granted, e, cap)
+	}
+	const served, reported = int64(600), int64(200)
+	for i := int64(0); i < served; i++ {
+		lg.record(checker.SpendEvent{Holder: "node-R", LeaseID: "lease-1", Units: 1, AtMs: time.Now().UnixMilli()})
+	}
+	be.report("lease-1", reported)
+
+	// 2. holder crashes (no return); the server force-expires the lease → DEBIT the whole grant to spent.
+	st := waitLeasedZero(t, cols, coll)
+	if st.Spent != cap || st.Available != 0 || st.SpentReported != reported {
+		t.Fatalf("post-expire = spent%d avail%d reported%d, want %d/0/%d (DEBIT strands headroom)",
+			st.Spent, st.Available, st.SpentReported, cap, reported)
+	}
+	// checker is GREEN pre-reconcile (Σ acked 600 ≤ cap) — the stranding is bounded UNDERSPEND, the safe side.
+	if cv := (checker.BudgetCapChecker{Cap: cap}).Check(lg.snapshot()); len(cv) != 0 {
+		t.Fatalf("CAP VIOLATION before reconcile: %+v", cv[0])
+	}
+
+	// 3. controller reconciles to the GROUND-TRUTH external Σ-acked total (600) — the authoritative ledger.
+	trueAcked := ledgerTotal(lg)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	recovered, err := cols.BudgetReconcile(ctx, []byte(budNS), coll, trueAcked)
+	cancel()
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if recovered != cap-served { // 1000 debited - 600 true acked = 400 recovered
+		t.Fatalf("recovered = %d, want %d", recovered, cap-served)
+	}
+	st, _ = cols.BudgetStat(context.Background(), []byte(budNS), coll, true)
+	if st.Spent != served || st.Available != cap-served {
+		t.Fatalf("post-reconcile = spent%d avail%d, want %d/%d (stranding recovered)", st.Spent, st.Available, served, cap-served)
+	}
+
+	// 4. RECOVERY: a fresh lease can now deliver further toward the true remaining cap (available rose 0→400).
+	g2, e2 := be.grant("lease-2", cap)
+	if e2 != errNone || g2.granted != cap-served {
+		t.Fatalf("post-reconcile grant = %d err=%v, want %d (recovered headroom)", g2.granted, e2, cap-served)
+	}
+	for i := int64(0); i < g2.granted; i++ {
+		lg.record(checker.SpendEvent{Holder: "node-R", LeaseID: "lease-2", Units: 1, AtMs: time.Now().UnixMilli()})
+	}
+	be.report("lease-2", g2.granted)
+
+	// 5. checker STILL GREEN after delivering the recovered headroom: Σ acked = 600 + 400 = 1000 ≤ cap.
+	if cv := (checker.BudgetCapChecker{Cap: cap}).Check(lg.snapshot()); len(cv) != 0 {
+		t.Fatalf("CAP VIOLATION after reconcile+redeliver: %+v", cv[0])
+	}
+	t.Logf("reconcile recovered %d stranded units; Σ acked=%d ≤ cap=%d, checker GREEN", recovered, ledgerTotal(lg), cap)
+}
+
+// TestNegControlReconcileOvercredits is the §3.8 NEGATIVE CONTROL (must go RED). The reconcile is only
+// money-safe when fed the AUTHORITATIVE external Σ-acked total. The buggy controller instead reconciles to
+// the server's ATTESTED figure (SpentReported) — ignoring the served-but-unreported impressions the external
+// ledger DOES know about. That credits back an INFLATED headroom (the un-attested-served units), which is
+// re-granted and re-served, so Σ acked blows past cap. The equality probe (cap == avail+leased+spent) stays
+// TRUE throughout — this is exactly the C2-class overspend it cannot see, and the budget-strict-cap checker
+// is the only thing that catches it. POSITIVE (reconcile to the ground-truth ledger) stays GREEN; NEGATIVE
+// (reconcile to the under-attested SpentReported) goes RED — proving the controller MUST feed the true
+// external Σ-acked total (the SpentReported floor alone does NOT make a wrong input safe).
+func TestNegControlReconcileOvercredits(t *testing.T) {
+	run := func(buggy bool) ([]checker.CapViolation, int64) {
+		cols, stop := realShard(t)
+		defer stop()
+		coll := []byte("li/reconcile-neg/total")
+		const cap = int64(1000)
+		defineBudgetTTL(t, cols, coll, cap, 300)
+		lg := &ledger{}
+		be := &collBackend{cols: cols, coll: coll, holder: []byte("node-R")}
+
+		g, e := be.grant("lease-1", cap)
+		if e != errNone || g.granted != cap {
+			t.Fatalf("initial grant = %d err=%v", g.granted, e)
+		}
+		const served, reported = int64(600), int64(200)
+		for i := int64(0); i < served; i++ {
+			lg.record(checker.SpendEvent{Holder: "node-R", LeaseID: "lease-1", Units: 1, AtMs: time.Now().UnixMilli()})
+		}
+		be.report("lease-1", reported)
+		st := waitLeasedZero(t, cols, coll) // forced expiry DEBITS → spent=cap, spentReported=200
+
+		// The controller's reconcile figure: ground-truth Σ-acked (correct) vs the under-attested SpentReported
+		// (the bug — it forgets the 400 served-but-unreported units).
+		figure := ledgerTotal(lg) // 600 (authoritative)
+		if buggy {
+			figure = st.SpentReported // 200 (under-attested → over-credits the 400 un-attested-served units)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if _, err := cols.BudgetReconcile(ctx, []byte(budNS), coll, figure); err != nil {
+			cancel()
+			t.Fatalf("reconcile: %v", err)
+		}
+		cancel()
+
+		// A fresh holder draws whatever headroom the reconcile left and serves it all (acked).
+		g2, _ := be.grant("lease-2", cap)
+		for i := int64(0); i < g2.granted; i++ {
+			lg.record(checker.SpendEvent{Holder: "node-R", LeaseID: "lease-2", Units: 1, AtMs: time.Now().UnixMilli()})
+		}
+		be.report("lease-2", g2.granted)
+		return (checker.BudgetCapChecker{Cap: cap}).Check(lg.snapshot()), ledgerTotal(lg)
+	}
+
+	posViol, posTotal := run(false)
+	if len(posViol) != 0 {
+		t.Fatalf("POSITIVE (reconcile to ground-truth) unexpectedly RED: %+v", posViol[0])
+	}
+	t.Logf("POSITIVE (reconcile to true Σ-acked): Σ acked=%d ≤ cap=1000, checker GREEN", posTotal)
+
+	negViol, negTotal := run(true)
+	if len(negViol) == 0 {
+		t.Fatalf("NEGATIVE CONTROL (reconcile to under-attested figure) FAILED TO GO RED: Σ acked=%d — no overspend", negTotal)
+	}
+	t.Logf("NEGATIVE (reconcile to under-attested SpentReported): Σ acked=%d > cap=1000, checker RED: %s", negTotal, negViol[0].Detail)
 }
 
 // TestSuspendNemesisSelfFences is the positive suspend-nemesis assertion (separate from the (c) negative
