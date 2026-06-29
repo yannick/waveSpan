@@ -1,8 +1,15 @@
 # Snapshot Backups — Design Spec
 
 Status: design approved, ready for implementation planning.
-Date: 2026-06-27.
+Date: 2026-06-27 (re-reviewed 2026-06-29 against `main@f903964`).
 Worktree/branch: `waveSpan-backup` / `backup`.
+
+Re-review note (2026-06-29): re-validated against the 45 commits that landed since, dominated
+by the new **LeasedBudget** datatype (collections tier, Stage 1+2) and a wavesdb B+tree klog
+(`UseBTree`). LeasedBudget confirmed the design's datatype-immunity — covered by the existing
+Collections contributor with zero backup-core changes (§3.B) — and surfaced one new documented
+concept: time-relative state across restore (§7.1). `UseBTree` is transparent to the physical
+plane (§6).
 
 ## Context
 
@@ -149,12 +156,21 @@ type BackupContributor interface {
     // VersionOf extracts a record's HLC version for the ceiling filter + seq incrementals.
     // ok=false for non-versioned CFs (e.g. system/config); no HLC filter applied then.
     VersionOf(cf CFID, key, value []byte) (ts hlc.Timestamp, ok bool)
-    RebuildAfterRestore(ctx) error          // optional: rebuild derived indexes
+    // RebuildAfterRestore runs post-restore for derived-index rebuild AND time-relative
+    // state reconciliation (§7.1). RestoreInfo carries capture wall-clock, restore wall-clock,
+    // frontier T, intent (DR|clone), and shape-changed, so a datatype can reason about the
+    // elapsed gap without the backup core understanding the datatype.
+    RebuildAfterRestore(ctx, ri RestoreInfo) error  // optional
 }
 ```
 A new datatype or replication type = one new registration, zero changes to the backup core or
 format. A novel CP sub-tier supplies its own `OwnerOf` + `Consistency()=SeqSnapshot`; it plugs
-in, it does not fork the engine.
+in, it does not fork the engine. **Validated by LeasedBudget** (landed after this spec): a new
+CP datatype stored in `CFReplData` under the standard shard prefix, routed by the canonical
+`ShardForKey(ns,coll)` FNV hash, Epoch-versioned (no HLC), with an authoritative shard-level
+expiry index that travels inside the dragonboat shard snapshot — it is covered by the existing
+Collections contributor with **zero backup-core changes**. Its only backup-relevant wrinkle is
+time-relative state (§7.1), handled by its `RebuildAfterRestore` hook.
 
 **C. Generic key-encoded routing (the one thing re-shard needs).** Re-shard routes a record
 with a generic `route(namespace, key, targetTopology)` over the **standard length-prefixed
@@ -245,7 +261,9 @@ must use the logical path — see §7.)
     redirected to S3.
 - **Physical.** A node calls `CheckpointToObjectStore` → hard-link checkpoint at the pinned
   `GlobalSeq`, upload only SSTable file-ids absent from `parent`'s manifest. The node records
-  its source `storageUUID` + ordinal for same-shape mapping on restore.
+  its source `storageUUID` + ordinal for same-shape mapping on restore. The physical plane is
+  **klog-format-agnostic** — it byte-copies whole SSTable files, so wavesdb's flat vs B+tree
+  hybrid klog (`UseBTree`) is transparent to backup.
 
 ## 7. Restore / clone / PITR
 
@@ -275,12 +293,46 @@ invocation — it is *not* a field in the backup:
   it idempotent); stop-at-`T'` by filtering `Version ≤ T'`.
 - **Partial.** Select namespaces/collections from the manifest; stream only those objects.
 
+### 7.1 Time-relative state across restore
+
+Some datatypes hold **absolute wall-clock state** — KV lazy TTL, and LeasedBudget's lease
+reclaim deadlines (`ReclaimNotBeforeMs`), pacing token-bucket (`LastRefillMs`, `Tokens`), and
+tombstone-GC timers. A backup captures these **byte-faithfully** at the cut; the backup core
+never interprets them (invariant A). What changes across restore is *time itself*: a backup
+taken at `T0` and restored at `T1 > T0` (DR minutes later, a clone, or PITR) has deadlines that
+may now be in the past.
+
+Reconciliation is **each datatype's own responsibility**, run from its `RebuildAfterRestore`
+hook (which receives `RestoreInfo`: capture wall-clock, restore wall-clock, frontier `T`,
+intent, shape-changed). The backup core stays datatype-agnostic. Principles:
+
+- **Default is conservative and safe, not transparent.** For LeasedBudget, the first
+  leader-driven expiry sweep after restore will reclaim any lease whose deadline has passed,
+  debiting its outstanding remainder to `spent` (it is *not* credited back to `available`).
+  Unspent-but-expired quantity is therefore stranded as underspend rather than
+  double-granted — the correct conservative outcome (a holder cannot resume spending across a
+  restore without re-drawing).
+- **Recovery is via the datatype's existing mechanism, not the backup.** Stranded budget is
+  recovered by calling `BudgetReconcile` (already implemented, Stage 2) with the authoritative
+  acked total from the external ledger. The backup spec only *documents* this; it adds no
+  budget-specific code.
+- **`RestoreInfo` enables informed reconciliation.** Because the manifest records the capture
+  wall-clock (§8), a hook can compute the elapsed gap and choose its policy (e.g. block new
+  budget draws for a `maxPauseMs + 2·maxClockSkewMs` grace window so auto-reclaim settles
+  first, or shift deadlines for a clone). This is datatype policy, kept in the datatype's plug.
+- **PITR is exact at the cut.** Restoring to `T'` reproduces the byte-exact time-state as of
+  `T'`; subsequent sweeps then progress normally from the restore wall-clock.
+
+This is a documented operational contract, not a backup-core feature: time-relative datatypes
+opt into reconciliation through the hook; datatypes without wall-clock state ignore it.
+
 ## 8. S3 object layout
 
 ```
 s3://<bucket>/<clusterID>/backups/<backupID>/
-  cluster.manifest.json   # format_version, frontier T, parent, planes, source topology,
-                          #   namespace/collection inventory, per-node submanifest pointers,
+  cluster.manifest.json   # format_version, frontier T, capture_wall_clock_ms, parent, planes,
+                          #   source topology, namespace/collection inventory,
+                          #   per-node submanifest pointers,
                           #   per-object sha256, status (COMPLETE|PARTIAL + gap list)
   nodes/<storageUUID>/
     node.manifest.json     # assignments, per-CF GlobalSeq watermarks (for seq incrementals),
