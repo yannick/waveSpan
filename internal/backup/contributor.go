@@ -21,6 +21,10 @@ type RestoreInfo struct {
 	CaptureWallClockMs int64
 	RestoreWallClockMs int64
 	Clone              bool // new cluster identity (vs same-cluster DR)
+	// CollectionsDataShards, when > 0, is the target cluster's collections shard
+	// count: CFReplData rows are re-routed to their shard under this N (re-shard).
+	// 0 means restore CFReplData verbatim (same-shape, Phase 2a behavior).
+	CollectionsDataShards uint64
 }
 
 // Contributor is how a subsystem participates in backup without the core

@@ -3,12 +3,105 @@ package backup
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"strings"
 	"testing"
 
+	"github.com/yannick/wavespan/internal/collections"
 	"github.com/yannick/wavespan/internal/storage"
 	"wavesdb/objstore"
 )
+
+// CFReplData wire-format constants, mirrored from package collections (the
+// sub-prefix bytes and the uint32be-length-prefixed chunk encoding) so these
+// backup tests can hand-build collection keys without collections exporting them.
+const (
+	subDataByte byte = 0x01 // collections.subData (statemachine.go)
+	subMetaByte byte = 0x00 // collections.subMeta (base_sm.go)
+)
+
+// chunkBE encodes uint32be(len(b)) || b, matching collections.appendChunk.
+func chunkBE(b []byte) []byte {
+	var l [4]byte
+	binary.BigEndian.PutUint32(l[:], uint32(len(b)))
+	return append(l[:], b...)
+}
+
+// replDataSuffix builds a subData CFReplData suffix: subData || chunk(ns) || chunk(coll) || tail.
+func replDataSuffix(ns, coll, tail string) []byte {
+	s := []byte{subDataByte}
+	s = append(s, chunkBE([]byte(ns))...)
+	s = append(s, chunkBE([]byte(coll))...)
+	return append(s, []byte(tail)...)
+}
+
+// replDataKey prefixes a suffix with be8(ShardForKey(ns,coll,n)).
+func replDataKey(ns, coll, tail string, n uint64) []byte {
+	suffix := replDataSuffix(ns, coll, tail)
+	return append(be8(collections.ShardForKey([]byte(ns), []byte(coll), n)), suffix...)
+}
+
+func TestRestoreLogicalReshardsCFReplData(t *testing.T) {
+	const srcN, dstN = 4, 8
+	src, _ := storage.OpenWavesdb(t.TempDir())
+	t.Cleanup(func() { _ = src.Close() })
+
+	pairs := []struct{ ns, coll string }{{"ns1", "c1"}, {"ns2", "c2"}, {"ns3", "c3"}}
+	for _, p := range pairs {
+		mustPut(t, src, storage.CFReplData, replDataKey(p.ns, p.coll, "row", srcN), []byte("val:"+p.ns+p.coll))
+	}
+	// A shard-local subMeta row (be8(shard) || subMeta || "applied"): must drop on re-shard.
+	metaKey := append(be8(7), subMetaByte)
+	metaKey = append(metaKey, []byte("applied")...)
+	mustPut(t, src, storage.CFReplData, metaKey, []byte("99"))
+
+	store, _ := objstore.NewFS(t.TempDir())
+	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-shard restore to N=8.
+	dst, _ := storage.OpenWavesdb(t.TempDir())
+	t.Cleanup(func() { _ = dst.Close() })
+	if err := RestoreLogical(dst, store, "bk", DefaultRegistry(), RestoreInfo{CollectionsDataShards: dstN}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range pairs {
+		newKey := replDataKey(p.ns, p.coll, "row", dstN)
+		if v, ok, _ := dst.Get(storage.CFReplData, newKey); !ok || string(v) != "val:"+p.ns+p.coll {
+			t.Fatalf("%s/%s not at N=8 shard: ok=%v v=%q", p.ns, p.coll, ok, v)
+		}
+		oldShard := collections.ShardForKey([]byte(p.ns), []byte(p.coll), srcN)
+		newShard := collections.ShardForKey([]byte(p.ns), []byte(p.coll), dstN)
+		if oldShard != newShard {
+			oldKey := replDataKey(p.ns, p.coll, "row", srcN)
+			if _, ok, _ := dst.Get(storage.CFReplData, oldKey); ok {
+				t.Fatalf("%s/%s should not remain under old N=4 shard %d", p.ns, p.coll, oldShard)
+			}
+		}
+	}
+	// subMeta dropped.
+	if _, ok, _ := dst.Get(storage.CFReplData, metaKey); ok {
+		t.Fatal("subMeta row must be dropped on re-shard")
+	}
+
+	// Zero-N restore is byte-for-byte verbatim (Phase 2a regression guard).
+	dst2, _ := storage.OpenWavesdb(t.TempDir())
+	t.Cleanup(func() { _ = dst2.Close() })
+	if err := RestoreLogical(dst2, store, "bk", DefaultRegistry(), RestoreInfo{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range pairs {
+		origKey := replDataKey(p.ns, p.coll, "row", srcN)
+		if _, ok, _ := dst2.Get(storage.CFReplData, origKey); !ok {
+			t.Fatalf("verbatim restore lost %s/%s", p.ns, p.coll)
+		}
+	}
+	if _, ok, _ := dst2.Get(storage.CFReplData, metaKey); !ok {
+		t.Fatal("verbatim restore must keep the subMeta row")
+	}
+}
 
 func TestLogicalRoundTripSameShape(t *testing.T) {
 	src, _ := storage.OpenWavesdb(t.TempDir())

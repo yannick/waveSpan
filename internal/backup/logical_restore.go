@@ -2,12 +2,21 @@ package backup
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 
+	"github.com/yannick/wavespan/internal/collections"
 	"github.com/yannick/wavespan/internal/storage"
 )
+
+// be8 encodes v as an 8-byte big-endian shard prefix (the CFReplData key prefix).
+func be8(v uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, v)
+	return b
+}
 
 // knownColumnFamilies is the full set of logical CFs, used to resolve a manifest
 // CF name back to its ColumnFamily (storage.cfNames is unexported, so we build
@@ -60,7 +69,7 @@ func RestoreLogical(dst storage.LocalStore, store ObjectStore, keyPrefix string,
 			log.Printf("backup: RestoreLogical skipping unknown CF %q (not restorable in Phase 2a)", entry.CF)
 			continue
 		}
-		if err := restoreCFObject(dst, store, keyPrefix+"/cf/"+entry.CF, cf, entry.Entries, batchSize); err != nil {
+		if err := restoreCFObject(dst, store, keyPrefix+"/cf/"+entry.CF, cf, entry.Entries, batchSize, ri); err != nil {
 			return err
 		}
 	}
@@ -81,13 +90,21 @@ func RestoreLogical(dst storage.LocalStore, store ObjectStore, keyPrefix string,
 // complete pair, so without this check a truncated tail would restore silently.
 // The decoded count includes the skipped identity key (which is in the manifest
 // count but intentionally not applied), so it is compared, not the applied count.
-func restoreCFObject(dst storage.LocalStore, store ObjectStore, objKey string, cf storage.ColumnFamily, wantEntries int64, batchSize int) error {
+//
+// When cf is CFReplData and ri.CollectionsDataShards > 0, each row is re-routed to
+// its shard under the target N (re-shard): the 8-byte shard prefix is rewritten via
+// collections.RerouteSuffix; shard-local rows (subMeta/dedup) are dropped; an
+// unknown sub-prefix aborts the restore. decoded is still counted before any
+// drop/skip, so the entry-count integrity check is unaffected by re-routing.
+func restoreCFObject(dst storage.LocalStore, store ObjectStore, objKey string, cf storage.ColumnFamily, wantEntries int64, batchSize int, ri RestoreInfo) error {
 	rc, err := store.Get(objKey)
 	if err != nil {
 		return err
 	}
 	defer rc.Close()
 	br := bufio.NewReader(rc)
+
+	reshard := cf == storage.CFReplData && ri.CollectionsDataShards > 0
 
 	var ops []storage.StoreOp
 	flush := func() error {
@@ -118,6 +135,20 @@ func restoreCFObject(dst storage.LocalStore, store ObjectStore, objKey string, c
 		// Preserve the target's own node identity.
 		if cf == storage.CFSys && string(key) == storageIdentityKey {
 			continue
+		}
+		if reshard {
+			if len(key) < 8 {
+				return fmt.Errorf("backup: CFReplData key too short to re-shard (%d bytes)", len(key))
+			}
+			suffix := key[8:]
+			newShard, keep, err := collections.RerouteSuffix(suffix, ri.CollectionsDataShards)
+			if err != nil {
+				return fmt.Errorf("backup: re-shard CFReplData: %w", err)
+			}
+			if !keep {
+				continue // shard-local bookkeeping; the target rebuilds it fresh
+			}
+			key = append(be8(newShard), suffix...)
 		}
 		ops = append(ops, storage.StoreOp{CF: cf, Key: key, Value: val})
 		if len(ops) >= batchSize {
