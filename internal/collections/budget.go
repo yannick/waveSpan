@@ -44,8 +44,11 @@ type poolRec struct {
 	Spent     int64 // Σ lease.spent (cumulative consumed)
 	Epoch     uint64
 	Mode      uint8
-	Rate      int64 // micro-units/sec; Stage 1 ignores (0 = no pacing)
-	Burst     int64 // ceiling; Stage 1: == Cap
+	Rate      int64 // micro-units/sec; 0 = no pacing (Stage-1 behavior)
+	Burst     int64 // token-bucket ceiling; Stage 1: == Cap
+	// Stage-2 pacing tail (append-only; a Stage-1 57-byte record decodes these as 0).
+	LastRefillMs int64 // leader-stamped ms of the last token accrual (lazy-init on first paced grant)
+	Tokens       int64 // current paced tokens available to grant (≤ Burst)
 }
 
 func (s *shardSM) budPoolKey(ns, coll []byte) []byte {
@@ -62,7 +65,7 @@ func putI64(b []byte, v int64) { binary.BigEndian.PutUint64(b, uint64(v)) }
 func getI64(b []byte) int64    { return int64(binary.BigEndian.Uint64(b)) }
 
 func encodePool(p poolRec) []byte {
-	b := make([]byte, 8*4+8+1+8*2) // cap,avail,leased,spent | epoch | mode | rate,burst
+	b := make([]byte, 8*4+8+1+8*2+8*2) // [prefix 57] | lastRefillMs,tokens (Stage-2 tail) -> 73
 	putI64(b[0:], p.Cap)
 	putI64(b[8:], p.Available)
 	putI64(b[16:], p.LeasedOut)
@@ -71,6 +74,8 @@ func encodePool(p poolRec) []byte {
 	b[40] = p.Mode
 	putI64(b[41:], p.Rate)
 	putI64(b[49:], p.Burst)
+	putI64(b[57:], p.LastRefillMs)
+	putI64(b[65:], p.Tokens)
 	return b
 }
 
@@ -81,10 +86,15 @@ func decodePool(b []byte) (poolRec, error) {
 	if len(b) < 57 { // a shorter buffer is corruption; a longer one is a newer-stage record (tolerated)
 		return poolRec{}, errShortPool
 	}
-	return poolRec{
+	p := poolRec{
 		Cap: getI64(b[0:]), Available: getI64(b[8:]), LeasedOut: getI64(b[16:]), Spent: getI64(b[24:]),
 		Epoch: binary.BigEndian.Uint64(b[32:]), Mode: b[40], Rate: getI64(b[41:]), Burst: getI64(b[49:]),
-	}, nil
+	}
+	if len(b) >= 73 { // Stage-2 pacing tail present (a Stage-1 record stops at 57 -> fields stay 0)
+		p.LastRefillMs = getI64(b[57:])
+		p.Tokens = getI64(b[65:])
+	}
+	return p, nil
 }
 
 // leaseRec is one outstanding lease.
@@ -219,6 +229,9 @@ func (u *updateCtx) applyBudInit(c command) (ProposeResult, error) {
 		return ProposeResult{Data: wrongType}, nil
 	}
 	p := poolRec{Cap: capacity, Available: capacity, LeasedOut: 0, Spent: 0, Epoch: 1, Mode: mode, Rate: rate, Burst: burst}
+	if rate > 0 { // seed the token bucket full; lastRefillMs lazy-inits on the first paced grant (M-3, §3.1)
+		p.Tokens = burst
+	}
 	u.setPool(c.NS, c.Coll, p)
 	return ProposeResult{Value: 1}, nil
 }

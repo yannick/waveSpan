@@ -42,6 +42,36 @@ func TestPoolRecRoundTrip(t *testing.T) {
 	}
 }
 
+// encodePoolStage1 writes EXACTLY the original 57-byte Stage-1 pool record (cap,avail,leased,spent |
+// epoch | mode | rate,burst), with no pacing/timing tail. It exists only to prove the append-tolerance
+// contract: a Stage-1 record must still decode under the Stage-2 decoder with the new fields = 0.
+func encodePoolStage1(p poolRec) []byte {
+	b := make([]byte, 8*4+8+1+8*2)
+	putI64(b[0:], p.Cap)
+	putI64(b[8:], p.Available)
+	putI64(b[16:], p.LeasedOut)
+	putI64(b[24:], p.Spent)
+	binary.BigEndian.PutUint64(b[32:], p.Epoch)
+	b[40] = p.Mode
+	putI64(b[41:], p.Rate)
+	putI64(b[49:], p.Burst)
+	return b
+}
+
+func TestPoolRecPacingFieldsRoundTripAndBackCompat(t *testing.T) {
+	p := poolRec{Cap: 1000, Available: 400, LeasedOut: 600, Epoch: 1, Mode: modeStrict, Rate: 50, Burst: 100, LastRefillMs: 123456, Tokens: 77}
+	got, err := decodePool(encodePool(p))
+	if err != nil || got != p {
+		t.Fatalf("round-trip = %+v err=%v, want %+v", got, err, p)
+	}
+	// a Stage-1 record (57 bytes, no pacing tail) decodes with LastRefillMs=0, Tokens=0
+	old := encodePoolStage1(poolRec{Cap: 1000, Available: 1000, Epoch: 1, Mode: modeStrict, Burst: 1000})
+	g2, err := decodePool(old)
+	if err != nil || g2.LastRefillMs != 0 || g2.Tokens != 0 {
+		t.Fatalf("stage-1 record back-compat: %+v err=%v", g2, err)
+	}
+}
+
 func TestLeaseRecRoundTrip(t *testing.T) {
 	l := leaseRec{Holder: []byte("node-7"), Amount: 600_000, Spent: 250_000, Epoch: 3}
 	got, err := decodeLease(encodeLease(l))
