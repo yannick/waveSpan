@@ -3,6 +3,7 @@ package backup
 import (
 	"testing"
 
+	"github.com/yannick/wavespan/internal/graph"
 	"github.com/yannick/wavespan/internal/storage"
 	"wavesdb/objstore"
 )
@@ -33,7 +34,7 @@ func TestExportLogicalWritesObjectsAndManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	man, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000)
+	man, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000, Selector{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,5 +53,51 @@ func TestExportLogicalWritesObjectsAndManifest(t *testing.T) {
 	}
 	if ok, _ := store.Exists("bk/node.manifest.json"); !ok {
 		t.Fatal("manifest object missing")
+	}
+}
+
+func TestExportLogicalAppliesSelector(t *testing.T) {
+	src, err := storage.OpenWavesdb(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = src.Close() })
+
+	mustPut(t, src, storage.CFSys, []byte("/sys/config"), []byte("x"))
+	mustPut(t, src, storage.CFKVData, kvKey("ns1", "k"), []byte("a"))
+	mustPut(t, src, storage.CFKVData, kvKey("ns2", "k"), []byte("b"))
+	mustPut(t, src, storage.CFReplData, replDataKey("ns1", "c", "row", 4), []byte("a"))
+	mustPut(t, src, storage.CFReplData, replDataKey("ns2", "c", "row", 4), []byte("b"))
+	mustPut(t, src, storage.CFGraphData, graph.NodeKey("g1", "n"), []byte("a"))
+	mustPut(t, src, storage.CFGraphData, graph.NodeKey("g2", "n"), []byte("b"))
+	mustPut(t, src, storage.CFVectorRaw, vrKey("c1", "v"), []byte("a"))
+	mustPut(t, src, storage.CFVectorRaw, vrKey("c2", "v"), []byte("b"))
+
+	// Partial export: only ns1 + g1 + c1 (plus always-on CFSys).
+	store, _ := objstore.NewFS(t.TempDir())
+	sel := Selector{Namespaces: Set("ns1"), Graphs: Set("g1"), VectorCollections: Set("c1")}
+	man, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cf := range []string{"kv_data", "repl_data", "graph_data", "vector_raw"} {
+		if got := man.CFEntryCount(cf); got != 1 {
+			t.Fatalf("partial export %s: got %d entries, want 1 (only the selected entity)", cf, got)
+		}
+	}
+	if man.CFEntryCount("sys") < 1 {
+		t.Fatal("CFSys must always be exported regardless of selector")
+	}
+
+	// Empty selector exports everything (regression: same as a full export).
+	store2, _ := objstore.NewFS(t.TempDir())
+	full, err := ExportLogical(src, store2, "bk", DefaultRegistry(), 1719000000000, Selector{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cf := range []string{"kv_data", "repl_data", "graph_data", "vector_raw"} {
+		if got := full.CFEntryCount(cf); got != 2 {
+			t.Fatalf("full export %s: got %d entries, want 2", cf, got)
+		}
 	}
 }

@@ -87,7 +87,7 @@ func TestRestoreLogicalReshardsCFReplData(t *testing.T) {
 	mustPut(t, src, storage.CFReplData, metaKey, []byte("99"))
 
 	store, _ := objstore.NewFS(t.TempDir())
-	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000); err != nil {
+	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000, Selector{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -144,7 +144,7 @@ func TestLogicalRoundTripSameShape(t *testing.T) {
 	mustPut(t, src, storage.CFReplData, []byte("\x00\x00\x00\x00\x00\x00\x00\x02coll"), []byte("set"))
 
 	store, _ := objstore.NewFS(t.TempDir())
-	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000); err != nil {
+	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000, Selector{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -208,7 +208,7 @@ func TestRestoreLogicalDetectsTruncatedObject(t *testing.T) {
 	mustPut(t, src, storage.CFKVData, []byte("k2"), []byte("v2"))
 
 	store, _ := objstore.NewFS(t.TempDir())
-	man, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000)
+	man, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000, Selector{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestLogicalRoundTripAllDatatypes(t *testing.T) {
 	}
 
 	store, _ := objstore.NewFS(t.TempDir())
-	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000); err != nil {
+	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000, Selector{}); err != nil {
 		t.Fatal(err)
 	}
 

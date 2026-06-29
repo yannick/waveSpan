@@ -49,7 +49,7 @@ func TestReshardDropsMetaShardRows(t *testing.T) {
 	mustPut(t, src, storage.CFReplData, replDataKey("ns1", "c1", "doc", 4), []byte("v"))
 
 	store, _ := objstore.NewFS(t.TempDir())
-	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000); err != nil {
+	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000, Selector{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -111,7 +111,7 @@ func TestReshardRoundTripN4toN8(t *testing.T) {
 	mustPut(t, src, storage.CFReplData, dedupKey, []byte("seen"))
 
 	store, _ := objstore.NewFS(t.TempDir())
-	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000); err != nil {
+	if _, err := ExportLogical(src, store, "bk", DefaultRegistry(), 1719000000000, Selector{}); err != nil {
 		t.Fatal(err)
 	}
 
