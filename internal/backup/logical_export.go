@@ -16,8 +16,13 @@ import (
 // manifest (informational, for restore-time identity decisions); its CFSys key
 // is still exported as data — restore decides whether to skip it.
 func ExportLogical(src storage.LocalStore, store ObjectStore, keyPrefix string, reg *Registry, captureMs int64) (*NodeManifest, error) {
-	// Storage identity: informational. Do not fail the export if unavailable.
-	uuid, _ := storage.EnsureStorageUUID(src)
+	// Storage identity: informational, read-only. A backup must not mutate its
+	// source, so we look the UUID up rather than EnsureStorageUUID (which would
+	// persist one when absent). uuid stays "" if the source has no identity yet.
+	var uuid string
+	if v, ok, _ := src.Get(storage.CFSys, []byte(storageIdentityKey)); ok {
+		uuid = string(v)
+	}
 
 	snap, err := src.Snapshot()
 	if err != nil {

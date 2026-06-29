@@ -9,11 +9,6 @@ import (
 	"github.com/yannick/wavespan/internal/storage"
 )
 
-// storageIdentityKey is the node-local storage identity key in CFSys. It mirrors
-// storage.storageUUIDKey ("/sys/storage_uuid"), which is unexported. Restore
-// skips this key so the target keeps its own identity (storage/identity.go).
-const storageIdentityKey = "/sys/storage_uuid"
-
 // knownColumnFamilies is the full set of logical CFs, used to resolve a manifest
 // CF name back to its ColumnFamily (storage.cfNames is unexported, so we build
 // the reverse lookup here).
@@ -51,8 +46,8 @@ func RestoreLogical(dst storage.LocalStore, store ObjectStore, keyPrefix string,
 	if err != nil {
 		return err
 	}
-	if man.FormatVersion > manifestFormatVersion {
-		return fmt.Errorf("backup: manifest format version %d is newer than supported %d", man.FormatVersion, manifestFormatVersion)
+	if man.FormatVersion < 1 || man.FormatVersion > manifestFormatVersion {
+		return fmt.Errorf("backup: unsupported manifest format version %d (supported range 1..%d)", man.FormatVersion, manifestFormatVersion)
 	}
 
 	// 2. Restore each CF object.
@@ -65,7 +60,7 @@ func RestoreLogical(dst storage.LocalStore, store ObjectStore, keyPrefix string,
 			log.Printf("backup: RestoreLogical skipping unknown CF %q (not restorable in Phase 2a)", entry.CF)
 			continue
 		}
-		if err := restoreCFObject(dst, store, keyPrefix+"/cf/"+entry.CF, cf, batchSize); err != nil {
+		if err := restoreCFObject(dst, store, keyPrefix+"/cf/"+entry.CF, cf, entry.Entries, batchSize); err != nil {
 			return err
 		}
 	}
@@ -81,7 +76,12 @@ func RestoreLogical(dst storage.LocalStore, store ObjectStore, keyPrefix string,
 
 // restoreCFObject decodes one per-CF object (repeating length-prefixed
 // key,value) and writes it into dst in batches, skipping the node-identity key.
-func restoreCFObject(dst storage.LocalStore, store ObjectStore, objKey string, cf storage.ColumnFamily, batchSize int) error {
+// It cross-checks the number of decoded pairs against wantEntries (the manifest's
+// recorded count) and errors on mismatch: readBytes returns a clean io.EOF after a
+// complete pair, so without this check a truncated tail would restore silently.
+// The decoded count includes the skipped identity key (which is in the manifest
+// count but intentionally not applied), so it is compared, not the applied count.
+func restoreCFObject(dst storage.LocalStore, store ObjectStore, objKey string, cf storage.ColumnFamily, wantEntries int64, batchSize int) error {
 	rc, err := store.Get(objKey)
 	if err != nil {
 		return err
@@ -101,6 +101,7 @@ func restoreCFObject(dst storage.LocalStore, store ObjectStore, objKey string, c
 		return nil
 	}
 
+	var decoded int64
 	for {
 		key, err := readBytes(br)
 		if err == io.EOF {
@@ -113,6 +114,7 @@ func restoreCFObject(dst storage.LocalStore, store ObjectStore, objKey string, c
 		if err != nil {
 			return err
 		}
+		decoded++
 		// Preserve the target's own node identity.
 		if cf == storage.CFSys && string(key) == storageIdentityKey {
 			continue
@@ -123,6 +125,9 @@ func restoreCFObject(dst storage.LocalStore, store ObjectStore, objKey string, c
 				return err
 			}
 		}
+	}
+	if decoded != wantEntries {
+		return fmt.Errorf("backup: CF %q entry-count mismatch: manifest records %d, object decoded %d (truncated or corrupt)", cf.Name(), wantEntries, decoded)
 	}
 	return flush()
 }

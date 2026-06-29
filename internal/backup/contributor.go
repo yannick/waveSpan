@@ -2,6 +2,12 @@ package backup
 
 import "github.com/yannick/wavespan/internal/storage"
 
+// storageIdentityKey is the node-local storage identity key in CFSys. It mirrors
+// storage.storageUUIDKey ("/sys/storage_uuid"), which is unexported. Export reads
+// it informationally (read-only) and restore skips it, so the target keeps its
+// own identity (storage/identity.go). Defined here so both share one definition.
+const storageIdentityKey = "/sys/storage_uuid"
+
 // CFSpec declares one column family a contributor owns and whether it is
 // authoritative (backed up) or derived (skipped, rebuilt on restore).
 type CFSpec struct {
