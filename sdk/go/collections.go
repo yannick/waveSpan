@@ -67,6 +67,12 @@ type ScoredMember struct {
 	Score  float64
 }
 
+// CollectionInfo is one collection's name and element type, as returned by [CollectionsClient.ListCollections].
+type CollectionInfo struct {
+	Name []byte
+	Type string // "set" | "hash" | "zset" | "unknown"
+}
+
 // --- Set ---
 
 // SAdd adds members to the set, returning the number newly added.
@@ -368,6 +374,22 @@ func (cc *CollectionsClient) TierInfo(ctx context.Context) (TierStatus, error) {
 			ShardID: s.GetShardId(), ReplicaID: s.GetReplicaId(), LeaderReplicaID: s.GetLeaderReplicaId(),
 			HasLeader: s.GetHasLeader(), IsLeader: s.GetIsLeader(), IsData: s.GetIsData(),
 		})
+	}
+	return out, nil
+}
+
+// ListCollections lists the collections in a namespace with their element types. Pass linearizable=true
+// for a quorum read; false (the default) is a bounded-stale local read.
+func (cc *CollectionsClient) ListCollections(ctx context.Context, namespace string, linearizable bool) ([]CollectionInfo, error) {
+	resp, err := cc.c.collections.ListCollections(ctx, &wavespanv1.ListCollectionsRequest{
+		Namespace: namespace, Linearizable: linearizable,
+	})
+	if err != nil {
+		return nil, wrapErr("ListCollections", err)
+	}
+	out := make([]CollectionInfo, 0, len(resp.GetCollections()))
+	for _, ci := range resp.GetCollections() {
+		out = append(out, CollectionInfo{Name: ci.GetName(), Type: ci.GetType()})
 	}
 	return out, nil
 }
