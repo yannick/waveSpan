@@ -82,4 +82,4 @@ require (
 	gopkg.in/ini.v1 v1.67.2 // indirect
 )
 
-replace wavesdb v0.0.1 => ../wavesdb-backup
+replace wavesdb v0.0.1 => ../wavesdb
