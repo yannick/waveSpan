@@ -59,12 +59,18 @@ export function Backups() {
   const submit = () =>
     run(async () => {
       const req = buildBeginRequest(form);
+      // Drop transient inline creds from UI state BEFORE the request leaves, so they are never retained
+      // past submit on ANY path (success, network failure, or a named-only rejection).
+      setForm((f) => ({ ...f, accessKey: "", secretKey: "" }));
       const r = await backup.beginBackup(req);
-      setForm((f) => ({ ...f, accessKey: "", secretKey: "" })); // drop transient creds from UI state
       setMsg(`started ${r.backupId}`);
       setWatch(r.backupId);
       await load();
     });
+
+  // setDestMode switches the destination mode, clearing any entered inline creds when leaving "explicit".
+  const setDestMode = (v: BackupForm["destMode"]) =>
+    setForm((f) => ({ ...f, destMode: v, accessKey: v === "explicit" ? f.accessKey : "", secretKey: v === "explicit" ? f.secretKey : "" }));
 
   const del = (id: string) => {
     const kids = childrenOf(id);
@@ -84,7 +90,7 @@ export function Backups() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <TriggerForm form={form} set={set} backups={list} busy={busy} onSubmit={submit} />
+      <TriggerForm form={form} set={set} setDestMode={setDestMode} backups={list} busy={busy} onSubmit={submit} />
       {watch && <BackupProgress backupId={watch} onClose={() => setWatch(null)} />}
       <Panel
         title="Backups"
@@ -144,12 +150,14 @@ export function Backups() {
 function TriggerForm({
   form,
   set,
+  setDestMode,
   backups,
   busy,
   onSubmit,
 }: {
   form: BackupForm;
   set: <K extends keyof BackupForm>(k: K, v: BackupForm[K]) => void;
+  setDestMode: (v: BackupForm["destMode"]) => void;
   backups: BackupSummary[];
   busy: boolean;
   onSubmit: () => void;
@@ -192,7 +200,7 @@ function TriggerForm({
         </label>
         <label>
           <FieldLabel>Destination</FieldLabel>
-          <Select value={form.destMode} onChange={(e) => set("destMode", e.target.value as BackupForm["destMode"])}>
+          <Select value={form.destMode} onChange={(e) => setDestMode(e.target.value as BackupForm["destMode"])}>
             <option value="default">Default (node config)</option>
             <option value="named">Named</option>
             <option value="explicit">Explicit (ad-hoc bucket)</option>
@@ -214,7 +222,7 @@ function TriggerForm({
               Inline credentials below are sent only with this request (never stored or logged). Leave
               blank to use the credential reference. A node in named-only mode rejects inline creds.
             </InlineMessage>
-            <Input placeholder="access key (transient)" value={form.accessKey} onChange={(e) => set("accessKey", e.target.value)} />
+            <Input type="password" placeholder="access key (transient)" value={form.accessKey} onChange={(e) => set("accessKey", e.target.value)} />
             <Input type="password" placeholder="secret key (transient)" value={form.secretKey} onChange={(e) => set("secretKey", e.target.value)} />
           </>
         )}
