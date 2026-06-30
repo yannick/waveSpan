@@ -157,6 +157,16 @@ func deletePrefix(objStore ObjectStore, prefix string) error {
 // intent was already removed. It never touches objects of a live backup (chain-aware retention keeps an
 // ancestor's intent alive while a child depends on it, so all chain members' objects are retained). It
 // returns the keys it deleted.
+//
+// TOCTOU safety: the live set is a snapshot taken before listing objects, so a backup that Begins in
+// between would have objects on disk but be absent from the snapshot. Before deleting any candidate we
+// therefore re-check the intent FRESH (GetIntent) and skip it if it now exists — an in-flight backup's
+// objects are never collected. The fresh check is memoised per backup id, so a backup with many objects
+// costs one extra read, not one per object.
+//
+// clusterPrefix MUST be the dedicated backups root (the node points objstore at <storagePath>/backups),
+// so every first path segment under it is a backup id. Do NOT point this at a shared/foreign bucket
+// root — it would treat unrelated top-level keys as orphan backups and delete them.
 func ReconcileOrphans(ctx context.Context, store MetaStore, objStore ObjectStore, clusterPrefix string) ([]string, error) {
 	intents, err := ListIntents(ctx, store)
 	if err != nil {
@@ -170,10 +180,33 @@ func ReconcileOrphans(ctx context.Context, store MetaStore, objStore ObjectStore
 	if err != nil {
 		return nil, err
 	}
+	orphan := map[string]bool{} // memoised per-id decision after the fresh re-check
+	isOrphan := func(id string) (bool, error) {
+		if v, ok := orphan[id]; ok {
+			return v, nil
+		}
+		if live[id] {
+			orphan[id] = false
+			return false, nil
+		}
+		_, found, err := GetIntent(ctx, store, id) // fresh re-check: did a backup Begin since the snapshot?
+		if err != nil {
+			return false, err
+		}
+		orphan[id] = !found
+		return !found, nil
+	}
 	var deleted []string
 	for _, k := range keys {
 		id := backupIDOf(k, clusterPrefix)
-		if id == "" || live[id] {
+		if id == "" {
+			continue
+		}
+		dead, err := isOrphan(id)
+		if err != nil {
+			return deleted, err
+		}
+		if !dead {
 			continue
 		}
 		if err := objStore.Delete(k); err != nil {

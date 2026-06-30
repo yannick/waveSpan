@@ -91,7 +91,7 @@ func (s *Service) ListBackups(ctx context.Context, req *connect.Request[wavespan
 	return connect.NewResponse(&wavespanv1.ListBackupsResult{Backups: list, Meta: s.meta()}), nil
 }
 
-// DeleteBackup removes a backup's catalog intent (object GC is Phase 3d).
+// DeleteBackup removes a backup's catalog intent and its object-store objects, chain-aware (Phase 3d).
 func (s *Service) DeleteBackup(ctx context.Context, req *connect.Request[wavespanv1.DeleteBackupRequest]) (*connect.Response[wavespanv1.DeleteBackupResult], error) {
 	if s.backup == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errBackupUnconfigured)

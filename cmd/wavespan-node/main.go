@@ -75,7 +75,7 @@ func (r backupRoster) Live() []string {
 // a node-default FS object store under the storage path (per-request S3/destination override is Phase
 // 3e), a membership-backed roster, and a gRPC BackupService client factory keyed by member id. The
 // full-backup all-export assignment policy is used (Phase 3a).
-func newBackupCoordinator(mgr *collections.Manager, store storage.LocalStore, self membership.Member, svc *membership.Service, storagePath string) (*backup.Coordinator, error) {
+func newBackupCoordinator(mgr *collections.Manager, store storage.LocalStore, self membership.Member, svc *membership.Service, storagePath string, logger *slog.Logger) (*backup.Coordinator, error) {
 	objStore, err := objstore.NewFS(filepath.Join(storagePath, "backups"))
 	if err != nil {
 		return nil, err
@@ -97,6 +97,7 @@ func newBackupCoordinator(mgr *collections.Manager, store storage.LocalStore, se
 		Assigner:     backup.AllExportAssigner{},
 		LocalStore:   store,
 		IsMetaLeader: func() bool { return mgr.IsLeader(collections.MetaShardID) },
+		Logger:       logger,
 	}), nil
 }
 
@@ -712,7 +713,7 @@ func run() error {
 				WithForwarder(collections.NewRPCForwarder(peersFn)). // spot nodes never lead; forward all writes
 				WithDiskGate(diskMon, diskMetrics.IncShedWrites)     // shed at entry before forwarding (design/36)
 			collectionsSvc = collections.NewService(cols, self).WithTierStatus(mgr, raftAddr, spotRID, false)
-			if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path); berr != nil {
+			if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path, logger); berr != nil {
 				logger.Error("backup: coordinator init failed; BackupService disabled", "err", berr)
 			} else {
 				collectionsSvc = collectionsSvc.WithBackup(bc)
@@ -749,7 +750,7 @@ func run() error {
 				cols.WithDiskGate(diskMon, diskMetrics.IncShedWrites)    // shed at entry before forwarding (design/36)
 				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr).
 					WithTierStatus(mgr, raftAddr, selfReplicaID, true)
-				if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path); berr != nil {
+				if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path, logger); berr != nil {
 					logger.Error("backup: coordinator init failed; BackupService disabled", "err", berr)
 				} else {
 					collectionsSvc = collectionsSvc.WithBackup(bc)

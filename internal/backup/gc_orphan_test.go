@@ -62,3 +62,58 @@ func TestReconcileOrphans(t *testing.T) {
 		t.Fatalf("second ReconcileOrphans = %v err %v, want none", deleted2, err)
 	}
 }
+
+// hidingMetaStore omits one id from ListBlobs (so it's absent from the live snapshot) while GetBlob
+// still returns it — simulating a backup that Begins AFTER the live snapshot is taken but before objects
+// are reconciled (the TOCTOU window).
+type hidingMetaStore struct {
+	MetaStore
+	hidden string
+}
+
+func (h *hidingMetaStore) ListBlobs(ctx context.Context) (map[string][]byte, error) {
+	m, err := h.MetaStore.ListBlobs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	delete(m, h.hidden)
+	return m, nil
+}
+
+// TestReconcileOrphansTOCTOU proves an in-flight backup (intent created after the live snapshot, so
+// absent from it) is NOT collected: the fresh GetIntent re-check sees it and its objects survive, while
+// a genuinely intent-less backup id is still deleted.
+func TestReconcileOrphansTOCTOU(t *testing.T) {
+	ctx := context.Background()
+	base := newFakeMetaStore()
+	objStore, err := objstore.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := func(k string) {
+		if err := objStore.Put(k, bytes.NewReader([]byte("x")), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// "racing-bk" has an intent (it exists fresh) but is hidden from the live snapshot.
+	if err := PutIntent(ctx, base, &BackupIntent{BackupID: "racing-bk", Status: StatusRunning}); err != nil {
+		t.Fatal(err)
+	}
+	put("racing-bk/nodes/m1/cf/kv_data")
+	// "dead-bk" has no intent at all — a true orphan.
+	put("dead-bk/cluster.manifest.json")
+
+	store := &hidingMetaStore{MetaStore: base, hidden: "racing-bk"}
+	deleted, err := ReconcileOrphans(ctx, store, objStore, "")
+	if err != nil {
+		t.Fatalf("ReconcileOrphans: %v", err)
+	}
+
+	if ok, _ := objStore.Exists("racing-bk/nodes/m1/cf/kv_data"); !ok {
+		t.Fatalf("in-flight backup's objects were collected (TOCTOU): %v deleted", deleted)
+	}
+	if ok, _ := objStore.Exists("dead-bk/cluster.manifest.json"); ok {
+		t.Fatalf("true orphan dead-bk not deleted")
+	}
+}

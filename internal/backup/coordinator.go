@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -69,9 +70,10 @@ type Config struct {
 	Clock       Clock              // nil = real time
 	LocalStore  storage.LocalStore // this node's store, for the node-internal Prepare/Export RPCs
 	Registry    *Registry          // export contributor registry (nil = DefaultRegistry)
-	LeaseMs     int64              // intent lease window (0 = default)
-	RetainMs    int64              // terminal-intent retention window (0 = default; Phase 3d)
-	IsMetaLeader func() bool       // reports whether this node leads the meta shard (gates the sweep; nil = always)
+	LeaseMs      int64        // intent lease window (0 = default)
+	RetainMs     int64        // terminal-intent retention window (0 = default; Phase 3d)
+	IsMetaLeader func() bool  // reports whether this node leads the meta shard (gates the sweep; nil = always)
+	Logger       *slog.Logger // sweep logging (nil = slog.Default())
 }
 
 // Coordinator drives a consistent cluster backup: it records a durable BackupIntent in the meta shard,
@@ -92,6 +94,7 @@ type Coordinator struct {
 	leaseMs      int64
 	retainMs     int64
 	isMetaLeader func() bool
+	logger       *slog.Logger
 
 	// failAfterPhase, when set (test hook), makes run() persist the named phase's completion and then
 	// return early — simulating coordinator loss for the resumability test.
@@ -121,6 +124,10 @@ func NewCoordinator(cfg Config) *Coordinator {
 	if retain == 0 {
 		retain = defaultRetainMs
 	}
+	lg := cfg.Logger
+	if lg == nil {
+		lg = slog.Default()
+	}
 	return &Coordinator{
 		self:         cfg.Self,
 		meta:         cfg.Meta,
@@ -134,6 +141,7 @@ func NewCoordinator(cfg Config) *Coordinator {
 		leaseMs:      lease,
 		retainMs:     retain,
 		isMetaLeader: cfg.IsMetaLeader,
+		logger:       lg,
 	}
 }
 
@@ -449,10 +457,23 @@ func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
 				continue // only the meta-shard leader sweeps
 			}
 			now := c.clock.NowMs()
-			if _, err := SweepIntents(ctx, c.meta, c.objStore, now, c.retainMs); err != nil {
+			stats, err := SweepIntents(ctx, c.meta, c.objStore, now, c.retainMs)
+			if err != nil {
+				// A persistently failing sweep (e.g. objstore outage) must not be invisible.
+				c.logger.Warn("backup: intent sweep failed", "err", err)
 				continue
 			}
-			_, _ = ReconcileOrphans(ctx, c.meta, c.objStore, "")
+			if stats.Failed > 0 || stats.Deleted > 0 {
+				c.logger.Info("backup: intent sweep", "lease_expired", stats.Failed, "retention_deleted", stats.Deleted)
+			}
+			deleted, err := ReconcileOrphans(ctx, c.meta, c.objStore, "")
+			if err != nil {
+				c.logger.Warn("backup: orphan reconciliation failed", "err", err)
+				continue
+			}
+			if len(deleted) > 0 {
+				c.logger.Info("backup: orphan reconciliation", "objects_deleted", len(deleted))
+			}
 		}
 	}
 }
