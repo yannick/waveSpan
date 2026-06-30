@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/yannick/wavespan/internal/backup"
 	"github.com/yannick/wavespan/internal/cache"
 	"github.com/yannick/wavespan/internal/collections"
 	"github.com/yannick/wavespan/internal/config"
@@ -54,7 +55,49 @@ import (
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"wavesdb/objstore"
 )
+
+// backupRoster adapts the gossip membership service to the backup coordinator's Roster: the live member
+// ids the coordinator fans prepare/export out to.
+type backupRoster struct{ svc *membership.Service }
+
+func (r backupRoster) Live() []string {
+	views := r.svc.Live()
+	out := make([]string, 0, len(views))
+	for _, mv := range views {
+		out = append(out, mv.Member.MemberID)
+	}
+	return out
+}
+
+// newBackupCoordinator builds the cluster backup coordinator for this node: a meta-shard intent catalog,
+// a node-default FS object store under the storage path (per-request S3/destination override is Phase
+// 3e), a membership-backed roster, and a gRPC BackupService client factory keyed by member id. The
+// full-backup all-export assignment policy is used (Phase 3a).
+func newBackupCoordinator(mgr *collections.Manager, store storage.LocalStore, self membership.Member, svc *membership.Service, storagePath string) (*backup.Coordinator, error) {
+	objStore, err := objstore.NewFS(filepath.Join(storagePath, "backups"))
+	if err != nil {
+		return nil, err
+	}
+	addrFor := func(id string) (string, error) {
+		for _, mv := range svc.Members() {
+			if mv.Member.MemberID == id {
+				return mv.Member.DataAddr, nil
+			}
+		}
+		return "", fmt.Errorf("backup: unknown member %q", id)
+	}
+	return backup.NewCoordinator(backup.Config{
+		Self:       self.MemberID,
+		Meta:       collections.NewMetaBackupStore(mgr),
+		ObjStore:   objStore,
+		Roster:     backupRoster{svc: svc},
+		ClientFor:  backup.NewGRPCClientFactory(addrFor),
+		Assigner:   backup.AllExportAssigner{},
+		LocalStore: store,
+	}), nil
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -668,6 +711,11 @@ func run() error {
 				WithForwarder(collections.NewRPCForwarder(peersFn)). // spot nodes never lead; forward all writes
 				WithDiskGate(diskMon, diskMetrics.IncShedWrites)     // shed at entry before forwarding (design/36)
 			collectionsSvc = collections.NewService(cols, self).WithTierStatus(mgr, raftAddr, spotRID, false)
+			if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path); berr != nil {
+				logger.Error("backup: coordinator init failed; BackupService disabled", "err", berr)
+			} else {
+				collectionsSvc = collectionsSvc.WithBackup(bc)
+			}
 			cypherCollections := collections.NewCypherCollections(cols)
 			cypherSvc.WithCollections(cypherCollections)
 			grpcCypherSvc.WithCollections(cypherCollections)
@@ -699,6 +747,11 @@ func run() error {
 				cols.WithDiskGate(diskMon, diskMetrics.IncShedWrites)    // shed at entry before forwarding (design/36)
 				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr).
 					WithTierStatus(mgr, raftAddr, selfReplicaID, true)
+				if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path); berr != nil {
+					logger.Error("backup: coordinator init failed; BackupService disabled", "err", berr)
+				} else {
+					collectionsSvc = collectionsSvc.WithBackup(bc)
+				}
 				cypherCollections := collections.NewCypherCollections(cols) // set.*/hash.*/zset.* built-ins
 				cypherSvc.WithCollections(cypherCollections)
 				grpcCypherSvc.WithCollections(cypherCollections)

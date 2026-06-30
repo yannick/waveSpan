@@ -43,6 +43,17 @@ func (s *Service) BackupHandler() (string, http.Handler) {
 // errBackupUnconfigured is returned when a backup RPC reaches a node with no Coordinator wired.
 var errBackupUnconfigured = errors.New("collections: backup coordinator not configured on this node")
 
+// backupErr maps a coordinator error to a Connect error. The coordinator already returns *connect.Error
+// for its user-facing cases (e.g. NotFound for an unknown backup id), so those pass through unchanged;
+// anything else falls back to the shared collErr mapping (→ Internal).
+func backupErr(err error) error {
+	var ce *connect.Error
+	if errors.As(err, &ce) {
+		return err
+	}
+	return collErr(err)
+}
+
 // BeginBackup records a durable BackupIntent, picks a cluster frontier, and drives the phased backup.
 func (s *Service) BeginBackup(ctx context.Context, req *connect.Request[wavespanv1.BeginBackupRequest]) (*connect.Response[wavespanv1.BeginBackupResult], error) {
 	if s.backup == nil {
@@ -50,7 +61,7 @@ func (s *Service) BeginBackup(ctx context.Context, req *connect.Request[wavespan
 	}
 	id, err := s.backup.BeginBackup(ctx, req.Msg.GetSpec())
 	if err != nil {
-		return nil, collErr(err)
+		return nil, backupErr(err)
 	}
 	return connect.NewResponse(&wavespanv1.BeginBackupResult{BackupId: id, Meta: s.meta()}), nil
 }
@@ -62,7 +73,7 @@ func (s *Service) BackupStatus(ctx context.Context, req *connect.Request[wavespa
 	}
 	st, err := s.backup.BackupStatus(ctx, req.Msg.GetBackupId())
 	if err != nil {
-		return nil, collErr(err)
+		return nil, backupErr(err)
 	}
 	st.Meta = s.meta()
 	return connect.NewResponse(st), nil
@@ -75,7 +86,7 @@ func (s *Service) ListBackups(ctx context.Context, req *connect.Request[wavespan
 	}
 	list, err := s.backup.ListBackups(ctx)
 	if err != nil {
-		return nil, collErr(err)
+		return nil, backupErr(err)
 	}
 	return connect.NewResponse(&wavespanv1.ListBackupsResult{Backups: list, Meta: s.meta()}), nil
 }
@@ -87,7 +98,7 @@ func (s *Service) DeleteBackup(ctx context.Context, req *connect.Request[wavespa
 	}
 	deleted, err := s.backup.DeleteBackup(ctx, req.Msg.GetBackupId())
 	if err != nil {
-		return nil, collErr(err)
+		return nil, backupErr(err)
 	}
 	return connect.NewResponse(&wavespanv1.DeleteBackupResult{Deleted: deleted, Meta: s.meta()}), nil
 }
@@ -99,7 +110,7 @@ func (s *Service) PrepareBackup(ctx context.Context, req *connect.Request[wavesp
 	}
 	res, err := s.backup.PrepareLocal(ctx, req.Msg)
 	if err != nil {
-		return nil, collErr(err)
+		return nil, backupErr(err)
 	}
 	res.Meta = s.meta()
 	return connect.NewResponse(res), nil
@@ -112,7 +123,7 @@ func (s *Service) ExportBackup(ctx context.Context, req *connect.Request[wavespa
 	}
 	res, err := s.backup.ExportLocal(ctx, req.Msg)
 	if err != nil {
-		return nil, collErr(err)
+		return nil, backupErr(err)
 	}
 	res.Meta = s.meta()
 	return connect.NewResponse(res), nil
