@@ -12,6 +12,7 @@ import (
 
 	"github.com/yannick/wavespan/internal/storage"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
+	"wavesdb"
 )
 
 // Roster reports the currently live cluster members (by member id).
@@ -19,13 +20,16 @@ type Roster interface {
 	Live() []string
 }
 
-// ExportRequest is the coordinator's instruction to one node to export its assignment.
+// ExportRequest is the coordinator's instruction to one node to export its assignment. ParentCkpt, when
+// set, makes the physical plane an incremental against that node's parent checkpoint (the coordinator
+// resolves it from the parent backup's per-node physical sub-manifest before fan-out).
 type ExportRequest struct {
 	BackupID   string
 	MemberID   string
 	Assignment Selector
 	Planes     []Plane
 	FrontierT  int64
+	ParentCkpt *wavesdb.CheckpointManifest
 }
 
 // NodeClient is the coordinator's handle to one node's BackupService (prepare/export). The production
@@ -364,12 +368,19 @@ func (c *Coordinator) PrepareLocal(ctx context.Context, req *wavespanv1.PrepareB
 }
 
 // ExportLocal serves the node-internal ExportBackup RPC against this node's store.
+//
+// NOTE (cross-node incremental gap): the parent checkpoint is passed as nil here. ExportBackupRequest
+// carries no parent reference yet, so when a coordinator fans an incremental out over gRPC the remote
+// node does a FULL physical export. In-process exports (the coordinator's own node, and the multi-node
+// test harness) thread the parent via ExportRequest.ParentCkpt and diff correctly. Carrying the parent
+// over the wire (a parent_backup_id field on ExportBackupRequest, resolved node-side) is tracked
+// alongside the StorageUUID cross-node gap — likely on a split-out BackupNodeService.
 func (c *Coordinator) ExportLocal(ctx context.Context, req *wavespanv1.ExportBackupRequest) (*wavespanv1.ExportBackupResult, error) {
 	if c.localStore == nil {
 		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("backup: node holds no local store"))
 	}
 	res, err := c.agent.Export(ctx, c.localStore, c.objStore, req.GetBackupId(), c.self,
-		selectorFromProto(req.GetAssignment()), planesFromProto(req.GetPlanes()), req.GetFrontierT())
+		selectorFromProto(req.GetAssignment()), planesFromProto(req.GetPlanes()), req.GetFrontierT(), nil)
 	if err != nil {
 		return nil, err
 	}

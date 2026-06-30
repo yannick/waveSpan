@@ -36,7 +36,7 @@ func TestAgentExport(t *testing.T) {
 		t.Fatalf("Prepare GlobalSeq = %d, want %d", pr.GlobalSeq, frontierT)
 	}
 
-	res, err := a.Export(ctx, mem, objStore, "bk-1", "m1", Selector{}, []Plane{PlaneLogical}, frontierT)
+	res, err := a.Export(ctx, mem, objStore, "bk-1", "m1", Selector{}, []Plane{PlaneLogical}, frontierT, nil)
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestAgentExport(t *testing.T) {
 	}
 
 	// Re-export is idempotent (same keys, no error) — the resumability guarantee.
-	if _, err := a.Export(ctx, mem, objStore, "bk-1", "m1", Selector{}, []Plane{PlaneLogical}, frontierT); err != nil {
+	if _, err := a.Export(ctx, mem, objStore, "bk-1", "m1", Selector{}, []Plane{PlaneLogical}, frontierT, nil); err != nil {
 		t.Fatalf("re-export: %v", err)
 	}
 }

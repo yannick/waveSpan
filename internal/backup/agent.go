@@ -2,10 +2,28 @@ package backup
 
 import (
 	"context"
+	"fmt"
 	"path"
 
 	"github.com/yannick/wavespan/internal/storage"
+	"wavesdb"
 )
+
+// dbProvider is the optional capability a store exposes when it is backed by a real wavesdb engine that
+// can write SSTable checkpoints (physical plane). MemStore does not implement it, so a physical export
+// against a non-wavesdb store fails with a clear error rather than silently producing nothing.
+type dbProvider interface {
+	UnderlyingDB() *wavesdb.DB
+}
+
+func hasPlane(planes []Plane, p Plane) bool {
+	for _, x := range planes {
+		if x == p {
+			return true
+		}
+	}
+	return false
+}
 
 // Agent is the node-side executor of a backup. A coordinator fans PrepareBackup/ExportBackup out to
 // every live node; on each node the Agent seals a consistent view at the frontier (Prepare) and exports
@@ -48,43 +66,89 @@ func (a *Agent) Prepare(ctx context.Context, store storage.LocalStore, backupID 
 	return PrepareResult{GlobalSeq: uint64(frontierT), HeldRanges: heldRanges}, nil
 }
 
-// ExportResult is the outcome of one node's export: the object/byte counts, the key of the per-node
-// sub-manifest, the node's stable storage identity (recorded in the cluster manifest for 3c restore),
-// and the decoded manifest itself (for the coordinator's cluster.manifest).
+// ExportResult is the outcome of one node's export: the logical object/byte counts, the key of the
+// per-node logical sub-manifest, the node's stable storage identity (recorded in the cluster manifest
+// for 3c restore), the decoded logical manifest, and — when the physical plane ran — the resulting
+// wavesdb checkpoint (pass back as a parent for the next incremental) plus its sub-manifest key.
 type ExportResult struct {
-	Objects        int64
-	Bytes          int64
-	SubManifestKey string
-	StorageUUID    string
-	Manifest       *NodeManifest
+	Objects             int64
+	Bytes               int64
+	SubManifestKey      string
+	StorageUUID         string
+	Manifest            *NodeManifest
+	Checkpoint          *wavesdb.CheckpointManifest // physical plane only
+	PhysicalManifestKey string                      // physical plane only
+	PhysicalGlobalSeq   uint64                      // physical plane only
 }
 
-// Export writes this node's assignment to objStore under <backupID>/nodes/<memberID>/. It runs the
-// logical plane via ExportLogical (one object per authoritative CF + a per-node sub-manifest); the
-// physical plane (CheckpointToObjectStore) operates on the wavesdb.DB handle rather than the
-// storage.LocalStore the agent holds, so it is plumbed at the DB layer and is a no-op here in 3a.
-// Re-running an export is idempotent: object keys are deterministic, so a resumed coordinator may
-// re-export safely (design/backup phase 3a, resumability).
+// Export writes this node's assignment to objStore under <backupID>/nodes/<memberID>/, running the
+// requested planes (logical and/or physical; an empty planes defaults to logical for 3a compatibility).
 //
-// frontierT is passed to ExportLogical as captureMs and recorded in the node manifest for provenance
-// only — it does NOT filter the exported keys in 3a. ExportLogical iterates a single snapshot taken
-// here at write time and writes every key; the Version<=frontierT AP-tier cut is deferred to 3a.1.
-func (a *Agent) Export(ctx context.Context, store storage.LocalStore, objStore ObjectStore, backupID, memberID string, assignment Selector, planes []Plane, frontierT int64) (ExportResult, error) {
+// Logical (ExportLogical): one object per authoritative CF + a per-node node.manifest.json; full-only.
+// frontierT is passed as captureMs and recorded for provenance only — it does NOT filter keys in 3a;
+// the Version<=frontierT AP-tier cut is deferred to 3a.1.
+//
+// Physical (CheckpointToObjectStore): a consistent SSTable checkpoint under <prefix>/physical/. When
+// parentCkpt is non-nil this is an INCREMENTAL — only SSTable ids absent from the parent are uploaded —
+// and the returned checkpoint still lists the full cumulative table set. The result is recorded in a
+// per-node physical.manifest.json (full table set + parent watermark). The physical plane needs the
+// wavesdb engine handle (dbProvider) and a wavesdb-capable object store; a MemStore cannot take one.
+//
+// Re-running an export is idempotent: object keys are deterministic, so a resumed coordinator re-exports
+// safely (design/backup phase 3a/3b).
+func (a *Agent) Export(ctx context.Context, store storage.LocalStore, objStore ObjectStore, backupID, memberID string, assignment Selector, planes []Plane, frontierT int64, parentCkpt *wavesdb.CheckpointManifest) (ExportResult, error) {
 	keyPrefix := path.Join(backupID, "nodes", memberID)
-	man, err := ExportLogical(store, objStore, keyPrefix, a.reg, frontierT, assignment)
-	if err != nil {
-		return ExportResult{}, err
+	wantLogical := len(planes) == 0 || hasPlane(planes, PlaneLogical)
+	wantPhysical := hasPlane(planes, PlanePhysical)
+
+	var res ExportResult
+	if wantLogical {
+		man, err := ExportLogical(store, objStore, keyPrefix, a.reg, frontierT, assignment)
+		if err != nil {
+			return ExportResult{}, err
+		}
+		var objects, bytes int64
+		for _, e := range man.CFs {
+			objects++ // one object per non-empty authoritative CF
+			bytes += e.Bytes
+		}
+		res.Objects = objects
+		res.Bytes = bytes
+		res.SubManifestKey = keyPrefix + "/node.manifest.json"
+		res.StorageUUID = man.StorageUUID
+		res.Manifest = man
 	}
-	var objects, bytes int64
-	for _, e := range man.CFs {
-		objects++ // one object per non-empty authoritative CF
-		bytes += e.Bytes
+	if wantPhysical {
+		prov, ok := store.(dbProvider)
+		if !ok {
+			return ExportResult{}, fmt.Errorf("backup: physical plane requires a wavesdb-backed store, got %T", store)
+		}
+		ws, ok := objStore.(wavesdb.ObjectStore)
+		if !ok {
+			return ExportResult{}, fmt.Errorf("backup: physical plane requires a wavesdb object store, got %T", objStore)
+		}
+		cm, err := prov.UnderlyingDB().CheckpointToObjectStore(ctx, ws, keyPrefix+"/physical", parentCkpt)
+		if err != nil {
+			return ExportResult{}, err
+		}
+		var parentSeq uint64
+		if parentCkpt != nil {
+			parentSeq = parentCkpt.GlobalSeq
+		}
+		pmKey := PhysicalManifestKey(backupID, memberID)
+		if err := WritePhysicalManifest(objStore, pmKey, physicalManifestFromCheckpoint(cm, parentSeq)); err != nil {
+			return ExportResult{}, err
+		}
+		res.Checkpoint = cm
+		res.PhysicalManifestKey = pmKey
+		res.PhysicalGlobalSeq = cm.GlobalSeq
 	}
-	return ExportResult{
-		Objects:        objects,
-		Bytes:          bytes,
-		SubManifestKey: keyPrefix + "/node.manifest.json",
-		StorageUUID:    man.StorageUUID,
-		Manifest:       man,
-	}, nil
+
+	// Capture the node's stable storage identity even on a physical-only backup (3c restore needs it).
+	if res.StorageUUID == "" {
+		if v, ok, _ := store.Get(storage.CFSys, []byte(storageIdentityKey)); ok {
+			res.StorageUUID = string(v)
+		}
+	}
+	return res, nil
 }
