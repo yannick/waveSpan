@@ -3,6 +3,7 @@ package backup
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 )
 
@@ -58,6 +59,32 @@ func WriteClusterManifest(store ObjectStore, m *ClusterManifest) error {
 		return err
 	}
 	return store.Put(ClusterManifestKey(m.BackupID), bytes.NewReader(b), int64(len(b)))
+}
+
+// ResolveChain walks a physical backup's parent pointers and returns the full chain in apply order,
+// base first: [base, ...incrementals, backupID]. A missing requested backup or a broken parent link (a
+// parent recorded but not present in the store) is a loud error — restore (3c) must never silently
+// replay a truncated chain. A cycle is also reported rather than looping forever.
+func ResolveChain(store ObjectStore, backupID string) ([]string, error) {
+	var chain []string
+	seen := map[string]bool{}
+	for cur := backupID; cur != ""; {
+		if seen[cur] {
+			return nil, fmt.Errorf("backup: cycle in backup chain at %q", cur)
+		}
+		seen[cur] = true
+		cm, err := ReadClusterManifest(store, cur)
+		if err != nil {
+			return nil, fmt.Errorf("backup: chain link %q unresolvable: %w", cur, err)
+		}
+		chain = append(chain, cur)
+		cur = cm.Parent
+	}
+	// chain is leaf→base; reverse to base→leaf (apply order).
+	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+		chain[i], chain[j] = chain[j], chain[i]
+	}
+	return chain, nil
 }
 
 // ReadClusterManifest reads and decodes the cluster manifest for backupID.
