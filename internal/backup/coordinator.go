@@ -91,6 +91,12 @@ type Coordinator struct {
 
 const defaultLeaseMs = 10 * 60 * 1000 // 10 minutes
 
+// frontierLeaseMs is the small lease added to now when picking the backup frontier T (spec §2 Begin:
+// T = HLC.now()+lease). In 3a T is recorded for provenance only and not yet used as a Version<=T cut
+// (the cluster-wide HLC sealing is Phase 3a.1); the now+lease value is set here so the contract is right
+// when the cut lands.
+const frontierLeaseMs = 5 * 1000 // 5 seconds
+
 // NewCoordinator builds a Coordinator from cfg.
 func NewCoordinator(cfg Config) *Coordinator {
 	clk := cfg.Clock
@@ -123,7 +129,7 @@ func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSp
 	id := newBackupID(now)
 	in := &BackupIntent{
 		BackupID:           id,
-		FrontierT:          now,
+		FrontierT:          now + frontierLeaseMs,
 		CaptureWallClockMs: now,
 		Selection:          selectorFromProto(spec.GetSelection()),
 		Planes:             planesFromProto(spec.GetPlanes()),

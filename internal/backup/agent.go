@@ -23,20 +23,22 @@ func NewAgent(reg *Registry) *Agent {
 	return &Agent{reg: reg}
 }
 
-// PrepareResult reports a node's sealed view. GlobalSeq is the sealed sequence the node guarantees its
-// export reflects (at or beyond the frontier); HeldRanges enumerates the ranges this node will export,
-// echoed for the coordinator's commit-time coverage cross-check.
+// PrepareResult reports a node's readiness. GlobalSeq echoes the frontier the node was asked to prepare
+// at (carried for provenance — 3a does not yet seal at it; see Prepare); HeldRanges enumerates the
+// ranges this node will export, echoed for the coordinator's commit-time coverage cross-check.
 type PrepareResult struct {
 	GlobalSeq  uint64
 	HeldRanges []string
 }
 
-// Prepare seals this node's view at frontierT: it pins (and immediately releases) a read-consistent
-// snapshot to confirm the node can serve a coherent export, and reports the ranges it holds. Export
-// takes its own snapshot at write time; because the AP-tier cut is bounded by the captureMs/frontier
-// ceiling, re-deriving the snapshot at export time observes the same sealed state. (Authoritative
-// per-node range discovery from the local range directory is a 3d refinement; in 3a the coordinator
-// supplies the assigned ranges, which the node echoes as held.)
+// Prepare confirms this node can serve a coherent export and reports the ranges it holds: it pins (and
+// immediately releases) a read-consistent snapshot as a readiness check. It does NOT yet seal the view
+// at frontierT. In 3a each node's Export takes its own snapshot at write time, so a backup captures each
+// node's own consistent point-in-time view (per-node snapshot isolation) — NOT a single cluster-wide
+// cut: ExportLogical writes every key with no Version<=T filter, and frontierT is carried for provenance
+// only. The cluster-wide HLC frontier T plus Version<=T AP-tier sealing (spec §1/§3) is deferred to
+// Phase 3a.1. (Authoritative per-node range discovery from the local range directory is a 3d
+// refinement; in 3a the coordinator supplies the assigned ranges, which the node echoes as held.)
 func (a *Agent) Prepare(ctx context.Context, store storage.LocalStore, backupID string, frontierT int64, heldRanges []string) (PrepareResult, error) {
 	snap, err := store.Snapshot()
 	if err != nil {
@@ -61,6 +63,10 @@ type ExportResult struct {
 // storage.LocalStore the agent holds, so it is plumbed at the DB layer and is a no-op here in 3a.
 // Re-running an export is idempotent: object keys are deterministic, so a resumed coordinator may
 // re-export safely (design/backup phase 3a, resumability).
+//
+// frontierT is passed to ExportLogical as captureMs and recorded in the node manifest for provenance
+// only — it does NOT filter the exported keys in 3a. ExportLogical iterates a single snapshot taken
+// here at write time and writes every key; the Version<=frontierT AP-tier cut is deferred to 3a.1.
 func (a *Agent) Export(ctx context.Context, store storage.LocalStore, objStore ObjectStore, backupID, memberID string, assignment Selector, planes []Plane, frontierT int64) (ExportResult, error) {
 	keyPrefix := path.Join(backupID, "nodes", memberID)
 	man, err := ExportLogical(store, objStore, keyPrefix, a.reg, frontierT, assignment)
