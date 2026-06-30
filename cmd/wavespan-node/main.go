@@ -712,6 +712,7 @@ func run() error {
 	if collectionsSvc != nil {
 		wavespanv1.RegisterCollectionServiceServer(grpcDataSrv, grpcsrv.NewCollections(collectionsSvc))
 		wavespanv1.RegisterBudgetServiceServer(grpcDataSrv, grpcsrv.NewBudget(collectionsSvc))
+		wavespanv1.RegisterBackupServiceServer(grpcDataSrv, grpcsrv.NewBackup(collectionsSvc))
 	}
 
 	// Gossip server on the gossip port.
@@ -796,6 +797,8 @@ func run() error {
 		adminMux.Handle(colPath, adminIdentity.EnforceHTTP(colHandler)) // CollectionService for the UI (same origin)
 		budPath, budHandler := collectionsSvc.BudgetHandler()
 		adminMux.Handle(budPath, adminIdentity.EnforceHTTP(budHandler)) // BudgetService for the UI (design/35)
+		bckPath, bckHandler := collectionsSvc.BackupHandler()
+		adminMux.Handle(bckPath, adminIdentity.EnforceHTTP(bckHandler)) // BackupService for the UI (design/backup phase 3a)
 	}
 	adminMux.Handle("/", adminIdentity.EnforceHTTP(ui.NewServer().Handler())) // SPA at root (health/metrics take precedence)
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: adminTLS, ConnState: connStateGauge(openConns.WithLabelValues("admin"))}
