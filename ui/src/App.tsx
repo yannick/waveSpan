@@ -6,6 +6,7 @@ import { CypherConsole } from "./views/CypherConsole";
 import { NodeExplorer } from "./views/NodeExplorer";
 import { KvWriter } from "./views/KvWriter";
 import { CollectionsExplorer } from "./views/CollectionsExplorer";
+import { Backups } from "./views/Backups";
 import { DataWorkbench } from "./views/DataWorkbench";
 import { Config } from "./views/Config";
 import { Documentation } from "./views/Documentation";
@@ -20,6 +21,7 @@ type Tab =
   | "data"
   | "write"
   | "collections"
+  | "backups"
   | "topology"
   | "metrics"
   | "config"
@@ -33,6 +35,7 @@ const tabs: TabItem<Tab>[] = [
   { id: "data", label: "Data Browser" },
   { id: "write", label: "KV Writer" },
   { id: "collections", label: "Collections" },
+  { id: "backups", label: "Backups" },
   { id: "topology", label: "Cluster Topology" },
   { id: "metrics", label: "Metrics" },
   { id: "config", label: "Configuration" },
@@ -68,6 +71,7 @@ export function App() {
         {tab === "data" && <DataBrowser />}
         {tab === "write" && <KvWriter />}
         {tab === "collections" && <CollectionsExplorer />}
+        {tab === "backups" && <Backups />}
         {tab === "topology" && <ClusterTopology />}
         {tab === "metrics" && <MetricsSummary />}
         {tab === "config" && <Config />}
