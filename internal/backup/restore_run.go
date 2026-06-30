@@ -21,7 +21,7 @@ const restoreMarkerKey = "/sys/restored_from"
 // when the backup has a physical plane, else logical same-shape.
 //
 // NOTE (backup catalog reset): both paths reset the collections meta shard (StripRaftBookkeeping), which
-// clears the BackupIntent catalog (subBackup) — a restored/cloned cluster starts with NO backup history
+// clears the Intent catalog (subBackup) — a restored/cloned cluster starts with NO backup history
 // or schedule. The S3 backups themselves remain; the operator re-registers backup intents/schedule after
 // restore. For a clone this is correct (don't inherit the source's schedule); for same-cluster DR the
 // catalog can be rebuilt by listing S3 / re-registering.

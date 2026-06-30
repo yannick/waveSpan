@@ -45,7 +45,7 @@ func ExportLogical(src storage.LocalStore, store ObjectStore, keyPrefix string, 
 	if err != nil {
 		return nil, err
 	}
-	defer snap.Close()
+	defer func() { _ = snap.Close() }()
 
 	var entries []CFEntry
 	for _, cf := range reg.AuthoritativeCFs() {

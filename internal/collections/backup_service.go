@@ -80,7 +80,7 @@ func (s *Service) BackupStatus(ctx context.Context, req *connect.Request[wavespa
 }
 
 // ListBackups lists known backups from the meta-shard catalog.
-func (s *Service) ListBackups(ctx context.Context, req *connect.Request[wavespanv1.ListBackupsRequest]) (*connect.Response[wavespanv1.ListBackupsResult], error) {
+func (s *Service) ListBackups(ctx context.Context, _ *connect.Request[wavespanv1.ListBackupsRequest]) (*connect.Response[wavespanv1.ListBackupsResult], error) {
 	if s.backup == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errBackupUnconfigured)
 	}

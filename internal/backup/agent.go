@@ -57,7 +57,7 @@ type PrepareResult struct {
 // only. The cluster-wide HLC frontier T plus Version<=T AP-tier sealing (spec §1/§3) is deferred to
 // Phase 3a.1. (Authoritative per-node range discovery from the local range directory is a 3d
 // refinement; in 3a the coordinator supplies the assigned ranges, which the node echoes as held.)
-func (a *Agent) Prepare(ctx context.Context, store storage.LocalStore, backupID string, frontierT int64, heldRanges []string) (PrepareResult, error) {
+func (a *Agent) Prepare(_ context.Context, store storage.LocalStore, _ string, frontierT int64, heldRanges []string) (PrepareResult, error) {
 	snap, err := store.Snapshot()
 	if err != nil {
 		return PrepareResult{}, err
