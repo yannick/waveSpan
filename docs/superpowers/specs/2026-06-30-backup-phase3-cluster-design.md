@@ -159,6 +159,22 @@ The bootstrap config names the backupID + intent (DR vs clone) + target shape; s
 (physical vs logical) follows the master spec §7 rule (DR-same-shape → physical fast path; clone /
 shape-change → logical).
 
+### 5.0 Collections & the dragonboat Raft LogDB (consistency rule — grounded 2026-06-30)
+Collections state is split across **two** stores: the shard data + per-shard applied-raft-index live
+in the wavesdb `store`'s `CFReplData`, but the dragonboat **Raft LogDB is a separate pebble dir**
+(`<storage>/collections-raft`) that the backup does **not** capture. On `Open()`, a shard's
+`baseSM` reads its persisted applied index from `CFReplData` and reports it to dragonboat; a fresh
+LogDB has no matching log → divergence if a stale applied index is restored. **Rule:** on restore,
+collections **reset their raft bookkeeping** — drop the `subMeta` applied-index rows + dedup
+(`subDedup`/`subDedupRing`) keys (exactly what Phase 2b's `RerouteSuffix` already drops) — and the
+shards **bootstrap fresh** (`BootstrapWithPlacement`/`BootstrapN`); the restored `CFReplData` data
+rows then become the shards' initial on-disk SM state at applied-index 0, with a fresh log. This
+holds for **every** restore path (logical clone, logical same-shape, and physical DR): KV / graph /
+vector are raft-free and take the fast physical-SSTable path, but **collections are always
+re-established via reset-bookkeeping + fresh bootstrap**, never by carrying the LogDB. (Restore must
+run before the collections tier bootstraps — see §5; the data is in `CFReplData` when `Open()`
+reads it.)
+
 ### 5.1 Forking multiple independent clones from one backup (first-class)
 A single backup can seed **any number** of independent clone clusters (master spec goal #2). This
 works because:
