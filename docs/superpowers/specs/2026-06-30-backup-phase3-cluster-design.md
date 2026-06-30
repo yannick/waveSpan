@@ -133,6 +133,19 @@ objects), so resume/retry is safe.
   shard's raft state is internally consistent and recovers independently. Physical incrementals
   (3b) = SSTable file-ids absent from the parent (`SSTablesSince`), per node.
 
+> **Implementation status (2026-06-30): the cluster-wide HLC cut is DEFERRED to Phase 3a.1.**
+> Phase 3a as built delivers **per-node snapshot isolation** — each live node exports a consistent
+> point-in-time snapshot of its *own* store taken at export time (correct full-coverage union via
+> all-export + LWW dedup on restore), but there is **no coordinated cluster-wide frontier `T` and no
+> `Version ≤ T` AP-tier filtering** yet. So a 3a logical backup is internally consistent per node but
+> not sealed to a single cluster-wide instant. **Phase 3a.1** implements the spec's cut: coordinator
+> picks `T = now + lease` (skew-cap bounded), each node advances its HLC past `T` (`Clock.Update`,
+> handling `*SkewError`), drains in-flight `≤T`, and AP-tier export filters `Version ≤ T` (needs a
+> per-contributor `VersionOf` extractor — KV version key-suffix, graph/vector value field — which
+> Phase 2 left out). 3a.1 also adds the commit-time coverage cross-check (held-ranges vs assignment)
+> so `PARTIAL` reflects real cluster gaps, not only an assigner-supplied list. Until 3a.1, treat the
+> logical backup's cross-node consistency as eventual (bounded by replication lag), not a hard cut.
+
 ## 4. Physical incrementals (3b)
 
 Each node records its last-backup `GlobalSeq` in its sub-manifest. An incremental physical backup
