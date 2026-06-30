@@ -23,20 +23,45 @@ type Roster interface {
 	Live() []string
 }
 
-// ExportRequest is the coordinator's instruction to one node to export its assignment. ParentCkpt, when
-// set, makes the physical plane an incremental against that node's parent checkpoint (the coordinator
-// resolves it from the parent backup's per-node physical sub-manifest before fan-out).
+// ExportRequest is the coordinator's instruction to one node to export its assignment. Each node resolves
+// its OWN parent checkpoint (from ParentBackupID) and exports to the destination it resolves — so real
+// incrementals and alt destinations work across nodes (Phase 3c Task 0).
 type ExportRequest struct {
-	BackupID   string
-	MemberID   string
-	Assignment Selector
-	Planes     []Plane
-	FrontierT  int64
-	ParentCkpt *wavesdb.CheckpointManifest
-	// ObjStore is the backup's resolved destination (Phase 3e). It is an in-process handle: the
-	// coordinator's own node and the test harness honour it; the gRPC client cannot carry a live store, so
-	// remote nodes export to their configured default destination (tracked with the node-RPC proto gaps).
+	BackupID       string
+	MemberID       string
+	Assignment     Selector
+	Planes         []Plane
+	FrontierT      int64
+	ParentBackupID string // non-empty → physical incremental; the node resolves its own parent checkpoint
+	// ObjStore is the coordinator's already-resolved destination store — an in-process handle used by the
+	// coordinator's own node and the test harness (avoids a self-dial). The gRPC client ignores it.
 	ObjStore ObjectStore
+	// Destination is the original request destination, forwarded for the gRPC node to RE-RESOLVE against
+	// its own config/env (named/default) or the inline/secret-ref creds in the request. nil = the node's
+	// default destination. The in-process path ignores it (it has ObjStore).
+	Destination *wavespanv1.Destination
+}
+
+// resolveParentCheckpoint reads a node's parent checkpoint from the parent backup's per-node physical
+// sub-manifest in store (matched by member id). It returns nil (→ full physical export) when there is no
+// parent backup, or when this member has no entry in it (a node added since the parent).
+func resolveParentCheckpoint(store ObjectStore, parentBackupID, memberID string) (*wavesdb.CheckpointManifest, error) {
+	if parentBackupID == "" {
+		return nil, nil
+	}
+	key := PhysicalManifestKey(parentBackupID, memberID)
+	ok, err := store.Exists(key)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil // new node since the parent → full physical
+	}
+	pm, err := ReadPhysicalManifest(store, key)
+	if err != nil {
+		return nil, err
+	}
+	return pm.ToCheckpointManifest(), nil
 }
 
 // NodeClient is the coordinator's handle to one node's BackupService (prepare/export). The production
@@ -241,16 +266,17 @@ func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSp
 	if err := c.persist(ctx, in); err != nil {
 		return "", err
 	}
-	if err := c.run(ctx, in, store); err != nil {
+	if err := c.run(ctx, in, store, spec.GetDestination()); err != nil {
 		return id, err
 	}
 	return id, nil
 }
 
 // run advances a backup from its current phase to commit, persisting the intent at every phase boundary
-// so a resuming coordinator can pick up exactly where this one left off. store is the backup's resolved
-// destination (Phase 3e): export and commit write there.
-func (c *Coordinator) run(ctx context.Context, in *BackupIntent, store ObjectStore) error {
+// so a resuming coordinator can pick up exactly where this one left off. store is the coordinator's
+// resolved destination (commit + in-process export write there); protoDest is forwarded to gRPC nodes so
+// they re-resolve the same target.
+func (c *Coordinator) run(ctx context.Context, in *BackupIntent, store ObjectStore, protoDest *wavespanv1.Destination) error {
 	if in.Phase == PhaseAssign {
 		assignments, gaps := c.assigner.Assign(c.roster.Live())
 		in.Assignments = assignments
@@ -276,7 +302,7 @@ func (c *Coordinator) run(ctx context.Context, in *BackupIntent, store ObjectSto
 		}
 	}
 	if in.Phase == PhaseExport {
-		if err := c.exportAll(ctx, in, store); err != nil {
+		if err := c.exportAll(ctx, in, store, protoDest); err != nil {
 			return err
 		}
 		in.Phase = PhaseCommit
@@ -311,28 +337,24 @@ func (c *Coordinator) prepareAll(ctx context.Context, in *BackupIntent) error {
 }
 
 // exportAll calls ExportBackup on every assigned member (sequentially in 3a) and records each node's
-// export result. store is the backup's resolved destination; it is threaded to each in-process export
-// via ExportRequest.ObjStore so objects land in the chosen bucket.
-func (c *Coordinator) exportAll(ctx context.Context, in *BackupIntent, store ObjectStore) error {
+// export result. store is the coordinator's resolved destination (used by the in-process path); protoDest
+// is the original request destination, forwarded so a gRPC node re-resolves the same target. Each node
+// resolves its own parent checkpoint from ParentBackupID.
+func (c *Coordinator) exportAll(ctx context.Context, in *BackupIntent, store ObjectStore, protoDest *wavespanv1.Destination) error {
 	for _, mid := range sortedMembers(in.Assignments) {
 		cl, err := c.clientFor(mid)
 		if err != nil {
 			return err
 		}
-		// Incremental: resolve this node's parent checkpoint from the parent backup (in the same store). A
-		// node absent from the parent (new since then) resolves to nil → a full physical export (safe).
-		parentCkpt, err := c.parentCheckpointFor(store, in.Parent, mid)
-		if err != nil {
-			return err
-		}
 		res, err := cl.Export(ctx, ExportRequest{
-			BackupID:   in.BackupID,
-			MemberID:   mid,
-			Assignment: in.Assignments[mid],
-			Planes:     in.Planes,
-			FrontierT:  in.FrontierT,
-			ParentCkpt: parentCkpt,
-			ObjStore:   store,
+			BackupID:       in.BackupID,
+			MemberID:       mid,
+			Assignment:     in.Assignments[mid],
+			Planes:         in.Planes,
+			FrontierT:      in.FrontierT,
+			ParentBackupID: in.Parent,
+			ObjStore:       store,
+			Destination:    protoDest,
 		})
 		if err != nil {
 			return err
@@ -369,28 +391,6 @@ func (c *Coordinator) validateParent(store ObjectStore, planes []Plane, parentID
 			fmt.Errorf("backup: parent %q has no physical plane; cannot take a physical incremental from it", parentID))
 	}
 	return nil
-}
-
-// parentCheckpointFor resolves a node's parent checkpoint from the parent backup's per-node physical
-// sub-manifest (matched by member id, read from store). It returns nil (→ full physical export) when
-// there is no parent backup, or when the node has no entry in it (a node added since the parent).
-func (c *Coordinator) parentCheckpointFor(store ObjectStore, parentBackupID, memberID string) (*wavesdb.CheckpointManifest, error) {
-	if parentBackupID == "" {
-		return nil, nil
-	}
-	key := PhysicalManifestKey(parentBackupID, memberID)
-	ok, err := store.Exists(key)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, nil // new node since the parent → full physical
-	}
-	pm, err := ReadPhysicalManifest(store, key)
-	if err != nil {
-		return nil, err
-	}
-	return pm.ToCheckpointManifest(), nil
 }
 
 func containsString(ss []string, want string) bool {
@@ -469,7 +469,10 @@ func (c *Coordinator) resume(ctx context.Context, backupID string) error {
 	if err != nil {
 		return err
 	}
-	return c.run(ctx, in, store)
+	// Forward a proto destination reconstructed from the descriptor so a gRPC node re-resolves the same
+	// target (named/default/secret-ref re-resolve cleanly; inline-cred destinations can't — see resume's
+	// doc). The coordinator's own/in-process node uses store directly.
+	return c.run(ctx, in, store, descriptorToProto(in.Destination))
 }
 
 // storeForDescriptor re-opens the object store for a persisted destination descriptor (resume/3e). A
@@ -617,28 +620,34 @@ func (c *Coordinator) PrepareLocal(ctx context.Context, req *wavespanv1.PrepareB
 	return &wavespanv1.PrepareBackupResult{GlobalSeq: pr.GlobalSeq, HeldRanges: pr.HeldRanges}, nil
 }
 
-// ExportLocal serves the node-internal ExportBackup RPC against this node's store.
-//
-// NOTE (incremental scope — production binary): the parent checkpoint is passed as nil here because
-// ExportBackupRequest carries no parent reference. The shipping binary's gRPC ClientFactory dials EVERY
-// member — including the coordinator's own node (there is no self-shortcut in exportAll) — and
-// grpcNodeClient.Export drops ExportRequest.ParentCkpt. So in production NO node produces a delta: every
-// incremental silently degrades to a FULL physical export. The incremental delta path is currently
-// exercised ONLY by the in-process test harness (which calls the agent directly with ParentCkpt). This
-// is cost-only — a full export is a complete, correct backup, and the cluster.manifest parent pointer
-// remains valid metadata (the chain resolves). Producing real deltas in production needs a
-// parent_backup_id field on ExportBackupRequest, resolved node-side (3c Task 0), alongside the
-// StorageUUID cross-node gap — likely on a split-out BackupNodeService.
+// ExportLocal serves the node-internal ExportBackup RPC against this node's store (Phase 3c Task 0). The
+// node resolves its OWN destination from the request (named/default from its config/env, secret-ref from
+// its env, inline creds from the request — transient), resolves its OWN parent checkpoint from
+// parent_backup_id in that store, exports, and reports its storage identity. So real incrementals and
+// alt destinations work for every node, not just the coordinator's.
 func (c *Coordinator) ExportLocal(ctx context.Context, req *wavespanv1.ExportBackupRequest) (*wavespanv1.ExportBackupResult, error) {
 	if c.localStore == nil {
 		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("backup: node holds no local store"))
 	}
-	res, err := c.agent.Export(ctx, c.localStore, c.objStore, req.GetBackupId(), c.self,
-		selectorFromProto(req.GetAssignment()), planesFromProto(req.GetPlanes()), req.GetFrontierT(), nil)
+	store, _, err := c.resolveStore(destinationSpecFromProto(req.GetDestination()))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	parentCkpt, err := resolveParentCheckpoint(store, req.GetParentBackupId(), c.self)
 	if err != nil {
 		return nil, err
 	}
-	return &wavespanv1.ExportBackupResult{Objects: res.Objects, Bytes: res.Bytes, SubManifestKey: res.SubManifestKey}, nil
+	res, err := c.agent.Export(ctx, c.localStore, store, req.GetBackupId(), c.self,
+		selectorFromProto(req.GetAssignment()), planesFromProto(req.GetPlanes()), req.GetFrontierT(), parentCkpt)
+	if err != nil {
+		return nil, err
+	}
+	return &wavespanv1.ExportBackupResult{
+		Objects:        res.Objects,
+		Bytes:          res.Bytes,
+		SubManifestKey: res.SubManifestKey,
+		StorageUuid:    res.StorageUUID,
+	}, nil
 }
 
 // upsertNode merges a node record into the intent's PerNode list by member id, preserving the held-range

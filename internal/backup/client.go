@@ -41,20 +41,25 @@ func (g grpcNodeClient) Prepare(ctx context.Context, backupID string, frontierT 
 
 func (g grpcNodeClient) Export(ctx context.Context, req ExportRequest) (ExportResult, error) {
 	res, err := g.c.ExportBackup(ctx, &wavespanv1.ExportBackupRequest{
-		BackupId:   req.BackupID,
-		FrontierT:  req.FrontierT,
-		Assignment: selectionToProto(req.Assignment),
-		Planes:     planesToProto(req.Planes),
-		KeyPrefix:  path.Join(req.BackupID, "nodes", req.MemberID),
+		BackupId:       req.BackupID,
+		FrontierT:      req.FrontierT,
+		Assignment:     selectionToProto(req.Assignment),
+		Planes:         planesToProto(req.Planes),
+		KeyPrefix:      path.Join(req.BackupID, "nodes", req.MemberID),
+		ParentBackupId: req.ParentBackupID,
+		Destination:    req.Destination, // node re-resolves it (named/default from its env, inline transient)
 	})
 	if err != nil {
 		return ExportResult{}, err
 	}
-	// StorageUUID is left empty over the wire: ExportBackupResult carries no storage_uuid field yet, so a
-	// remote node's identity does not reach the cluster manifest in 3a (the local node's does, via
-	// ExportLocal/Agent). Carrying it cross-node — likely on a split-out BackupNodeService — is tracked
-	// for 3c physical restore, which matches nodes by stable identity.
-	return ExportResult{Objects: res.GetObjects(), Bytes: res.GetBytes(), SubManifestKey: res.GetSubManifestKey()}, nil
+	// The remote node reports its storage identity + counts; it resolved its own parent (incremental diff)
+	// and destination. Phase 3c Task 0 closed the prior cross-node gaps.
+	return ExportResult{
+		Objects:        res.GetObjects(),
+		Bytes:          res.GetBytes(),
+		SubManifestKey: res.GetSubManifestKey(),
+		StorageUUID:    res.GetStorageUuid(),
+	}, nil
 }
 
 // NewGRPCClientFactory builds a ClientFactory that dials each member's BackupService over gRPC. addrFor

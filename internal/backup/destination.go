@@ -42,14 +42,16 @@ func destinationSpecFromProto(d *wavespanv1.Destination) DestinationSpec {
 		return DestinationSpec{}
 	}
 	return DestinationSpec{
-		Name:         d.GetName(),
-		Bucket:       d.GetBucket(),
-		Prefix:       d.GetPrefix(),
-		Region:       d.GetRegion(),
-		Endpoint:     d.GetEndpoint(),
-		UseSSL:       d.GetUseSsl(),
-		UsePathStyle: d.GetUsePathStyle(),
-		SecretRef:    d.GetCredential().GetSecretName(),
+		Name:            d.GetName(),
+		Bucket:          d.GetBucket(),
+		Prefix:          d.GetPrefix(),
+		Region:          d.GetRegion(),
+		Endpoint:        d.GetEndpoint(),
+		UseSSL:          d.GetUseSsl(),
+		UsePathStyle:    d.GetUsePathStyle(),
+		SecretRef:       d.GetCredential().GetSecretName(),
+		InlineAccessKey: d.GetCredential().GetAccessKey(),
+		InlineSecretKey: d.GetCredential().GetSecretKey(),
 	}
 }
 
