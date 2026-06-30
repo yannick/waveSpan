@@ -205,14 +205,14 @@ func TestCoordinatorListAndDelete(t *testing.T) {
 	}
 
 	// Deleting an existing backup reports deleted=true.
-	if deleted, err := coord.DeleteBackup(ctx, id1); err != nil || !deleted {
+	if deleted, err := coord.DeleteBackup(ctx, id1, false); err != nil || !deleted {
 		t.Fatalf("DeleteBackup(existing) = %v err %v, want true nil", deleted, err)
 	}
 	if _, err := coord.BackupStatus(ctx, id1); err == nil {
 		t.Fatalf("BackupStatus(deleted) = nil err, want NotFound")
 	}
 	// Deleting an unknown id reports deleted=false, not a silent success.
-	if deleted, err := coord.DeleteBackup(ctx, "bk-does-not-exist"); err != nil || deleted {
+	if deleted, err := coord.DeleteBackup(ctx, "bk-does-not-exist", false); err != nil || deleted {
 		t.Fatalf("DeleteBackup(unknown) = %v err %v, want false nil", deleted, err)
 	}
 	if _, err := coord.BackupStatus(ctx, id2); err != nil {

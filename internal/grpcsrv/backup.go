@@ -60,8 +60,21 @@ func (s *Backup) DeleteBackup(ctx context.Context, m *wavespanv1.DeleteBackupReq
 	return res.Msg, nil
 }
 
-// PrepareBackup implements the BackupServiceServer gRPC method by delegating to the Connect service.
-func (s *Backup) PrepareBackup(ctx context.Context, m *wavespanv1.PrepareBackupRequest) (*wavespanv1.PrepareBackupResult, error) {
+// BackupNode is the gRPC BackupNodeServiceServer adapter (design/backup phase 3c Task 0). The node-internal
+// PrepareBackup/ExportBackup RPCs live here, registered on the DATA port only — never on the admin Connect
+// surface. It delegates to the same *collections.Service core.
+type BackupNode struct {
+	wavespanv1.UnimplementedBackupNodeServiceServer
+	svc *collections.Service
+}
+
+// NewBackupNode wires the gRPC BackupNodeService adapter over the collections service core.
+func NewBackupNode(svc *collections.Service) *BackupNode {
+	return &BackupNode{svc: svc}
+}
+
+// PrepareBackup implements the BackupNodeServiceServer gRPC method by delegating to the Connect service.
+func (s *BackupNode) PrepareBackup(ctx context.Context, m *wavespanv1.PrepareBackupRequest) (*wavespanv1.PrepareBackupResult, error) {
 	res, err := s.svc.PrepareBackup(ctx, connect.NewRequest(m))
 	if err != nil {
 		return nil, connectToGRPC(err)
@@ -69,8 +82,8 @@ func (s *Backup) PrepareBackup(ctx context.Context, m *wavespanv1.PrepareBackupR
 	return res.Msg, nil
 }
 
-// ExportBackup implements the BackupServiceServer gRPC method by delegating to the Connect service.
-func (s *Backup) ExportBackup(ctx context.Context, m *wavespanv1.ExportBackupRequest) (*wavespanv1.ExportBackupResult, error) {
+// ExportBackup implements the BackupNodeServiceServer gRPC method by delegating to the Connect service.
+func (s *BackupNode) ExportBackup(ctx context.Context, m *wavespanv1.ExportBackupRequest) (*wavespanv1.ExportBackupResult, error) {
 	res, err := s.svc.ExportBackup(ctx, connect.NewRequest(m))
 	if err != nil {
 		return nil, connectToGRPC(err)

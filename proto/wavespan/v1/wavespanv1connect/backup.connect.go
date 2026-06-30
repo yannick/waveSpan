@@ -23,6 +23,8 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// BackupServiceName is the fully-qualified name of the BackupService service.
 	BackupServiceName = "wavespan.v1.BackupService"
+	// BackupNodeServiceName is the fully-qualified name of the BackupNodeService service.
+	BackupNodeServiceName = "wavespan.v1.BackupNodeService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -45,12 +47,12 @@ const (
 	// BackupServiceDeleteBackupProcedure is the fully-qualified name of the BackupService's
 	// DeleteBackup RPC.
 	BackupServiceDeleteBackupProcedure = "/wavespan.v1.BackupService/DeleteBackup"
-	// BackupServicePrepareBackupProcedure is the fully-qualified name of the BackupService's
+	// BackupNodeServicePrepareBackupProcedure is the fully-qualified name of the BackupNodeService's
 	// PrepareBackup RPC.
-	BackupServicePrepareBackupProcedure = "/wavespan.v1.BackupService/PrepareBackup"
-	// BackupServiceExportBackupProcedure is the fully-qualified name of the BackupService's
+	BackupNodeServicePrepareBackupProcedure = "/wavespan.v1.BackupNodeService/PrepareBackup"
+	// BackupNodeServiceExportBackupProcedure is the fully-qualified name of the BackupNodeService's
 	// ExportBackup RPC.
-	BackupServiceExportBackupProcedure = "/wavespan.v1.BackupService/ExportBackup"
+	BackupNodeServiceExportBackupProcedure = "/wavespan.v1.BackupNodeService/ExportBackup"
 )
 
 // BackupServiceClient is a client for the wavespan.v1.BackupService service.
@@ -62,12 +64,8 @@ type BackupServiceClient interface {
 	BackupStatus(context.Context, *connect.Request[v1.BackupStatusRequest]) (*connect.Response[v1.BackupState], error)
 	// ListBackups lists known backups from the meta-shard catalog.
 	ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResult], error)
-	// DeleteBackup removes a backup's catalog intent (object GC is Phase 3d).
+	// DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
 	DeleteBackup(context.Context, *connect.Request[v1.DeleteBackupRequest]) (*connect.Response[v1.DeleteBackupResult], error)
-	// PrepareBackup (node-internal) seals the node's view at the frontier and reports held ranges.
-	PrepareBackup(context.Context, *connect.Request[v1.PrepareBackupRequest]) (*connect.Response[v1.PrepareBackupResult], error)
-	// ExportBackup (node-internal) exports this node's assignment to the object store.
-	ExportBackup(context.Context, *connect.Request[v1.ExportBackupRequest]) (*connect.Response[v1.ExportBackupResult], error)
 }
 
 // NewBackupServiceClient constructs a client for the wavespan.v1.BackupService service. By default,
@@ -105,29 +103,15 @@ func NewBackupServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(backupServiceMethods.ByName("DeleteBackup")),
 			connect.WithClientOptions(opts...),
 		),
-		prepareBackup: connect.NewClient[v1.PrepareBackupRequest, v1.PrepareBackupResult](
-			httpClient,
-			baseURL+BackupServicePrepareBackupProcedure,
-			connect.WithSchema(backupServiceMethods.ByName("PrepareBackup")),
-			connect.WithClientOptions(opts...),
-		),
-		exportBackup: connect.NewClient[v1.ExportBackupRequest, v1.ExportBackupResult](
-			httpClient,
-			baseURL+BackupServiceExportBackupProcedure,
-			connect.WithSchema(backupServiceMethods.ByName("ExportBackup")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // backupServiceClient implements BackupServiceClient.
 type backupServiceClient struct {
-	beginBackup   *connect.Client[v1.BeginBackupRequest, v1.BeginBackupResult]
-	backupStatus  *connect.Client[v1.BackupStatusRequest, v1.BackupState]
-	listBackups   *connect.Client[v1.ListBackupsRequest, v1.ListBackupsResult]
-	deleteBackup  *connect.Client[v1.DeleteBackupRequest, v1.DeleteBackupResult]
-	prepareBackup *connect.Client[v1.PrepareBackupRequest, v1.PrepareBackupResult]
-	exportBackup  *connect.Client[v1.ExportBackupRequest, v1.ExportBackupResult]
+	beginBackup  *connect.Client[v1.BeginBackupRequest, v1.BeginBackupResult]
+	backupStatus *connect.Client[v1.BackupStatusRequest, v1.BackupState]
+	listBackups  *connect.Client[v1.ListBackupsRequest, v1.ListBackupsResult]
+	deleteBackup *connect.Client[v1.DeleteBackupRequest, v1.DeleteBackupResult]
 }
 
 // BeginBackup calls wavespan.v1.BackupService.BeginBackup.
@@ -150,16 +134,6 @@ func (c *backupServiceClient) DeleteBackup(ctx context.Context, req *connect.Req
 	return c.deleteBackup.CallUnary(ctx, req)
 }
 
-// PrepareBackup calls wavespan.v1.BackupService.PrepareBackup.
-func (c *backupServiceClient) PrepareBackup(ctx context.Context, req *connect.Request[v1.PrepareBackupRequest]) (*connect.Response[v1.PrepareBackupResult], error) {
-	return c.prepareBackup.CallUnary(ctx, req)
-}
-
-// ExportBackup calls wavespan.v1.BackupService.ExportBackup.
-func (c *backupServiceClient) ExportBackup(ctx context.Context, req *connect.Request[v1.ExportBackupRequest]) (*connect.Response[v1.ExportBackupResult], error) {
-	return c.exportBackup.CallUnary(ctx, req)
-}
-
 // BackupServiceHandler is an implementation of the wavespan.v1.BackupService service.
 type BackupServiceHandler interface {
 	// BeginBackup records a durable BackupIntent, picks a cluster HLC frontier, and drives the
@@ -169,12 +143,8 @@ type BackupServiceHandler interface {
 	BackupStatus(context.Context, *connect.Request[v1.BackupStatusRequest]) (*connect.Response[v1.BackupState], error)
 	// ListBackups lists known backups from the meta-shard catalog.
 	ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResult], error)
-	// DeleteBackup removes a backup's catalog intent (object GC is Phase 3d).
+	// DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
 	DeleteBackup(context.Context, *connect.Request[v1.DeleteBackupRequest]) (*connect.Response[v1.DeleteBackupResult], error)
-	// PrepareBackup (node-internal) seals the node's view at the frontier and reports held ranges.
-	PrepareBackup(context.Context, *connect.Request[v1.PrepareBackupRequest]) (*connect.Response[v1.PrepareBackupResult], error)
-	// ExportBackup (node-internal) exports this node's assignment to the object store.
-	ExportBackup(context.Context, *connect.Request[v1.ExportBackupRequest]) (*connect.Response[v1.ExportBackupResult], error)
 }
 
 // NewBackupServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -208,18 +178,6 @@ func NewBackupServiceHandler(svc BackupServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(backupServiceMethods.ByName("DeleteBackup")),
 		connect.WithHandlerOptions(opts...),
 	)
-	backupServicePrepareBackupHandler := connect.NewUnaryHandler(
-		BackupServicePrepareBackupProcedure,
-		svc.PrepareBackup,
-		connect.WithSchema(backupServiceMethods.ByName("PrepareBackup")),
-		connect.WithHandlerOptions(opts...),
-	)
-	backupServiceExportBackupHandler := connect.NewUnaryHandler(
-		BackupServiceExportBackupProcedure,
-		svc.ExportBackup,
-		connect.WithSchema(backupServiceMethods.ByName("ExportBackup")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/wavespan.v1.BackupService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case BackupServiceBeginBackupProcedure:
@@ -230,10 +188,6 @@ func NewBackupServiceHandler(svc BackupServiceHandler, opts ...connect.HandlerOp
 			backupServiceListBackupsHandler.ServeHTTP(w, r)
 		case BackupServiceDeleteBackupProcedure:
 			backupServiceDeleteBackupHandler.ServeHTTP(w, r)
-		case BackupServicePrepareBackupProcedure:
-			backupServicePrepareBackupHandler.ServeHTTP(w, r)
-		case BackupServiceExportBackupProcedure:
-			backupServiceExportBackupHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -259,10 +213,102 @@ func (UnimplementedBackupServiceHandler) DeleteBackup(context.Context, *connect.
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.BackupService.DeleteBackup is not implemented"))
 }
 
-func (UnimplementedBackupServiceHandler) PrepareBackup(context.Context, *connect.Request[v1.PrepareBackupRequest]) (*connect.Response[v1.PrepareBackupResult], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.BackupService.PrepareBackup is not implemented"))
+// BackupNodeServiceClient is a client for the wavespan.v1.BackupNodeService service.
+type BackupNodeServiceClient interface {
+	// PrepareBackup (node-internal) seals the node's view at the frontier and reports held ranges.
+	PrepareBackup(context.Context, *connect.Request[v1.PrepareBackupRequest]) (*connect.Response[v1.PrepareBackupResult], error)
+	// ExportBackup (node-internal) exports this node's assignment to the request-supplied object store.
+	ExportBackup(context.Context, *connect.Request[v1.ExportBackupRequest]) (*connect.Response[v1.ExportBackupResult], error)
 }
 
-func (UnimplementedBackupServiceHandler) ExportBackup(context.Context, *connect.Request[v1.ExportBackupRequest]) (*connect.Response[v1.ExportBackupResult], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.BackupService.ExportBackup is not implemented"))
+// NewBackupNodeServiceClient constructs a client for the wavespan.v1.BackupNodeService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewBackupNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) BackupNodeServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	backupNodeServiceMethods := v1.File_wavespan_v1_backup_proto.Services().ByName("BackupNodeService").Methods()
+	return &backupNodeServiceClient{
+		prepareBackup: connect.NewClient[v1.PrepareBackupRequest, v1.PrepareBackupResult](
+			httpClient,
+			baseURL+BackupNodeServicePrepareBackupProcedure,
+			connect.WithSchema(backupNodeServiceMethods.ByName("PrepareBackup")),
+			connect.WithClientOptions(opts...),
+		),
+		exportBackup: connect.NewClient[v1.ExportBackupRequest, v1.ExportBackupResult](
+			httpClient,
+			baseURL+BackupNodeServiceExportBackupProcedure,
+			connect.WithSchema(backupNodeServiceMethods.ByName("ExportBackup")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// backupNodeServiceClient implements BackupNodeServiceClient.
+type backupNodeServiceClient struct {
+	prepareBackup *connect.Client[v1.PrepareBackupRequest, v1.PrepareBackupResult]
+	exportBackup  *connect.Client[v1.ExportBackupRequest, v1.ExportBackupResult]
+}
+
+// PrepareBackup calls wavespan.v1.BackupNodeService.PrepareBackup.
+func (c *backupNodeServiceClient) PrepareBackup(ctx context.Context, req *connect.Request[v1.PrepareBackupRequest]) (*connect.Response[v1.PrepareBackupResult], error) {
+	return c.prepareBackup.CallUnary(ctx, req)
+}
+
+// ExportBackup calls wavespan.v1.BackupNodeService.ExportBackup.
+func (c *backupNodeServiceClient) ExportBackup(ctx context.Context, req *connect.Request[v1.ExportBackupRequest]) (*connect.Response[v1.ExportBackupResult], error) {
+	return c.exportBackup.CallUnary(ctx, req)
+}
+
+// BackupNodeServiceHandler is an implementation of the wavespan.v1.BackupNodeService service.
+type BackupNodeServiceHandler interface {
+	// PrepareBackup (node-internal) seals the node's view at the frontier and reports held ranges.
+	PrepareBackup(context.Context, *connect.Request[v1.PrepareBackupRequest]) (*connect.Response[v1.PrepareBackupResult], error)
+	// ExportBackup (node-internal) exports this node's assignment to the request-supplied object store.
+	ExportBackup(context.Context, *connect.Request[v1.ExportBackupRequest]) (*connect.Response[v1.ExportBackupResult], error)
+}
+
+// NewBackupNodeServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewBackupNodeServiceHandler(svc BackupNodeServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	backupNodeServiceMethods := v1.File_wavespan_v1_backup_proto.Services().ByName("BackupNodeService").Methods()
+	backupNodeServicePrepareBackupHandler := connect.NewUnaryHandler(
+		BackupNodeServicePrepareBackupProcedure,
+		svc.PrepareBackup,
+		connect.WithSchema(backupNodeServiceMethods.ByName("PrepareBackup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	backupNodeServiceExportBackupHandler := connect.NewUnaryHandler(
+		BackupNodeServiceExportBackupProcedure,
+		svc.ExportBackup,
+		connect.WithSchema(backupNodeServiceMethods.ByName("ExportBackup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/wavespan.v1.BackupNodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case BackupNodeServicePrepareBackupProcedure:
+			backupNodeServicePrepareBackupHandler.ServeHTTP(w, r)
+		case BackupNodeServiceExportBackupProcedure:
+			backupNodeServiceExportBackupHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedBackupNodeServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedBackupNodeServiceHandler struct{}
+
+func (UnimplementedBackupNodeServiceHandler) PrepareBackup(context.Context, *connect.Request[v1.PrepareBackupRequest]) (*connect.Response[v1.PrepareBackupResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.BackupNodeService.PrepareBackup is not implemented"))
+}
+
+func (UnimplementedBackupNodeServiceHandler) ExportBackup(context.Context, *connect.Request[v1.ExportBackupRequest]) (*connect.Response[v1.ExportBackupResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.BackupNodeService.ExportBackup is not implemented"))
 }

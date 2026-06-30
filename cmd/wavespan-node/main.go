@@ -787,6 +787,8 @@ func run() error {
 		wavespanv1.RegisterCollectionServiceServer(grpcDataSrv, grpcsrv.NewCollections(collectionsSvc))
 		wavespanv1.RegisterBudgetServiceServer(grpcDataSrv, grpcsrv.NewBudget(collectionsSvc))
 		wavespanv1.RegisterBackupServiceServer(grpcDataSrv, grpcsrv.NewBackup(collectionsSvc))
+		// BackupNodeService: node-internal Prepare/Export, data port ONLY (never on the admin Connect mux).
+		wavespanv1.RegisterBackupNodeServiceServer(grpcDataSrv, grpcsrv.NewBackupNode(collectionsSvc))
 	}
 
 	// Gossip server on the gossip port.

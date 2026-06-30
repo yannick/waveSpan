@@ -21,7 +21,7 @@ type backupCoordinator interface {
 	BeginBackup(ctx context.Context, spec *wavespanv1.BackupSpec) (string, error)
 	BackupStatus(ctx context.Context, backupID string) (*wavespanv1.BackupState, error)
 	ListBackups(ctx context.Context) ([]*wavespanv1.BackupSummary, error)
-	DeleteBackup(ctx context.Context, backupID string) (bool, error)
+	DeleteBackup(ctx context.Context, backupID string, force bool) (bool, error)
 	PrepareLocal(ctx context.Context, req *wavespanv1.PrepareBackupRequest) (*wavespanv1.PrepareBackupResult, error)
 	ExportLocal(ctx context.Context, req *wavespanv1.ExportBackupRequest) (*wavespanv1.ExportBackupResult, error)
 }
@@ -96,7 +96,7 @@ func (s *Service) DeleteBackup(ctx context.Context, req *connect.Request[wavespa
 	if s.backup == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errBackupUnconfigured)
 	}
-	deleted, err := s.backup.DeleteBackup(ctx, req.Msg.GetBackupId())
+	deleted, err := s.backup.DeleteBackup(ctx, req.Msg.GetBackupId(), req.Msg.GetForce())
 	if err != nil {
 		return nil, backupErr(err)
 	}

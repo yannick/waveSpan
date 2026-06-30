@@ -28,8 +28,8 @@ func (AllExportAssigner) Assign(live []string) (map[string]Selector, []string) {
 	return m, nil
 }
 
-// grpcNodeClient is a NodeClient that calls a peer's BackupService over the gRPC data port.
-type grpcNodeClient struct{ c wavespanv1.BackupServiceClient }
+// grpcNodeClient is a NodeClient that calls a peer's BackupNodeService over the gRPC data port.
+type grpcNodeClient struct{ c wavespanv1.BackupNodeServiceClient }
 
 func (g grpcNodeClient) Prepare(ctx context.Context, backupID string, frontierT int64) (PrepareResult, error) {
 	res, err := g.c.PrepareBackup(ctx, &wavespanv1.PrepareBackupRequest{BackupId: backupID, FrontierT: frontierT})
@@ -79,7 +79,7 @@ func NewGRPCClientFactory(addrFor func(memberID string) (string, error)) ClientF
 		if err != nil {
 			return nil, err
 		}
-		c := grpcNodeClient{c: wavespanv1.NewBackupServiceClient(conn)}
+		c := grpcNodeClient{c: wavespanv1.NewBackupNodeServiceClient(conn)}
 		clients[memberID] = c
 		return c, nil
 	}

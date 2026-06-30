@@ -19,12 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	BackupService_BeginBackup_FullMethodName   = "/wavespan.v1.BackupService/BeginBackup"
-	BackupService_BackupStatus_FullMethodName  = "/wavespan.v1.BackupService/BackupStatus"
-	BackupService_ListBackups_FullMethodName   = "/wavespan.v1.BackupService/ListBackups"
-	BackupService_DeleteBackup_FullMethodName  = "/wavespan.v1.BackupService/DeleteBackup"
-	BackupService_PrepareBackup_FullMethodName = "/wavespan.v1.BackupService/PrepareBackup"
-	BackupService_ExportBackup_FullMethodName  = "/wavespan.v1.BackupService/ExportBackup"
+	BackupService_BeginBackup_FullMethodName  = "/wavespan.v1.BackupService/BeginBackup"
+	BackupService_BackupStatus_FullMethodName = "/wavespan.v1.BackupService/BackupStatus"
+	BackupService_ListBackups_FullMethodName  = "/wavespan.v1.BackupService/ListBackups"
+	BackupService_DeleteBackup_FullMethodName = "/wavespan.v1.BackupService/DeleteBackup"
 )
 
 // BackupServiceClient is the client API for BackupService service.
@@ -44,12 +42,8 @@ type BackupServiceClient interface {
 	BackupStatus(ctx context.Context, in *BackupStatusRequest, opts ...grpc.CallOption) (*BackupState, error)
 	// ListBackups lists known backups from the meta-shard catalog.
 	ListBackups(ctx context.Context, in *ListBackupsRequest, opts ...grpc.CallOption) (*ListBackupsResult, error)
-	// DeleteBackup removes a backup's catalog intent (object GC is Phase 3d).
+	// DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
 	DeleteBackup(ctx context.Context, in *DeleteBackupRequest, opts ...grpc.CallOption) (*DeleteBackupResult, error)
-	// PrepareBackup (node-internal) seals the node's view at the frontier and reports held ranges.
-	PrepareBackup(ctx context.Context, in *PrepareBackupRequest, opts ...grpc.CallOption) (*PrepareBackupResult, error)
-	// ExportBackup (node-internal) exports this node's assignment to the object store.
-	ExportBackup(ctx context.Context, in *ExportBackupRequest, opts ...grpc.CallOption) (*ExportBackupResult, error)
 }
 
 type backupServiceClient struct {
@@ -100,26 +94,6 @@ func (c *backupServiceClient) DeleteBackup(ctx context.Context, in *DeleteBackup
 	return out, nil
 }
 
-func (c *backupServiceClient) PrepareBackup(ctx context.Context, in *PrepareBackupRequest, opts ...grpc.CallOption) (*PrepareBackupResult, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PrepareBackupResult)
-	err := c.cc.Invoke(ctx, BackupService_PrepareBackup_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *backupServiceClient) ExportBackup(ctx context.Context, in *ExportBackupRequest, opts ...grpc.CallOption) (*ExportBackupResult, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ExportBackupResult)
-	err := c.cc.Invoke(ctx, BackupService_ExportBackup_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // BackupServiceServer is the server API for BackupService service.
 // All implementations must embed UnimplementedBackupServiceServer
 // for forward compatibility.
@@ -137,12 +111,8 @@ type BackupServiceServer interface {
 	BackupStatus(context.Context, *BackupStatusRequest) (*BackupState, error)
 	// ListBackups lists known backups from the meta-shard catalog.
 	ListBackups(context.Context, *ListBackupsRequest) (*ListBackupsResult, error)
-	// DeleteBackup removes a backup's catalog intent (object GC is Phase 3d).
+	// DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
 	DeleteBackup(context.Context, *DeleteBackupRequest) (*DeleteBackupResult, error)
-	// PrepareBackup (node-internal) seals the node's view at the frontier and reports held ranges.
-	PrepareBackup(context.Context, *PrepareBackupRequest) (*PrepareBackupResult, error)
-	// ExportBackup (node-internal) exports this node's assignment to the object store.
-	ExportBackup(context.Context, *ExportBackupRequest) (*ExportBackupResult, error)
 	mustEmbedUnimplementedBackupServiceServer()
 }
 
@@ -164,12 +134,6 @@ func (UnimplementedBackupServiceServer) ListBackups(context.Context, *ListBackup
 }
 func (UnimplementedBackupServiceServer) DeleteBackup(context.Context, *DeleteBackupRequest) (*DeleteBackupResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteBackup not implemented")
-}
-func (UnimplementedBackupServiceServer) PrepareBackup(context.Context, *PrepareBackupRequest) (*PrepareBackupResult, error) {
-	return nil, status.Error(codes.Unimplemented, "method PrepareBackup not implemented")
-}
-func (UnimplementedBackupServiceServer) ExportBackup(context.Context, *ExportBackupRequest) (*ExportBackupResult, error) {
-	return nil, status.Error(codes.Unimplemented, "method ExportBackup not implemented")
 }
 func (UnimplementedBackupServiceServer) mustEmbedUnimplementedBackupServiceServer() {}
 func (UnimplementedBackupServiceServer) testEmbeddedByValue()                       {}
@@ -264,42 +228,6 @@ func _BackupService_DeleteBackup_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
-func _BackupService_PrepareBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PrepareBackupRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(BackupServiceServer).PrepareBackup(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: BackupService_PrepareBackup_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BackupServiceServer).PrepareBackup(ctx, req.(*PrepareBackupRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _BackupService_ExportBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ExportBackupRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(BackupServiceServer).ExportBackup(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: BackupService_ExportBackup_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BackupServiceServer).ExportBackup(ctx, req.(*ExportBackupRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // BackupService_ServiceDesc is the grpc.ServiceDesc for BackupService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -323,13 +251,159 @@ var BackupService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "DeleteBackup",
 			Handler:    _BackupService_DeleteBackup_Handler,
 		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "wavespan/v1/backup.proto",
+}
+
+const (
+	BackupNodeService_PrepareBackup_FullMethodName = "/wavespan.v1.BackupNodeService/PrepareBackup"
+	BackupNodeService_ExportBackup_FullMethodName  = "/wavespan.v1.BackupNodeService/ExportBackup"
+)
+
+// BackupNodeServiceClient is the client API for BackupNodeService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// BackupNodeService carries the node-internal backup RPCs. It is registered on the gRPC DATA port only
+// (inter-node, mTLS) and is NOT mounted on the admin Connect surface — the coordinator fans these out to
+// each node; clients/operators never call them. Splitting them off BackupService keeps the node-internal
+// surface off the admin API (design/backup phase 3c Task 0).
+type BackupNodeServiceClient interface {
+	// PrepareBackup (node-internal) seals the node's view at the frontier and reports held ranges.
+	PrepareBackup(ctx context.Context, in *PrepareBackupRequest, opts ...grpc.CallOption) (*PrepareBackupResult, error)
+	// ExportBackup (node-internal) exports this node's assignment to the request-supplied object store.
+	ExportBackup(ctx context.Context, in *ExportBackupRequest, opts ...grpc.CallOption) (*ExportBackupResult, error)
+}
+
+type backupNodeServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewBackupNodeServiceClient(cc grpc.ClientConnInterface) BackupNodeServiceClient {
+	return &backupNodeServiceClient{cc}
+}
+
+func (c *backupNodeServiceClient) PrepareBackup(ctx context.Context, in *PrepareBackupRequest, opts ...grpc.CallOption) (*PrepareBackupResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PrepareBackupResult)
+	err := c.cc.Invoke(ctx, BackupNodeService_PrepareBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *backupNodeServiceClient) ExportBackup(ctx context.Context, in *ExportBackupRequest, opts ...grpc.CallOption) (*ExportBackupResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExportBackupResult)
+	err := c.cc.Invoke(ctx, BackupNodeService_ExportBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// BackupNodeServiceServer is the server API for BackupNodeService service.
+// All implementations must embed UnimplementedBackupNodeServiceServer
+// for forward compatibility.
+//
+// BackupNodeService carries the node-internal backup RPCs. It is registered on the gRPC DATA port only
+// (inter-node, mTLS) and is NOT mounted on the admin Connect surface — the coordinator fans these out to
+// each node; clients/operators never call them. Splitting them off BackupService keeps the node-internal
+// surface off the admin API (design/backup phase 3c Task 0).
+type BackupNodeServiceServer interface {
+	// PrepareBackup (node-internal) seals the node's view at the frontier and reports held ranges.
+	PrepareBackup(context.Context, *PrepareBackupRequest) (*PrepareBackupResult, error)
+	// ExportBackup (node-internal) exports this node's assignment to the request-supplied object store.
+	ExportBackup(context.Context, *ExportBackupRequest) (*ExportBackupResult, error)
+	mustEmbedUnimplementedBackupNodeServiceServer()
+}
+
+// UnimplementedBackupNodeServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedBackupNodeServiceServer struct{}
+
+func (UnimplementedBackupNodeServiceServer) PrepareBackup(context.Context, *PrepareBackupRequest) (*PrepareBackupResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method PrepareBackup not implemented")
+}
+func (UnimplementedBackupNodeServiceServer) ExportBackup(context.Context, *ExportBackupRequest) (*ExportBackupResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExportBackup not implemented")
+}
+func (UnimplementedBackupNodeServiceServer) mustEmbedUnimplementedBackupNodeServiceServer() {}
+func (UnimplementedBackupNodeServiceServer) testEmbeddedByValue()                           {}
+
+// UnsafeBackupNodeServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to BackupNodeServiceServer will
+// result in compilation errors.
+type UnsafeBackupNodeServiceServer interface {
+	mustEmbedUnimplementedBackupNodeServiceServer()
+}
+
+func RegisterBackupNodeServiceServer(s grpc.ServiceRegistrar, srv BackupNodeServiceServer) {
+	// If the following call panics, it indicates UnimplementedBackupNodeServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&BackupNodeService_ServiceDesc, srv)
+}
+
+func _BackupNodeService_PrepareBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BackupNodeServiceServer).PrepareBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BackupNodeService_PrepareBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BackupNodeServiceServer).PrepareBackup(ctx, req.(*PrepareBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BackupNodeService_ExportBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BackupNodeServiceServer).ExportBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BackupNodeService_ExportBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BackupNodeServiceServer).ExportBackup(ctx, req.(*ExportBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// BackupNodeService_ServiceDesc is the grpc.ServiceDesc for BackupNodeService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var BackupNodeService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "wavespan.v1.BackupNodeService",
+	HandlerType: (*BackupNodeServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "PrepareBackup",
-			Handler:    _BackupService_PrepareBackup_Handler,
+			Handler:    _BackupNodeService_PrepareBackup_Handler,
 		},
 		{
 			MethodName: "ExportBackup",
-			Handler:    _BackupService_ExportBackup_Handler,
+			Handler:    _BackupNodeService_ExportBackup_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -532,22 +532,35 @@ func (c *Coordinator) ListBackups(ctx context.Context) ([]*wavespanv1.BackupSumm
 }
 
 // DeleteBackup removes a backup's catalog intent AND its object-store objects, chain-aware (Phase 3d):
-// it refuses to delete a backup that a live incremental child still depends on. It reports deleted=false
-// for an unknown id rather than silently claiming success.
+// it refuses to delete a backup that a live incremental child still depends on unless force cascades the
+// children. It reports deleted=false for an unknown id rather than silently claiming success. The object
+// store is re-resolved from the backup's persisted destination descriptor (Phase 3c Task 0), so an
+// alt-destination backup is deleted in its OWN bucket.
 //
-// NOTE (force over RPC): force-cascade is not reachable over the Connect/gRPC surface — DeleteBackupRequest
-// has no `force` field — so the RPC always calls force=false. gc.DeleteBackup implements the full
-// force-cascade and is covered by tests; exposing it over the wire needs a proto `force` field (tracked
-// with the other cross-node proto gaps).
-//
-// NOTE (alt-destination GC gap, 3e): this deletes objects from the node's DEFAULT store (c.objStore). A
-// backup written to a non-default destination (named/explicit) has its objects in the alt bucket, which
-// this does NOT touch — the intent is removed but the alt objects are left orphaned. Deleting them needs
-// the per-descriptor store (storeForDescriptor re-resolves named/default cleanly; inline-cred backups
-// can't be GC'd since their creds were never persisted). That re-resolution lands in 3c Task 0. Until
-// then alt-destination backups are single-node only (see the BeginBackup guard).
-func (c *Coordinator) DeleteBackup(ctx context.Context, backupID string) (bool, error) {
-	return DeleteBackup(ctx, c.meta, c.objStore, backupID, false)
+// LIMITATION: an inline-credential destination cannot be re-resolved (its creds were never persisted), so
+// its alt-bucket objects are not deletable here — deletion falls back to the default store (a no-op for
+// those objects); the intent is still removed. Named/default/secret-ref destinations re-resolve cleanly.
+func (c *Coordinator) DeleteBackup(ctx context.Context, backupID string, force bool) (bool, error) {
+	store, err := c.gcStoreFor(ctx, backupID)
+	if err != nil {
+		return false, err
+	}
+	return DeleteBackup(ctx, c.meta, store, backupID, force)
+}
+
+// gcStoreFor returns the object store holding a backup's objects, re-resolved from its persisted
+// destination descriptor (Phase 3c Task 0). An unknown backup or an inline-credential destination falls
+// back to the default store (the caller treats a missing backup as deleted=false; inline-cred alt objects
+// are not GC-able — documented at DeleteBackup).
+func (c *Coordinator) gcStoreFor(ctx context.Context, backupID string) (ObjectStore, error) {
+	in, found, err := GetIntent(ctx, c.meta, backupID)
+	if err != nil {
+		return nil, err
+	}
+	if !found || in.Destination.SecretName == "inline" {
+		return c.objStore, nil
+	}
+	return c.storeForDescriptor(in.Destination)
 }
 
 // RunSweep runs the leader-gated lifecycle sweep loop until ctx is done (Phase 3d). On each tick, when

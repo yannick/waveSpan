@@ -17,12 +17,18 @@ service BackupService {
   rpc BackupStatus(BackupStatusRequest) returns (BackupState);
   // ListBackups lists known backups from the meta-shard catalog.
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResult);
-  // DeleteBackup removes a backup's catalog intent (object GC is Phase 3d).
+  // DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
   rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResult);
+}
 
+// BackupNodeService carries the node-internal backup RPCs. It is registered on the gRPC DATA port only
+// (inter-node, mTLS) and is NOT mounted on the admin Connect surface — the coordinator fans these out to
+// each node; clients/operators never call them. Splitting them off BackupService keeps the node-internal
+// surface off the admin API (design/backup phase 3c Task 0).
+service BackupNodeService {
   // PrepareBackup (node-internal) seals the node's view at the frontier and reports held ranges.
   rpc PrepareBackup(PrepareBackupRequest) returns (PrepareBackupResult);
-  // ExportBackup (node-internal) exports this node's assignment to the object store.
+  // ExportBackup (node-internal) exports this node's assignment to the request-supplied object store.
   rpc ExportBackup(ExportBackupRequest) returns (ExportBackupResult);
 }
 
@@ -51,10 +57,15 @@ enum BackupPlane {
   BACKUP_PLANE_PHYSICAL = 2;
 }
 
-// CredentialRef references a credential held outside the request (e.g. a k8s secret name). Raw
-// secrets are NEVER carried in proto messages or persisted in the catalog.
+// CredentialRef references a credential held outside the request (e.g. a k8s secret name / env ref),
+// resolved server-side. A secret REFERENCE is never persisted beyond the descriptor. The inline
+// access_key/secret_key are an explicit-override escape hatch: they travel ONLY over the authenticated
+// mTLS data port for a single run and are NEVER persisted (the intent/manifest store the descriptor +
+// the reference, never the raw secret) or logged.
 message CredentialRef {
   string secret_name = 1;
+  string access_key = 2;
+  string secret_key = 3;
 }
 
 // Destination describes an object-store target. An empty destination uses the node's configured
@@ -138,6 +149,7 @@ message ListBackupsResult {
 
 message DeleteBackupRequest {
   string backup_id = 1;
+  bool force = 2; // cascade-delete dependent incremental children (else a live child refuses the delete)
 }
 message DeleteBackupResult {
   bool deleted = 1;
@@ -162,10 +174,18 @@ message ExportBackupRequest {
   Selection assignment = 3;
   repeated BackupPlane planes = 4;
   string key_prefix = 5;
+  // parent_backup_id, when set, makes the physical plane an incremental: the node resolves its OWN parent
+  // CheckpointManifest (from the parent backup's per-node physical sub-manifest for this member) and diffs.
+  string parent_backup_id = 6;
+  // destination, when set, is the object store this node exports to (alt destination); the node resolves
+  // it (named/default from its env, secret-ref from its env, inline creds from this request). Empty = the
+  // node's configured default destination.
+  Destination destination = 7;
 }
 message ExportBackupResult {
   int64 objects = 1;
   int64 bytes = 2;
   string sub_manifest_key = 3;
   ResponseMeta meta = 4;
+  string storage_uuid = 5; // the node's stable storage identity (for 3c physical restore topology)
 }

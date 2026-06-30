@@ -183,11 +183,16 @@ func (BackupPlane) EnumDescriptor() ([]byte, []int) {
 	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{2}
 }
 
-// CredentialRef references a credential held outside the request (e.g. a k8s secret name). Raw
-// secrets are NEVER carried in proto messages or persisted in the catalog.
+// CredentialRef references a credential held outside the request (e.g. a k8s secret name / env ref),
+// resolved server-side. A secret REFERENCE is never persisted beyond the descriptor. The inline
+// access_key/secret_key are an explicit-override escape hatch: they travel ONLY over the authenticated
+// mTLS data port for a single run and are NEVER persisted (the intent/manifest store the descriptor +
+// the reference, never the raw secret) or logged.
 type CredentialRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SecretName    string                 `protobuf:"bytes,1,opt,name=secret_name,json=secretName,proto3" json:"secret_name,omitempty"`
+	AccessKey     string                 `protobuf:"bytes,2,opt,name=access_key,json=accessKey,proto3" json:"access_key,omitempty"`
+	SecretKey     string                 `protobuf:"bytes,3,opt,name=secret_key,json=secretKey,proto3" json:"secret_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -225,6 +230,20 @@ func (*CredentialRef) Descriptor() ([]byte, []int) {
 func (x *CredentialRef) GetSecretName() string {
 	if x != nil {
 		return x.SecretName
+	}
+	return ""
+}
+
+func (x *CredentialRef) GetAccessKey() string {
+	if x != nil {
+		return x.AccessKey
+	}
+	return ""
+}
+
+func (x *CredentialRef) GetSecretKey() string {
+	if x != nil {
+		return x.SecretKey
 	}
 	return ""
 }
@@ -971,6 +990,7 @@ func (x *ListBackupsResult) GetMeta() *ResponseMeta {
 type DeleteBackupRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BackupId      string                 `protobuf:"bytes,1,opt,name=backup_id,json=backupId,proto3" json:"backup_id,omitempty"`
+	Force         bool                   `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"` // cascade-delete dependent incremental children (else a live child refuses the delete)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1010,6 +1030,13 @@ func (x *DeleteBackupRequest) GetBackupId() string {
 		return x.BackupId
 	}
 	return ""
+}
+
+func (x *DeleteBackupRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
 }
 
 type DeleteBackupResult struct {
@@ -1179,12 +1206,19 @@ func (x *PrepareBackupResult) GetMeta() *ResponseMeta {
 
 // ExportBackupRequest asks a node to export its assignment under key_prefix.
 type ExportBackupRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	BackupId      string                 `protobuf:"bytes,1,opt,name=backup_id,json=backupId,proto3" json:"backup_id,omitempty"`
-	FrontierT     int64                  `protobuf:"varint,2,opt,name=frontier_t,json=frontierT,proto3" json:"frontier_t,omitempty"`
-	Assignment    *Selection             `protobuf:"bytes,3,opt,name=assignment,proto3" json:"assignment,omitempty"`
-	Planes        []BackupPlane          `protobuf:"varint,4,rep,packed,name=planes,proto3,enum=wavespan.v1.BackupPlane" json:"planes,omitempty"`
-	KeyPrefix     string                 `protobuf:"bytes,5,opt,name=key_prefix,json=keyPrefix,proto3" json:"key_prefix,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	BackupId   string                 `protobuf:"bytes,1,opt,name=backup_id,json=backupId,proto3" json:"backup_id,omitempty"`
+	FrontierT  int64                  `protobuf:"varint,2,opt,name=frontier_t,json=frontierT,proto3" json:"frontier_t,omitempty"`
+	Assignment *Selection             `protobuf:"bytes,3,opt,name=assignment,proto3" json:"assignment,omitempty"`
+	Planes     []BackupPlane          `protobuf:"varint,4,rep,packed,name=planes,proto3,enum=wavespan.v1.BackupPlane" json:"planes,omitempty"`
+	KeyPrefix  string                 `protobuf:"bytes,5,opt,name=key_prefix,json=keyPrefix,proto3" json:"key_prefix,omitempty"`
+	// parent_backup_id, when set, makes the physical plane an incremental: the node resolves its OWN parent
+	// CheckpointManifest (from the parent backup's per-node physical sub-manifest for this member) and diffs.
+	ParentBackupId string `protobuf:"bytes,6,opt,name=parent_backup_id,json=parentBackupId,proto3" json:"parent_backup_id,omitempty"`
+	// destination, when set, is the object store this node exports to (alt destination); the node resolves
+	// it (named/default from its env, secret-ref from its env, inline creds from this request). Empty = the
+	// node's configured default destination.
+	Destination   *Destination `protobuf:"bytes,7,opt,name=destination,proto3" json:"destination,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1254,12 +1288,27 @@ func (x *ExportBackupRequest) GetKeyPrefix() string {
 	return ""
 }
 
+func (x *ExportBackupRequest) GetParentBackupId() string {
+	if x != nil {
+		return x.ParentBackupId
+	}
+	return ""
+}
+
+func (x *ExportBackupRequest) GetDestination() *Destination {
+	if x != nil {
+		return x.Destination
+	}
+	return nil
+}
+
 type ExportBackupResult struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Objects        int64                  `protobuf:"varint,1,opt,name=objects,proto3" json:"objects,omitempty"`
 	Bytes          int64                  `protobuf:"varint,2,opt,name=bytes,proto3" json:"bytes,omitempty"`
 	SubManifestKey string                 `protobuf:"bytes,3,opt,name=sub_manifest_key,json=subManifestKey,proto3" json:"sub_manifest_key,omitempty"`
 	Meta           *ResponseMeta          `protobuf:"bytes,4,opt,name=meta,proto3" json:"meta,omitempty"`
+	StorageUuid    string                 `protobuf:"bytes,5,opt,name=storage_uuid,json=storageUuid,proto3" json:"storage_uuid,omitempty"` // the node's stable storage identity (for 3c physical restore topology)
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1322,14 +1371,25 @@ func (x *ExportBackupResult) GetMeta() *ResponseMeta {
 	return nil
 }
 
+func (x *ExportBackupResult) GetStorageUuid() string {
+	if x != nil {
+		return x.StorageUuid
+	}
+	return ""
+}
+
 var File_wavespan_v1_backup_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_backup_proto_rawDesc = "" +
 	"\n" +
-	"\x18wavespan/v1/backup.proto\x12\vwavespan.v1\x1a\x18wavespan/v1/common.proto\"0\n" +
+	"\x18wavespan/v1/backup.proto\x12\vwavespan.v1\x1a\x18wavespan/v1/common.proto\"n\n" +
 	"\rCredentialRef\x12\x1f\n" +
 	"\vsecret_name\x18\x01 \x01(\tR\n" +
-	"secretName\"\x80\x02\n" +
+	"secretName\x12\x1d\n" +
+	"\n" +
+	"access_key\x18\x02 \x01(\tR\taccessKey\x12\x1d\n" +
+	"\n" +
+	"secret_key\x18\x03 \x01(\tR\tsecretKey\"\x80\x02\n" +
 	"\vDestination\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06bucket\x18\x02 \x01(\tR\x06bucket\x12\x16\n" +
@@ -1393,9 +1453,10 @@ const file_wavespan_v1_backup_proto_rawDesc = "" +
 	"\x12ListBackupsRequest\"x\n" +
 	"\x11ListBackupsResult\x124\n" +
 	"\abackups\x18\x01 \x03(\v2\x1a.wavespan.v1.BackupSummaryR\abackups\x12-\n" +
-	"\x04meta\x18\x02 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"2\n" +
+	"\x04meta\x18\x02 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"H\n" +
 	"\x13DeleteBackupRequest\x12\x1b\n" +
-	"\tbackup_id\x18\x01 \x01(\tR\bbackupId\"]\n" +
+	"\tbackup_id\x18\x01 \x01(\tR\bbackupId\x12\x14\n" +
+	"\x05force\x18\x02 \x01(\bR\x05force\"]\n" +
 	"\x12DeleteBackupResult\x12\x18\n" +
 	"\adeleted\x18\x01 \x01(\bR\adeleted\x12-\n" +
 	"\x04meta\x18\x02 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"R\n" +
@@ -1408,7 +1469,7 @@ const file_wavespan_v1_backup_proto_rawDesc = "" +
 	"global_seq\x18\x01 \x01(\x04R\tglobalSeq\x12\x1f\n" +
 	"\vheld_ranges\x18\x02 \x03(\tR\n" +
 	"heldRanges\x12-\n" +
-	"\x04meta\x18\x03 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"\xda\x01\n" +
+	"\x04meta\x18\x03 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"\xc0\x02\n" +
 	"\x13ExportBackupRequest\x12\x1b\n" +
 	"\tbackup_id\x18\x01 \x01(\tR\bbackupId\x12\x1d\n" +
 	"\n" +
@@ -1418,12 +1479,15 @@ const file_wavespan_v1_backup_proto_rawDesc = "" +
 	"assignment\x120\n" +
 	"\x06planes\x18\x04 \x03(\x0e2\x18.wavespan.v1.BackupPlaneR\x06planes\x12\x1d\n" +
 	"\n" +
-	"key_prefix\x18\x05 \x01(\tR\tkeyPrefix\"\x9d\x01\n" +
+	"key_prefix\x18\x05 \x01(\tR\tkeyPrefix\x12(\n" +
+	"\x10parent_backup_id\x18\x06 \x01(\tR\x0eparentBackupId\x12:\n" +
+	"\vdestination\x18\a \x01(\v2\x18.wavespan.v1.DestinationR\vdestination\"\xc0\x01\n" +
 	"\x12ExportBackupResult\x12\x18\n" +
 	"\aobjects\x18\x01 \x01(\x03R\aobjects\x12\x14\n" +
 	"\x05bytes\x18\x02 \x01(\x03R\x05bytes\x12(\n" +
 	"\x10sub_manifest_key\x18\x03 \x01(\tR\x0esubManifestKey\x12-\n" +
-	"\x04meta\x18\x04 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta*}\n" +
+	"\x04meta\x18\x04 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\x12!\n" +
+	"\fstorage_uuid\x18\x05 \x01(\tR\vstorageUuid*}\n" +
 	"\fBackupStatus\x12\x1d\n" +
 	"\x19BACKUP_STATUS_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eBACKUP_RUNNING\x10\x01\x12\x13\n" +
@@ -1439,12 +1503,13 @@ const file_wavespan_v1_backup_proto_rawDesc = "" +
 	"\vBackupPlane\x12\x1c\n" +
 	"\x18BACKUP_PLANE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14BACKUP_PLANE_LOGICAL\x10\x01\x12\x19\n" +
-	"\x15BACKUP_PLANE_PHYSICAL\x10\x022\xf7\x03\n" +
+	"\x15BACKUP_PLANE_PHYSICAL\x10\x022\xce\x02\n" +
 	"\rBackupService\x12N\n" +
 	"\vBeginBackup\x12\x1f.wavespan.v1.BeginBackupRequest\x1a\x1e.wavespan.v1.BeginBackupResult\x12J\n" +
 	"\fBackupStatus\x12 .wavespan.v1.BackupStatusRequest\x1a\x18.wavespan.v1.BackupState\x12N\n" +
 	"\vListBackups\x12\x1f.wavespan.v1.ListBackupsRequest\x1a\x1e.wavespan.v1.ListBackupsResult\x12Q\n" +
-	"\fDeleteBackup\x12 .wavespan.v1.DeleteBackupRequest\x1a\x1f.wavespan.v1.DeleteBackupResult\x12T\n" +
+	"\fDeleteBackup\x12 .wavespan.v1.DeleteBackupRequest\x1a\x1f.wavespan.v1.DeleteBackupResult2\xbc\x01\n" +
+	"\x11BackupNodeService\x12T\n" +
 	"\rPrepareBackup\x12!.wavespan.v1.PrepareBackupRequest\x1a .wavespan.v1.PrepareBackupResult\x12Q\n" +
 	"\fExportBackup\x12 .wavespan.v1.ExportBackupRequest\x1a\x1f.wavespan.v1.ExportBackupResultB\xa5\x01\n" +
 	"\x0fcom.wavespan.v1B\vBackupProtoP\x01Z8github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
@@ -1507,24 +1572,25 @@ var file_wavespan_v1_backup_proto_depIdxs = []int32{
 	21, // 16: wavespan.v1.PrepareBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
 	5,  // 17: wavespan.v1.ExportBackupRequest.assignment:type_name -> wavespan.v1.Selection
 	2,  // 18: wavespan.v1.ExportBackupRequest.planes:type_name -> wavespan.v1.BackupPlane
-	21, // 19: wavespan.v1.ExportBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
-	10, // 20: wavespan.v1.BackupService.BeginBackup:input_type -> wavespan.v1.BeginBackupRequest
-	12, // 21: wavespan.v1.BackupService.BackupStatus:input_type -> wavespan.v1.BackupStatusRequest
-	13, // 22: wavespan.v1.BackupService.ListBackups:input_type -> wavespan.v1.ListBackupsRequest
-	15, // 23: wavespan.v1.BackupService.DeleteBackup:input_type -> wavespan.v1.DeleteBackupRequest
-	17, // 24: wavespan.v1.BackupService.PrepareBackup:input_type -> wavespan.v1.PrepareBackupRequest
-	19, // 25: wavespan.v1.BackupService.ExportBackup:input_type -> wavespan.v1.ExportBackupRequest
-	11, // 26: wavespan.v1.BackupService.BeginBackup:output_type -> wavespan.v1.BeginBackupResult
-	8,  // 27: wavespan.v1.BackupService.BackupStatus:output_type -> wavespan.v1.BackupState
-	14, // 28: wavespan.v1.BackupService.ListBackups:output_type -> wavespan.v1.ListBackupsResult
-	16, // 29: wavespan.v1.BackupService.DeleteBackup:output_type -> wavespan.v1.DeleteBackupResult
-	18, // 30: wavespan.v1.BackupService.PrepareBackup:output_type -> wavespan.v1.PrepareBackupResult
-	20, // 31: wavespan.v1.BackupService.ExportBackup:output_type -> wavespan.v1.ExportBackupResult
-	26, // [26:32] is the sub-list for method output_type
-	20, // [20:26] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	4,  // 19: wavespan.v1.ExportBackupRequest.destination:type_name -> wavespan.v1.Destination
+	21, // 20: wavespan.v1.ExportBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
+	10, // 21: wavespan.v1.BackupService.BeginBackup:input_type -> wavespan.v1.BeginBackupRequest
+	12, // 22: wavespan.v1.BackupService.BackupStatus:input_type -> wavespan.v1.BackupStatusRequest
+	13, // 23: wavespan.v1.BackupService.ListBackups:input_type -> wavespan.v1.ListBackupsRequest
+	15, // 24: wavespan.v1.BackupService.DeleteBackup:input_type -> wavespan.v1.DeleteBackupRequest
+	17, // 25: wavespan.v1.BackupNodeService.PrepareBackup:input_type -> wavespan.v1.PrepareBackupRequest
+	19, // 26: wavespan.v1.BackupNodeService.ExportBackup:input_type -> wavespan.v1.ExportBackupRequest
+	11, // 27: wavespan.v1.BackupService.BeginBackup:output_type -> wavespan.v1.BeginBackupResult
+	8,  // 28: wavespan.v1.BackupService.BackupStatus:output_type -> wavespan.v1.BackupState
+	14, // 29: wavespan.v1.BackupService.ListBackups:output_type -> wavespan.v1.ListBackupsResult
+	16, // 30: wavespan.v1.BackupService.DeleteBackup:output_type -> wavespan.v1.DeleteBackupResult
+	18, // 31: wavespan.v1.BackupNodeService.PrepareBackup:output_type -> wavespan.v1.PrepareBackupResult
+	20, // 32: wavespan.v1.BackupNodeService.ExportBackup:output_type -> wavespan.v1.ExportBackupResult
+	27, // [27:33] is the sub-list for method output_type
+	21, // [21:27] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_backup_proto_init() }
@@ -1541,7 +1607,7 @@ func file_wavespan_v1_backup_proto_init() {
 			NumEnums:      3,
 			NumMessages:   18,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_wavespan_v1_backup_proto_goTypes,
 		DependencyIndexes: file_wavespan_v1_backup_proto_depIdxs,
