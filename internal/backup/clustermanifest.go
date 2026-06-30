@@ -16,12 +16,16 @@ type TopologyEntry struct {
 	StorageUUID string `json:"storage_uuid,omitempty"`
 }
 
-// PerNodeRef points the cluster manifest at one node's sub-manifest and records its export counts.
+// PerNodeRef points the cluster manifest at one node's sub-manifest(s) and records its export counts.
+// PhysicalManifest/PhysicalGlobalSeq are set when the physical plane ran (3b) — restore and incremental
+// chaining read them to find each node's checkpoint and parent watermark.
 type PerNodeRef struct {
-	MemberID string `json:"member_id"`
-	Ref      string `json:"ref"` // object key of the node's node.manifest.json
-	Objects  int64  `json:"objects"`
-	Bytes    int64  `json:"bytes"`
+	MemberID          string `json:"member_id"`
+	Ref               string `json:"ref"` // object key of the node's node.manifest.json (logical)
+	Objects           int64  `json:"objects"`
+	Bytes             int64  `json:"bytes"`
+	PhysicalManifest  string `json:"physical_manifest,omitempty"` // object key of the node's physical.manifest.json
+	PhysicalGlobalSeq uint64 `json:"physical_global_seq,omitempty"`
 }
 
 // ClusterManifest is the authoritative top-level record of a cluster backup: the chosen frontier, the

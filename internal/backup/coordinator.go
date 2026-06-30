@@ -149,6 +149,11 @@ func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSp
 	if len(in.Planes) == 0 {
 		in.Planes = []Plane{PlaneLogical}
 	}
+	if in.Parent != "" {
+		if err := c.validateParent(in.Planes, in.Parent); err != nil {
+			return "", err
+		}
+	}
 	if err := c.persist(ctx, in); err != nil {
 		return "", err
 	}
@@ -228,27 +233,86 @@ func (c *Coordinator) exportAll(ctx context.Context, in *BackupIntent) error {
 		if err != nil {
 			return err
 		}
+		// Incremental: resolve this node's parent checkpoint from the parent backup. A node absent from the
+		// parent (new since then) resolves to nil → a full physical export of its assignment (safe).
+		parentCkpt, err := c.parentCheckpointFor(in.Parent, mid)
+		if err != nil {
+			return err
+		}
 		res, err := cl.Export(ctx, ExportRequest{
 			BackupID:   in.BackupID,
 			MemberID:   mid,
 			Assignment: in.Assignments[mid],
 			Planes:     in.Planes,
 			FrontierT:  in.FrontierT,
+			ParentCkpt: parentCkpt,
 		})
 		if err != nil {
 			return err
 		}
 		upsertNode(in, NodeRecord{
-			MemberID:       mid,
-			Phase:          PhaseExport,
-			Objects:        res.Objects,
-			Bytes:          res.Bytes,
-			SubManifestKey: res.SubManifestKey,
-			StorageUUID:    res.StorageUUID,
-			Done:           true,
+			MemberID:            mid,
+			Phase:               PhaseExport,
+			Objects:             res.Objects,
+			Bytes:               res.Bytes,
+			SubManifestKey:      res.SubManifestKey,
+			StorageUUID:         res.StorageUUID,
+			PhysicalManifestKey: res.PhysicalManifestKey,
+			PhysicalGlobalSeq:   res.PhysicalGlobalSeq,
+			Done:                true,
 		})
 	}
 	return nil
+}
+
+// validateParent rejects an incremental whose parent cannot anchor it: incrementals are physical-only
+// (logical is full-only), and the parent backup must itself carry a physical plane. Both are clear,
+// up-front errors rather than a silently-degraded backup.
+func (c *Coordinator) validateParent(planes []Plane, parentID string) error {
+	if !hasPlane(planes, PlanePhysical) {
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("backup: incremental from parent %q requires the physical plane; logical backups are full-only", parentID))
+	}
+	parent, err := ReadClusterManifest(c.objStore, parentID)
+	if err != nil {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("backup: parent %q not found: %w", parentID, err))
+	}
+	if !containsString(parent.Planes, "physical") {
+		return connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("backup: parent %q has no physical plane; cannot take a physical incremental from it", parentID))
+	}
+	return nil
+}
+
+// parentCheckpointFor resolves a node's parent checkpoint from the parent backup's per-node physical
+// sub-manifest (matched by member id). It returns nil (→ full physical export) when there is no parent
+// backup, or when the node has no entry in it (a node added since the parent).
+func (c *Coordinator) parentCheckpointFor(parentBackupID, memberID string) (*wavesdb.CheckpointManifest, error) {
+	if parentBackupID == "" {
+		return nil, nil
+	}
+	key := PhysicalManifestKey(parentBackupID, memberID)
+	ok, err := c.objStore.Exists(key)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil // new node since the parent → full physical
+	}
+	pm, err := ReadPhysicalManifest(c.objStore, key)
+	if err != nil {
+		return nil, err
+	}
+	return pm.ToCheckpointManifest(), nil
+}
+
+func containsString(ss []string, want string) bool {
+	for _, s := range ss {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // commit writes the cluster.manifest and finalizes the intent status. A backup with enumerated gaps is
@@ -262,7 +326,14 @@ func (c *Coordinator) commit(ctx context.Context, in *BackupIntent) error {
 	refs := make([]PerNodeRef, 0, len(in.PerNode))
 	topo := make([]TopologyEntry, 0, len(in.PerNode))
 	for _, n := range in.PerNode {
-		refs = append(refs, PerNodeRef{MemberID: n.MemberID, Ref: n.SubManifestKey, Objects: n.Objects, Bytes: n.Bytes})
+		refs = append(refs, PerNodeRef{
+			MemberID:          n.MemberID,
+			Ref:               n.SubManifestKey,
+			Objects:           n.Objects,
+			Bytes:             n.Bytes,
+			PhysicalManifest:  n.PhysicalManifestKey,
+			PhysicalGlobalSeq: n.PhysicalGlobalSeq,
+		})
 		topo = append(topo, TopologyEntry{MemberID: n.MemberID, StorageUUID: n.StorageUUID})
 	}
 	status := StatusComplete

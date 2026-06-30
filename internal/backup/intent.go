@@ -64,14 +64,16 @@ type Descriptor struct {
 // per-node sub-manifest it wrote, the ranges it reported holding at prepare time, and its stable storage
 // identity (needed by 3c physical restore to match exported state back to a node).
 type NodeRecord struct {
-	MemberID       string
-	Phase          Phase
-	Objects        int64
-	Bytes          int64
-	Done           bool
-	SubManifestKey string
-	HeldRanges     []string
-	StorageUUID    string
+	MemberID            string
+	Phase               Phase
+	Objects             int64
+	Bytes               int64
+	Done                bool
+	SubManifestKey      string
+	HeldRanges          []string
+	StorageUUID         string
+	PhysicalManifestKey string // physical plane only — key of this node's physical.manifest.json
+	PhysicalGlobalSeq   uint64 // physical plane only — the checkpoint cut sequence
 }
 
 // BackupIntent is the durable catalog record of a backup, stored as a blob in the meta shard. It is the
