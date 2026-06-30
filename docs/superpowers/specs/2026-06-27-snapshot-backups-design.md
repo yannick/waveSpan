@@ -89,11 +89,10 @@ is eventual + HLC-LWW; collections are per-shard raft), so an HLC cut is the cor
 maximal notion. With **owner-assigned dedup** (§2), each AP range's `≤ T` view is the
 **assigned owner's converged state at seal**, not a true union across all replicas. A write
 acknowledged before `T` (origin+1) but not yet propagated to the assigned owner at seal time is
-not in this backup; it is captured by the **next incremental**, because incrementals are
-**arrival/seq-based, not HLC-range-based** (§6) — so a late-replicated older write lands in a
-new SSTable and is picked up regardless of its HLC value. This matches the physical plane's
-seq-based self-healing; the two planes therefore have the same completeness semantics. An
-optional best-effort anti-entropy pull on owners just before seal can tighten the window.
+not in this logical backup; since logical backups are **full each time** (§6, Phase 3
+refinement), it is simply captured by the **next full logical backup** once it has converged to
+an owner. An optional best-effort anti-entropy pull on owners just before seal tightens the
+window. (The physical plane is per-node and self-heals via its seq-based incrementals.)
 
 **Version extraction without parsing values (invariant A, §3).** The cut and incrementals need
 each record's HLC version, but the backup *core* never parses `value` bytes. The version is
@@ -248,15 +247,14 @@ must use the logical path — see §7.)
   `internal/backup` codec, pointed at an S3 multipart sink instead of an `io.Writer`.
   - **Full:** emit every record; AP tiers apply the `Version ≤ T` ceiling (via the
     contributor's `VersionOf`), CP tiers emit at the pinned seq.
-  - **Incremental:** the lower bound is **seq/arrival-based, not an HLC range.** Using
-    `SSTablesSince(parentWatermark)` the node scans only SSTables whose `MaxSeq` exceeds the
-    parent backup's per-CF `GlobalSeq` watermark, then emits their records (still under the
-    `≤ T` ceiling for AP tiers). This captures **late-replicated older writes** (they land in a
-    new SSTable regardless of HLC value) and unifies logical with physical incremental
-    semantics. It over-includes unchanged keys that share a touched SSTable — correct, just not
-    minimal. If a range's owner changed since the parent backup, the new owner has no matching
-    watermark and **falls back to a full export of that range** (a safe superset). Exact
-    per-(owner,range) watermark bookkeeping is an open implementation question (§Open).
+  - **Incremental: the logical plane is FULL-ONLY (Phase 3 refinement, 2026-06-30).** Logical
+    backups are always full. Incrementals are carried solely by the **physical plane** (§8),
+    which is inherently per-node (each node diffs its own immutable SSTables by `MaxSeq`), so
+    there is no owner-assignment/ownership-change watermark problem. Re-shard / partial / clone
+    (the things only the logical plane can do) are always taken from a full logical backup. This
+    removes the per-(owner,range) logical-watermark bookkeeping that was previously an open
+    question, at the cost of larger logical backups (full each time) — an acceptable trade since
+    same-shape DR/PITR, where incremental cost matters most, runs on the physical plane.
   - Collections reuse the dragonboat `SaveSnapshot` iteration (already raft-index-consistent),
     redirected to S3.
 - **Physical.** A node calls `CheckpointToObjectStore` → hard-link checkpoint at the pinned
@@ -266,6 +264,12 @@ must use the logical path — see §7.)
   hybrid klog (`UseBTree`) is transparent to backup.
 
 ## 7. Restore / clone / PITR
+
+**Driven at bootstrap (Phase 3 refinement):** restore is a node-startup operation — a node
+configured with a backup reference restores from S3 **before it begins serving** (physical:
+pull my checkpoint by ordinal + recover; logical: import + re-route into this cluster's shape).
+Online restore-into-a-live-cluster (for partial/tenant import) is deferred. The mechanics below
+are unchanged; only the trigger is bootstrap rather than an online RPC.
 
 Restore reads `cluster.manifest`, reconstructs namespace configs + collection inventory +
 source topology, then picks a path per the **target shape and the restore intent**. Intent
@@ -341,11 +345,10 @@ s3://<bucket>/<clusterID>/backups/<backupID>/
     physical/<cf>/<sstID>.{klog,vlog}           # immutable SSTable files (checkpoint)
   shards/<shardID>/part-NNNNN.chunk             # collections per-shard logical (raft-index consistent)
 ```
-- **Incremental:** `parent` in the manifest. Both planes are **seq-based**: logical uploads
-  records from SSTables whose `MaxSeq` exceeds the parent's per-CF watermark (`SSTablesSince`),
-  under the `≤ T` ceiling for AP tiers; physical uploads only SSTable file-ids absent from the
-  parent manifest. (Seq-based, not HLC-range — see §1/§6 — so late-replicated older writes are
-  captured.) Restore walks the parent chain.
+- **Incremental (physical plane only — Phase 3 refinement):** `parent` in the manifest; physical
+  uploads only SSTable file-ids absent from the parent manifest (per-node `SSTablesSince` diff,
+  seq-based). Restore walks the parent chain. The logical plane is full-only (§6), so a logical
+  object set never has a `parent`.
 - **Integrity:** every object has a sha256 in the manifest, verified on restore; the manifest
   is itself checksummed.
 
@@ -363,6 +366,20 @@ size, max concurrency, and a **bandwidth rate-limit** so export cannot starve th
   re-driven; export is idempotent (content-addressed objects).
 - **No silent success:** coverage cross-check → explicit `PARTIAL` status with enumerated gaps.
 - **Integrity:** per-object + manifest sha256, verified on restore.
+- **Durable-artifact lifecycle — nothing becomes trash (Phase 3 requirement).** Every durable
+  artifact the backup system creates is both explicitly deletable AND bounded by a TTL/retention,
+  swept by a leader-driven sweep (the same pattern as the existing TTL / budget-lease sweeps):
+  - `BackupIntent` (meta shard) carries a **lease deadline** while in-progress — if the
+    coordinator dies and nobody renews/resumes by the deadline, the sweep marks it `FAILED`
+    (and reclaims, mirroring budget lease-reclaim). Terminal intents (`COMPLETE`/`PARTIAL`/
+    `FAILED`) carry a **`retainUntilMs`**; the sweep deletes them after retention. No intent
+    lingers forever.
+  - **`DeleteBackup(backupID)`** admin RPC removes the intent **and** its S3 objects,
+    **chain-aware**: refuses to delete a backup a live incremental child depends on (or cascades
+    the whole chain on explicit `force`).
+  - **S3 retention + orphan GC:** a chain-aware retention policy (max-age / max-count) sweeps old
+    chains; an orphan-reconciliation pass removes objects under the cluster prefix not referenced
+    by any live intent's manifest (failed/partial-export debris).
 - **Retention/GC:** chain-aware — an incremental pins its parents; GC refuses to delete a
   parent with live children. The catalog (meta shard + mirrored S3 index) tracks chains. Any
   bounded coverage is logged, never silent.
@@ -438,16 +455,30 @@ size, max concurrency, and a **bandwidth rate-limit** so export cannot starve th
   are available. Graph rebuild has no such dependency — `RebuildIndexes(graph)` derives entirely
   from stored node/edge data (only needs graph-name enumeration).
 
+### Phase 2c (partial selection) — DONE
+Per-package prefix-aware key decoders + `Selector` + per-contributor matchers + `ExportLogical`
+export-time filter; panic-safe (uvarint overflow guard). Branch `backup`. TDD, two-stage reviewed.
+
+### Phase 3 design decisions (2026-06-30, brainstormed + approved)
+The companion spec is `docs/superpowers/specs/2026-06-30-backup-phase3-cluster-design.md`. Decisions
+that refine THIS spec (folded in above):
+- **Scope:** all of Phase 3 (3a coordination + 3b incrementals + 3c physical) designed together.
+- **Incrementals = physical-plane only; logical full-only** (§1/§6/§8 updated) → retires the
+  per-(owner,range) logical-watermark open question below.
+- **Restore = bootstrap-from-backup** (node restores from S3 at startup before serving); online
+  restore-into-a-live-cluster RPC deferred.
+- **Durable-artifact lifecycle** (§10): lease-deadline'd in-progress intents → `FAILED` on expiry;
+  `retainUntilMs` on terminal intents; `DeleteBackup` (chain-aware) + S3 orphan reconciliation.
+- **Resolved:** `BackupIntent` uses the meta-shard `metaCommand` opcode pattern (new
+  `opBackup*` ops); `BackupService` is served gRPC on the data port + Connect on the admin port
+  (matching `BudgetService`).
+
 ## Open implementation questions (for the plan, not blockers)
 
-- Exact meta-shard SM command encoding for `BackupIntent` (reuse `opBatch` framing vs a new
-  command type).
-- Whether `BackupService` is a Connect service bridged like the others or a native gRPC handler.
-- Credential sourcing precedence on OVH stag (IRSA-equivalent vs sealed-secret).
-- Default schedule/retention values for the operator CRD.
-- Per-(owner, key-range) incremental watermark bookkeeping and how it survives ownership
-  changes between backups (the §6 fallback is full-export of a reassigned range — confirm that
-  is acceptable, or design a transfer of the watermark with the range).
-- PITR stop-at-`T'` for an **unknown** CF (no `VersionOf` available in the restoring binary):
-  restores at chain granularity only (cannot sub-filter `Version ≤ T'`). Confirm this limit is
-  acceptable, or require the source to persist a version index alongside such CFs.
+- Credential sourcing precedence on OVH stag (IRSA-equivalent vs sealed-secret) — deployment.
+- Default schedule/retention values (operator scheduling = Phase 4; manual trigger + retention
+  knobs are Phase 3).
+- ~~Per-(owner,range) logical incremental watermark bookkeeping~~ — **RESOLVED:** logical is
+  full-only; incrementals are physical-plane only (per-node `SSTablesSince`, no owner-change).
+- PITR granularity for an **unknown** CF: with physical incrementals, PITR is per-node-seq
+  chain-granular (not HLC-`T'` sub-filtered) — acceptable for same-shape DR/PITR.
