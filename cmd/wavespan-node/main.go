@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/yannick/wavespan/internal/backup"
 	"github.com/yannick/wavespan/internal/cache"
 	"github.com/yannick/wavespan/internal/collections"
 	"github.com/yannick/wavespan/internal/config"
@@ -54,7 +55,68 @@ import (
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"wavesdb/objstore"
 )
+
+// backupRoster adapts the gossip membership service to the backup coordinator's Roster: the live member
+// ids the coordinator fans prepare/export out to.
+type backupRoster struct{ svc *membership.Service }
+
+func (r backupRoster) Live() []string {
+	views := r.svc.Live()
+	out := make([]string, 0, len(views))
+	for _, mv := range views {
+		out = append(out, mv.Member.MemberID)
+	}
+	return out
+}
+
+// newBackupCoordinator builds the cluster backup coordinator for this node: a meta-shard intent catalog,
+// a node-default FS object store under the storage path (per-request S3/destination override is Phase
+// 3e), a membership-backed roster, and a gRPC BackupService client factory keyed by member id. The
+// full-backup all-export assignment policy is used (Phase 3a).
+func newBackupCoordinator(mgr *collections.Manager, store storage.LocalStore, self membership.Member, svc *membership.Service, storagePath string, bcfg config.BackupConfig, logger *slog.Logger) (*backup.Coordinator, error) {
+	// openStore turns a resolved destination into an object store: the local FS fallback under the storage
+	// path for the FS default (dev), or an S3 backend (incl. OVH) for a configured/named/explicit target.
+	fsDir := filepath.Join(storagePath, "backups")
+	openStore := func(rd backup.ResolvedDestination) (backup.ObjectStore, error) {
+		if rd.UseFS {
+			return objstore.NewFS(fsDir)
+		}
+		return objstore.NewS3(rd.S3)
+	}
+	// The node's default-destination store, resolved once from config (S3 bucket creation happens here).
+	defaultRD, _, err := backup.ResolveDestination(bcfg, backup.DestinationSpec{}, os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	defaultStore, err := openStore(defaultRD)
+	if err != nil {
+		return nil, err
+	}
+	addrFor := func(id string) (string, error) {
+		for _, mv := range svc.Members() {
+			if mv.Member.MemberID == id {
+				return mv.Member.DataAddr, nil
+			}
+		}
+		return "", fmt.Errorf("backup: unknown member %q", id)
+	}
+	return backup.NewCoordinator(backup.Config{
+		Self:         self.MemberID,
+		Meta:         collections.NewMetaBackupStore(mgr),
+		ObjStore:     defaultStore,
+		Roster:       backupRoster{svc: svc},
+		ClientFor:    backup.NewGRPCClientFactory(addrFor),
+		Assigner:     backup.AllExportAssigner{},
+		LocalStore:   store,
+		IsMetaLeader: func() bool { return mgr.IsLeader(collections.MetaShardID) },
+		Logger:       logger,
+		BackupCfg:    bcfg,
+		Getenv:       os.Getenv,
+		OpenStore:    openStore,
+	}), nil
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -113,6 +175,19 @@ func run() error {
 		overrides.LoadSnapshot(snap)
 	}
 	applyRuntimeTunables(tun) // gogc/memLimit after overrides so a persisted override applies
+
+	// Bootstrap-restore from a backup (design/backup phase 3c), BEFORE the main store opens and before
+	// EnsureStorageUUID — so a restored identity is read, not minted, and physical DR can inject SSTables
+	// at the file level. Env-gated (WAVESPAN_RESTORE_FROM) and one-shot (a CFSys marker); a failure is
+	// fatal (a node must not serve empty/stale data after a requested restore).
+	if rc, ok, perr := backup.ParseRestoreConfig(os.LookupEnv); perr != nil {
+		return fmt.Errorf("backup restore config: %w", perr)
+	} else if ok {
+		logger.Info("backup: bootstrap-restore requested", "backup", rc.BackupID, "intent", rc.Intent)
+		if err := backup.RunBootstrapRestore(cfg.Storage.Path, cfg.MemberID, rc, logger); err != nil {
+			return fmt.Errorf("backup bootstrap-restore: %w", err)
+		}
+	}
 
 	store, err := storage.OpenWavesdbWith(cfg.Storage.Path, engineOptions(tun))
 	if err != nil {
@@ -668,6 +743,12 @@ func run() error {
 				WithForwarder(collections.NewRPCForwarder(peersFn)). // spot nodes never lead; forward all writes
 				WithDiskGate(diskMon, diskMetrics.IncShedWrites)     // shed at entry before forwarding (design/36)
 			collectionsSvc = collections.NewService(cols, self).WithTierStatus(mgr, raftAddr, spotRID, false)
+			if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path, cfg.Backup, logger); berr != nil {
+				logger.Error("backup: coordinator init failed; BackupService disabled", "err", berr)
+			} else {
+				collectionsSvc = collectionsSvc.WithBackup(bc)
+				go bc.RunSweep(ctx, time.Minute) // leader-gated lifecycle GC (Phase 3d)
+			}
 			cypherCollections := collections.NewCypherCollections(cols)
 			cypherSvc.WithCollections(cypherCollections)
 			grpcCypherSvc.WithCollections(cypherCollections)
@@ -699,6 +780,12 @@ func run() error {
 				cols.WithDiskGate(diskMon, diskMetrics.IncShedWrites)    // shed at entry before forwarding (design/36)
 				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr).
 					WithTierStatus(mgr, raftAddr, selfReplicaID, true)
+				if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path, cfg.Backup, logger); berr != nil {
+					logger.Error("backup: coordinator init failed; BackupService disabled", "err", berr)
+				} else {
+					collectionsSvc = collectionsSvc.WithBackup(bc)
+					go bc.RunSweep(ctx, time.Minute) // leader-gated lifecycle GC (Phase 3d)
+				}
 				cypherCollections := collections.NewCypherCollections(cols) // set.*/hash.*/zset.* built-ins
 				cypherSvc.WithCollections(cypherCollections)
 				grpcCypherSvc.WithCollections(cypherCollections)
@@ -712,6 +799,9 @@ func run() error {
 	if collectionsSvc != nil {
 		wavespanv1.RegisterCollectionServiceServer(grpcDataSrv, grpcsrv.NewCollections(collectionsSvc))
 		wavespanv1.RegisterBudgetServiceServer(grpcDataSrv, grpcsrv.NewBudget(collectionsSvc))
+		wavespanv1.RegisterBackupServiceServer(grpcDataSrv, grpcsrv.NewBackup(collectionsSvc))
+		// BackupNodeService: node-internal Prepare/Export, data port ONLY (never on the admin Connect mux).
+		wavespanv1.RegisterBackupNodeServiceServer(grpcDataSrv, grpcsrv.NewBackupNode(collectionsSvc))
 	}
 
 	// Gossip server on the gossip port.
@@ -796,6 +886,8 @@ func run() error {
 		adminMux.Handle(colPath, adminIdentity.EnforceHTTP(colHandler)) // CollectionService for the UI (same origin)
 		budPath, budHandler := collectionsSvc.BudgetHandler()
 		adminMux.Handle(budPath, adminIdentity.EnforceHTTP(budHandler)) // BudgetService for the UI (design/35)
+		bckPath, bckHandler := collectionsSvc.BackupHandler()
+		adminMux.Handle(bckPath, adminIdentity.EnforceHTTP(bckHandler)) // BackupService for the UI (design/backup phase 3a)
 	}
 	adminMux.Handle("/", adminIdentity.EnforceHTTP(ui.NewServer().Handler())) // SPA at root (health/metrics take precedence)
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: adminTLS, ConnState: connStateGauge(openConns.WithLabelValues("admin"))}

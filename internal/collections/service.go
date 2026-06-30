@@ -26,10 +26,11 @@ type learnerAdmitTarget interface {
 // (design/30 §13). Writes go through the owning shard's leader; reads honour the request's
 // linearizable flag. WRONGTYPE maps to FailedPrecondition.
 type Service struct {
-	cols  *Collections
-	self  membership.Member
-	admit learnerAdmitTarget
-	tier  *tierStatus // optional: backs the TierInfo operator view
+	cols   *Collections
+	self   membership.Member
+	admit  learnerAdmitTarget
+	tier   *tierStatus       // optional: backs the TierInfo operator view
+	backup backupCoordinator // optional: backs the BackupService (design/backup phase 3a)
 }
 
 // tierStatus is this node's static collections placement, paired with the Manager for live status.

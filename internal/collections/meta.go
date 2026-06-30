@@ -21,7 +21,17 @@ type metaOp byte
 const (
 	opMetaPut    metaOp = 1 // upsert a range [start,end) -> shardID (init / split)
 	opMetaDelete metaOp = 2 // remove the range keyed by start (merge)
+	// Backup catalog ops (design/backup phase 3a): the meta shard doubles as the durable BackupIntent
+	// catalog. opBackupPut stores a blob (the gob-encoded intent) keyed by backup id; opBackupDelete
+	// removes it. The fixed-field metaCommand codec is reused: Start carries the catalog key and End
+	// carries the blob (ShardID is unused, 0).
+	opBackupPut    metaOp = 3
+	opBackupDelete metaOp = 4
 )
+
+// subBackup is the meta shard's reserved sub-space for the BackupIntent catalog (distinct from subData
+// 0x01, which holds the range directory). Catalog blobs live at <prefix>|subBackup|<key>.
+const subBackup byte = 0x07
 
 type metaCommand struct {
 	Op      metaOp
@@ -67,6 +77,13 @@ type rangeEntry struct {
 // metaListQuery returns the full range directory.
 type metaListQuery struct{}
 
+// metaBackupGetQuery reads one BackupIntent blob by catalog key; the Lookup result is the raw blob, or
+// nil when absent (intents are never empty, so nil unambiguously means not-found).
+type metaBackupGetQuery struct{ Key []byte }
+
+// metaBackupListQuery returns every BackupIntent blob keyed by catalog key.
+type metaBackupListQuery struct{}
+
 // metaSM is the meta shard's on-disk state machine. Range entries live under subData keyed by start:
 //
 //	<prefix>|subData|<start> -> chunk(end) || be(shardID)
@@ -80,6 +97,9 @@ func newMetaSM(store storage.LocalStore, shardID uint64) *metaSM {
 
 func (m *metaSM) rangeSpace() []byte           { return append(append([]byte{}, m.prefix...), subData) }
 func (m *metaSM) rangeKey(start []byte) []byte { return append(m.rangeSpace(), start...) }
+
+func (m *metaSM) backupSpace() []byte        { return append(append([]byte{}, m.prefix...), subBackup) }
+func (m *metaSM) backupKey(key []byte) []byte { return append(m.backupSpace(), key...) }
 
 func (m *metaSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 	if len(entries) == 0 {
@@ -99,6 +119,13 @@ func (m *metaSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 		case opMetaDelete:
 			ops = append(ops, storage.StoreOp{CF: storage.CFReplData, Key: m.rangeKey(c.Start), Delete: true})
 			entries[i].Result = sm.Result{Value: 1}
+		case opBackupPut:
+			// Start = catalog key, End = blob (the gob-encoded BackupIntent).
+			ops = append(ops, storage.StoreOp{CF: storage.CFReplData, Key: m.backupKey(c.Start), Value: c.End})
+			entries[i].Result = sm.Result{Value: 1}
+		case opBackupDelete:
+			ops = append(ops, storage.StoreOp{CF: storage.CFReplData, Key: m.backupKey(c.Start), Delete: true})
+			entries[i].Result = sm.Result{Value: 1}
 		default:
 			return nil, errors.New("collections: unknown meta op")
 		}
@@ -112,7 +139,7 @@ func (m *metaSM) Update(entries []sm.Entry) ([]sm.Entry, error) {
 }
 
 func (m *metaSM) Lookup(query interface{}) (interface{}, error) {
-	switch query.(type) {
+	switch q := query.(type) {
 	case metaListQuery:
 		snap, err := m.store.Snapshot()
 		if err != nil {
@@ -132,6 +159,31 @@ func (m *metaSM) Lookup(query interface{}) (interface{}, error) {
 			if derr == nil && len(rest) >= 8 {
 				out = append(out, rangeEntry{Start: start, End: append([]byte(nil), end...), ShardID: binary.BigEndian.Uint64(rest[:8])})
 			}
+			it.Next()
+		}
+		return out, it.Err()
+	case metaBackupGetQuery:
+		v, found, err := m.store.Get(storage.CFReplData, m.backupKey(q.Key))
+		if err != nil || !found {
+			return ([]byte)(nil), err
+		}
+		return append([]byte(nil), v...), nil
+	case metaBackupListQuery:
+		snap, err := m.store.Snapshot()
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = snap.Close() }()
+		bs := m.backupSpace()
+		it, err := snap.Scan(storage.CFReplData, bs, prefixEnd(bs), 0)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = it.Close() }()
+		out := map[string][]byte{}
+		for it.Valid() {
+			key := string(it.Key()[len(bs):])
+			out[key] = append([]byte(nil), it.Value()...)
 			it.Next()
 		}
 		return out, it.Err()

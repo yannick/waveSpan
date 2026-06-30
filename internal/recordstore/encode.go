@@ -90,7 +90,9 @@ func parseTTLKey(k []byte) (namespace string, userKey []byte, ok bool) {
 	}
 	rest := k[9:] // skip sentinel + 8-byte bucket start
 	nsLen, n := binary.Uvarint(rest)
-	if n <= 0 || int(nsLen) > len(rest)-n {
+	// Unsigned compare (no lossy int() cast): a length in (2^63, 2^64) would go
+	// negative as an int and slip past a signed guard, panicking the slice below.
+	if n <= 0 || nsLen > uint64(len(rest)-n) {
 		return "", nil, false
 	}
 	return string(rest[n : n+int(nsLen)]), rest[n+int(nsLen):], true

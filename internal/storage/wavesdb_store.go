@@ -310,6 +310,14 @@ func (s *WavesdbStore) CompactRange(cf ColumnFamily, _, _ []byte) error {
 
 func (s *WavesdbStore) Close() error { return mapErr(s.db.Close()) }
 
+// UnderlyingDB exposes the wavesdb engine handle for capabilities the LocalStore interface does not
+// surface — notably physical-plane backups (CheckpointToObjectStore / SSTablesSince), which operate on
+// SSTables below the KV abstraction. The backup layer type-asserts for this accessor and gates the
+// physical plane on it (a store without it — e.g. MemStore — cannot take a physical backup). This is a
+// deliberate, narrow break in the design/17 "only storage imports wavesdb" rule: it hands back the same
+// engine handle rather than widening the LocalStore interface for every caller.
+func (s *WavesdbStore) UnderlyingDB() *wavesdb.DB { return s.db }
+
 // wavesdbSnapshot is a read-consistent view over a pinned snapshot transaction.
 type wavesdbSnapshot struct {
 	store *WavesdbStore
