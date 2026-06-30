@@ -11,6 +11,10 @@ import {
   fmtTime,
   pctLabel,
   fmtBytes,
+  buildBeginRequest,
+  emptyForm,
+  planesFromMode,
+  splitCsv,
 } from "./backupModel";
 
 describe("backupModel status helpers", () => {
@@ -82,5 +86,73 @@ describe("backupModel formatting", () => {
     expect(pctLabel(42.6)).toBe("43%");
     expect(fmtBytes(0n)).toBe("0 B");
     expect(fmtBytes(2048n)).toBe("2.0 KiB");
+  });
+});
+
+describe("buildBeginRequest", () => {
+  it("full logical backup to the default destination omits selection + destination", () => {
+    const req = buildBeginRequest(emptyForm());
+    expect(req.spec?.selection).toBeUndefined();
+    expect(req.spec?.destination).toBeUndefined();
+    expect(req.spec?.parent).toBe("");
+    expect(req.spec?.planes).toEqual(planesFromMode("logical"));
+  });
+
+  it("subset selection parses csv lists; both planes; incremental parent", () => {
+    const req = buildBeginRequest({
+      ...emptyForm(),
+      selectionMode: "subset",
+      namespaces: "app, logs",
+      graphs: "g1",
+      vectorCollections: "",
+      planesMode: "both",
+      parent: "bk-base",
+    });
+    expect(req.spec?.selection?.namespaces).toEqual(["app", "logs"]);
+    expect(req.spec?.selection?.graphs).toEqual(["g1"]);
+    expect(req.spec?.selection?.vectorCollections).toEqual([]);
+    expect(req.spec?.planes?.length).toBe(2);
+    expect(req.spec?.parent).toBe("bk-base");
+  });
+
+  it("named destination carries only the name (no secrets)", () => {
+    const req = buildBeginRequest({ ...emptyForm(), destMode: "named", destName: "cold" });
+    expect(req.spec?.destination?.name).toBe("cold");
+    expect(req.spec?.destination?.bucket ?? "").toBe("");
+    expect(req.spec?.destination?.credential).toBeUndefined();
+  });
+
+  it("explicit destination with a secret reference (no inline creds)", () => {
+    const req = buildBeginRequest({
+      ...emptyForm(),
+      destMode: "explicit",
+      bucket: "adhoc",
+      endpoint: "s3.ovh.net",
+      region: "de",
+      secretRef: "OPS",
+    });
+    expect(req.spec?.destination?.bucket).toBe("adhoc");
+    expect(req.spec?.destination?.credential?.secretName).toBe("OPS");
+    expect(req.spec?.destination?.credential?.accessKey ?? "").toBe("");
+  });
+
+  it("explicit destination with transient inline creds passes them in the request", () => {
+    const req = buildBeginRequest({
+      ...emptyForm(),
+      destMode: "explicit",
+      bucket: "adhoc",
+      accessKey: "AK",
+      secretKey: "SK",
+    });
+    expect(req.spec?.destination?.credential?.accessKey).toBe("AK");
+    expect(req.spec?.destination?.credential?.secretKey).toBe("SK");
+    expect(req.spec?.destination?.credential?.secretName ?? "").toBe("");
+  });
+});
+
+describe("splitCsv", () => {
+  it("trims and drops empties", () => {
+    expect(splitCsv(" a, b ,,c ")).toEqual(["a", "b", "c"]);
+    expect(splitCsv("")).toEqual([]);
   });
 });

@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { backup } from "../transport";
-import { Badge, Button, InlineMessage, Panel, Spinner, Table } from "../components";
+import { Badge, Button, Checkbox, FieldLabel, InlineMessage, Input, Panel, Select, Spinner, Table } from "../components";
 import type { BackupState, BackupSummary } from "../gen/wavespan/v1/backup_pb";
 import {
+  buildBeginRequest,
+  emptyForm,
   fmtBytes,
   fmtTime,
   isTerminal,
@@ -11,16 +13,23 @@ import {
   pctLabel,
   statusLabel,
   statusTone,
+  type BackupForm,
 } from "./backupModel";
 
-// Backups is the admin console for cluster backups (design/backup §11): it lists known backups and
-// watches an in-progress backup's live per-node progress, all via the BackupService Connect endpoint
-// (admin-auth enforced). Object-store credentials are never present in any of these responses.
+// Backups is the admin console for cluster backups (design/backup §11): trigger a backup (full or
+// incremental, any plane, to the default / a named / an explicit destination), watch a RUNNING backup's
+// live per-node progress, list known backups, and delete one (chain-aware). All via the BackupService
+// Connect endpoint (admin-auth enforced). Object-store credentials are entered in the trigger form and
+// sent only in the request — never stored in component state beyond submit, never rendered in any list.
 export function Backups() {
   const [list, setList] = useState<BackupSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
   const [watch, setWatch] = useState<string | null>(null);
+  const [form, setForm] = useState<BackupForm>(emptyForm());
+
+  const set = <K extends keyof BackupForm>(k: K, v: BackupForm[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const load = async () => {
     const r = await backup.listBackups({});
@@ -30,6 +39,7 @@ export function Backups() {
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setErr(null);
+    setMsg(null);
     try {
       await fn();
     } catch (e) {
@@ -44,8 +54,37 @@ export function Backups() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const childrenOf = (id: string) => list.filter((b) => b.parent === id).map((b) => b.backupId);
+
+  const submit = () =>
+    run(async () => {
+      const req = buildBeginRequest(form);
+      const r = await backup.beginBackup(req);
+      setForm((f) => ({ ...f, accessKey: "", secretKey: "" })); // drop transient creds from UI state
+      setMsg(`started ${r.backupId}`);
+      setWatch(r.backupId);
+      await load();
+    });
+
+  const del = (id: string) => {
+    const kids = childrenOf(id);
+    let force = false;
+    if (kids.length > 0) {
+      if (!window.confirm(`${id} has incremental children (${kids.join(", ")}).\nForce-delete the whole chain?`)) return;
+      force = true;
+    } else if (!window.confirm(`Delete backup ${id}?`)) {
+      return;
+    }
+    run(async () => {
+      await backup.deleteBackup({ backupId: id, force });
+      if (watch === id) setWatch(null);
+      await load();
+    });
+  };
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      <TriggerForm form={form} set={set} backups={list} busy={busy} onSubmit={submit} />
       {watch && <BackupProgress backupId={watch} onClose={() => setWatch(null)} />}
       <Panel
         title="Backups"
@@ -56,6 +95,7 @@ export function Backups() {
         }
       >
         {err && <InlineMessage tone="danger">{err}</InlineMessage>}
+        {msg && <InlineMessage tone="success">{msg}</InlineMessage>}
         {busy && list.length === 0 ? (
           <Spinner />
         ) : list.length === 0 ? (
@@ -84,8 +124,11 @@ export function Backups() {
                   <td>{kindLabel(b.parent)}</td>
                   <td>{fmtTime(b.startedMs)}</td>
                   <td>{fmtTime(b.finishedMs)}</td>
-                  <td>
+                  <td style={{ display: "flex", gap: 6 }}>
                     <Button onClick={() => setWatch(b.backupId)}>Watch</Button>
+                    <Button variant="danger" onClick={() => del(b.backupId)} disabled={busy}>
+                      Delete
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -94,6 +137,89 @@ export function Backups() {
         )}
       </Panel>
     </div>
+  );
+}
+
+// TriggerForm builds a BeginBackupRequest from operator inputs and submits it.
+function TriggerForm({
+  form,
+  set,
+  backups,
+  busy,
+  onSubmit,
+}: {
+  form: BackupForm;
+  set: <K extends keyof BackupForm>(k: K, v: BackupForm[K]) => void;
+  backups: BackupSummary[];
+  busy: boolean;
+  onSubmit: () => void;
+}) {
+  return (
+    <Panel title="New backup" actions={<Button variant="primary" onClick={onSubmit} disabled={busy}>Start backup</Button>}>
+      <div style={{ display: "grid", gap: 10, maxWidth: 640 }}>
+        <label>
+          <FieldLabel>Selection</FieldLabel>
+          <Select value={form.selectionMode} onChange={(e) => set("selectionMode", e.target.value as BackupForm["selectionMode"])}>
+            <option value="full">Full (everything)</option>
+            <option value="subset">Subset (namespaces / graphs / vector collections)</option>
+          </Select>
+        </label>
+        {form.selectionMode === "subset" && (
+          <>
+            <Input placeholder="namespaces (comma-separated)" value={form.namespaces} onChange={(e) => set("namespaces", e.target.value)} />
+            <Input placeholder="graphs (comma-separated)" value={form.graphs} onChange={(e) => set("graphs", e.target.value)} />
+            <Input placeholder="vector collections (comma-separated)" value={form.vectorCollections} onChange={(e) => set("vectorCollections", e.target.value)} />
+          </>
+        )}
+        <label>
+          <FieldLabel>Planes</FieldLabel>
+          <Select value={form.planesMode} onChange={(e) => set("planesMode", e.target.value as BackupForm["planesMode"])}>
+            <option value="logical">Logical</option>
+            <option value="physical">Physical</option>
+            <option value="both">Logical + Physical</option>
+          </Select>
+        </label>
+        <label>
+          <FieldLabel>Type</FieldLabel>
+          <Select value={form.parent} onChange={(e) => set("parent", e.target.value)}>
+            <option value="">Full</option>
+            {backups.map((b) => (
+              <option key={b.backupId} value={b.backupId}>
+                Incremental ← {b.backupId}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label>
+          <FieldLabel>Destination</FieldLabel>
+          <Select value={form.destMode} onChange={(e) => set("destMode", e.target.value as BackupForm["destMode"])}>
+            <option value="default">Default (node config)</option>
+            <option value="named">Named</option>
+            <option value="explicit">Explicit (ad-hoc bucket)</option>
+          </Select>
+        </label>
+        {form.destMode === "named" && (
+          <Input placeholder="destination name" value={form.destName} onChange={(e) => set("destName", e.target.value)} />
+        )}
+        {form.destMode === "explicit" && (
+          <>
+            <Input placeholder="bucket" value={form.bucket} onChange={(e) => set("bucket", e.target.value)} />
+            <Input placeholder="prefix (optional)" value={form.prefix} onChange={(e) => set("prefix", e.target.value)} />
+            <Input placeholder="region" value={form.region} onChange={(e) => set("region", e.target.value)} />
+            <Input placeholder="endpoint host:port" value={form.endpoint} onChange={(e) => set("endpoint", e.target.value)} />
+            <Checkbox label="use SSL" checked={form.useSsl} onChange={(e) => set("useSsl", e.target.checked)} />
+            <Checkbox label="path-style" checked={form.usePathStyle} onChange={(e) => set("usePathStyle", e.target.checked)} />
+            <Input placeholder="credential reference (secret name) — preferred" value={form.secretRef} onChange={(e) => set("secretRef", e.target.value)} />
+            <InlineMessage tone="info">
+              Inline credentials below are sent only with this request (never stored or logged). Leave
+              blank to use the credential reference. A node in named-only mode rejects inline creds.
+            </InlineMessage>
+            <Input placeholder="access key (transient)" value={form.accessKey} onChange={(e) => set("accessKey", e.target.value)} />
+            <Input type="password" placeholder="secret key (transient)" value={form.secretKey} onChange={(e) => set("secretKey", e.target.value)} />
+          </>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -132,10 +258,7 @@ function BackupProgress({ backupId, onClose }: { backupId: string; onClose: () =
   }, [backupId]);
 
   return (
-    <Panel
-      title={`Progress · ${backupId}`}
-      actions={<Button onClick={onClose}>Close</Button>}
-    >
+    <Panel title={`Progress · ${backupId}`} actions={<Button onClick={onClose}>Close</Button>}>
       {err && <InlineMessage tone="danger">{err}</InlineMessage>}
       {!state ? (
         <Spinner />
@@ -150,9 +273,7 @@ function BackupProgress({ backupId, onClose }: { backupId: string; onClose: () =
             {state.destination?.bucket && <span>→ {state.destination.bucket}</span>}
           </div>
           {state.gaps.length > 0 && (
-            <InlineMessage tone="warning">
-              PARTIAL — uncovered ranges: {state.gaps.join(", ")}
-            </InlineMessage>
+            <InlineMessage tone="warning">PARTIAL — uncovered ranges: {state.gaps.join(", ")}</InlineMessage>
           )}
           <Table mono>
             <thead>

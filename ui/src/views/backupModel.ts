@@ -1,7 +1,8 @@
 // Pure presentation/derivation helpers for the Backups view, kept separate from the React component so
 // they are unit-testable with vitest (the repo has no DOM test harness; logic lives here, the JSX shell
 // stays thin — mirrors src/lib/valuecodec.ts + its test).
-import { BackupStatus, BackupPhase, BackupPlane } from "../gen/wavespan/v1/backup_pb";
+import type { MessageInitShape } from "@bufbuild/protobuf";
+import { BackupStatus, BackupPhase, BackupPlane, BeginBackupRequestSchema } from "../gen/wavespan/v1/backup_pb";
 
 export type Tone = "neutral" | "success" | "warning" | "danger" | "info";
 
@@ -90,6 +91,109 @@ export function fmtTime(ms: bigint): string {
 // pctLabel renders an overall-percent value (0..100) as a rounded percentage.
 export function pctLabel(pct: number): string {
   return `${Math.round(pct)}%`;
+}
+
+export type PlanesMode = "logical" | "physical" | "both";
+
+// planesFromMode maps the form's plane selector to the proto plane list.
+export function planesFromMode(m: PlanesMode): BackupPlane[] {
+  switch (m) {
+    case "physical":
+      return [BackupPlane.PHYSICAL];
+    case "both":
+      return [BackupPlane.LOGICAL, BackupPlane.PHYSICAL];
+    default:
+      return [BackupPlane.LOGICAL];
+  }
+}
+
+// splitCsv parses a comma/whitespace-separated list into trimmed, non-empty entries.
+export function splitCsv(s: string): string[] {
+  return s
+    .split(/[,\s]+/)
+    .map((x) => x.trim())
+    .filter((x) => x !== "");
+}
+
+// BackupForm is the trigger form's input state.
+export interface BackupForm {
+  selectionMode: "full" | "subset";
+  namespaces: string;
+  graphs: string;
+  vectorCollections: string;
+  planesMode: PlanesMode;
+  parent: string; // "" = full backup; otherwise an incremental's parent backup id
+  destMode: "default" | "named" | "explicit";
+  destName: string; // named destination
+  bucket: string;
+  prefix: string;
+  region: string;
+  endpoint: string;
+  useSsl: boolean;
+  usePathStyle: boolean;
+  secretRef: string; // explicit destination: a server-side credential reference (preferred)
+  accessKey: string; // explicit destination: transient inline credential (request-only, never stored)
+  secretKey: string;
+}
+
+// buildBeginRequest builds the BeginBackupRequest from the form. Selection is omitted for a full backup;
+// the destination is omitted (→ node default), a {name}, or an explicit {bucket,...,credential}. Inline
+// credentials, when supplied, ride in the request only (the caller must not retain them).
+export function buildBeginRequest(f: BackupForm): MessageInitShape<typeof BeginBackupRequestSchema> {
+  const spec: NonNullable<MessageInitShape<typeof BeginBackupRequestSchema>["spec"]> = {
+    planes: planesFromMode(f.planesMode),
+    parent: f.parent,
+  };
+  if (f.selectionMode === "subset") {
+    spec.selection = {
+      namespaces: splitCsv(f.namespaces),
+      graphs: splitCsv(f.graphs),
+      vectorCollections: splitCsv(f.vectorCollections),
+    };
+  }
+  if (f.destMode === "named") {
+    spec.destination = { name: f.destName };
+  } else if (f.destMode === "explicit") {
+    const credential =
+      f.accessKey || f.secretKey
+        ? { accessKey: f.accessKey, secretKey: f.secretKey }
+        : f.secretRef
+          ? { secretName: f.secretRef }
+          : undefined;
+    spec.destination = {
+      bucket: f.bucket,
+      prefix: f.prefix,
+      region: f.region,
+      endpoint: f.endpoint,
+      useSsl: f.useSsl,
+      usePathStyle: f.usePathStyle,
+      credential,
+    };
+  }
+  return { spec };
+}
+
+// emptyForm is the default trigger-form state (a full logical backup to the default destination).
+export function emptyForm(): BackupForm {
+  return {
+    selectionMode: "full",
+    namespaces: "",
+    graphs: "",
+    vectorCollections: "",
+    planesMode: "logical",
+    parent: "",
+    destMode: "default",
+    destName: "",
+    bucket: "",
+    prefix: "",
+    region: "",
+    endpoint: "",
+    useSsl: true,
+    usePathStyle: false,
+    secretRef: "",
+    accessKey: "",
+    secretKey: "",
+  };
 }
 
 // fmtBytes renders a byte count (bigint) in human units.
