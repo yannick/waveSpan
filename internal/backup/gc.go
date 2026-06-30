@@ -9,6 +9,14 @@ import (
 // This file implements Phase 3d lifecycle GC: the leader-gated intent sweep (lease-expiry → FAILED,
 // retention deletion), chain-aware DeleteBackup (intent + objects), and S3 orphan reconciliation.
 //
+// NOTE (alt-destination GC gap, 3e): all three functions take a single objStore — the node's DEFAULT
+// destination as wired by the coordinator. A backup written to a non-default (named/explicit) destination
+// keeps its objects in that alt bucket, which these passes do NOT touch: retention/delete remove the
+// intent but leave the alt objects orphaned, and ReconcileOrphans only scans the default store. Handling
+// alt destinations needs per-descriptor store re-resolution (the coordinator's storeForDescriptor), which
+// lands in 3c Task 0; until then alt-destination backups are restricted to single-node clusters (see the
+// BeginBackup guard).
+//
 // Object layout (3a/3b): every object a backup writes lives under "<backupID>/..." — logical CFs and
 // node manifests at <id>/nodes/<member>/..., physical SSTables at <id>/nodes/<member>/physical/..., the
 // cluster manifest at <id>/cluster.manifest.json. An incremental writes ONLY its delta SSTables under

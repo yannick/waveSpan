@@ -110,7 +110,7 @@ func ResolveDestination(bc config.BackupConfig, spec DestinationSpec, getenv fun
 	default:
 		dd := bc.DefaultDestination
 		if dd.Bucket == "" {
-			return ResolvedDestination{UseFS: true}, Descriptor{Name: "default-fs"}, nil
+			return ResolvedDestination{UseFS: true}, Descriptor{DefaultFS: true}, nil
 		}
 		return fromConfigDest(dd, getenv)
 	}

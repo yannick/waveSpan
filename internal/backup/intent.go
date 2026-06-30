@@ -48,7 +48,9 @@ const (
 
 // Descriptor describes an object-store target without ever carrying a raw secret: SecretName is a
 // reference (e.g. a k8s secret name) resolved out of band at run time. An empty descriptor means the
-// node's configured default store.
+// node's configured default store. DefaultFS marks the local FS fallback (dev) so it is distinguished
+// from a real destination without relying on a magic Name (a named destination could legitimately be
+// called anything).
 type Descriptor struct {
 	Name         string
 	Bucket       string
@@ -58,6 +60,7 @@ type Descriptor struct {
 	UseSSL       bool
 	UsePathStyle bool
 	SecretName   string
+	DefaultFS    bool
 }
 
 // NodeRecord is one node's recorded participation in a backup: its phase, export counts, the key of the

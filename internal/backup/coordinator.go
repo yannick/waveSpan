@@ -198,7 +198,20 @@ func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSp
 
 	// Resolve the destination at Begin: build the object store for this run (transient creds live only
 	// here) and capture the NON-SECRET descriptor to persist in the intent/manifest.
-	store, desc, err := c.resolveStore(destinationSpecFromProto(spec.GetDestination()))
+	dspec := destinationSpecFromProto(spec.GetDestination())
+
+	// Multi-node guard (3e): a non-default destination (named/explicit) currently lands only the
+	// coordinator node's objects in the alt store — remote gRPC nodes export to their OWN default store
+	// (ExportRequest.ObjStore is in-process only). Rather than silently produce an INCOMPLETE backup at
+	// the alt destination, reject it on a multi-node cluster. 3c Task 0 lifts this by carrying the
+	// destination (descriptor + transient creds) over the BackupNodeService RPC. Default destination and
+	// single-node clusters are unaffected.
+	if (dspec.Name != "" || dspec.Bucket != "") && len(c.roster.Live()) > 1 {
+		return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"backup: alt-destination backups require a single-node cluster until per-node destination is wired over the node RPC (3c Task 0); %d nodes live", len(c.roster.Live())))
+	}
+
+	store, desc, err := c.resolveStore(dspec)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInvalidArgument, err)
 	}
@@ -466,8 +479,13 @@ func (c *Coordinator) resume(ctx context.Context, backupID string) error {
 func (c *Coordinator) storeForDescriptor(d Descriptor) (ObjectStore, error) {
 	var spec DestinationSpec
 	switch {
-	case d.Name != "" && d.Name != "default-fs":
-		spec = DestinationSpec{Name: d.Name}
+	case d.DefaultFS:
+		// empty spec → the FS default
+	case d.Name != "":
+		spec = DestinationSpec{Name: d.Name} // named: re-resolves creds from config
+	case d.Bucket != "" && d.Bucket == c.backupCfg.DefaultDestination.Bucket:
+		// the configured default S3 destination — empty spec re-resolves it with the right creds (the
+		// common production case, e.g. OVH), rather than mis-treating it as an explicit secret-ref dest
 	case d.Bucket != "":
 		spec = DestinationSpec{
 			Bucket: d.Bucket, Prefix: d.Prefix, Region: d.Region, Endpoint: d.Endpoint,
@@ -521,13 +539,26 @@ func (c *Coordinator) ListBackups(ctx context.Context) ([]*wavespanv1.BackupSumm
 // has no `force` field — so the RPC always calls force=false. gc.DeleteBackup implements the full
 // force-cascade and is covered by tests; exposing it over the wire needs a proto `force` field (tracked
 // with the other cross-node proto gaps).
+//
+// NOTE (alt-destination GC gap, 3e): this deletes objects from the node's DEFAULT store (c.objStore). A
+// backup written to a non-default destination (named/explicit) has its objects in the alt bucket, which
+// this does NOT touch — the intent is removed but the alt objects are left orphaned. Deleting them needs
+// the per-descriptor store (storeForDescriptor re-resolves named/default cleanly; inline-cred backups
+// can't be GC'd since their creds were never persisted). That re-resolution lands in 3c Task 0. Until
+// then alt-destination backups are single-node only (see the BeginBackup guard).
 func (c *Coordinator) DeleteBackup(ctx context.Context, backupID string) (bool, error) {
 	return DeleteBackup(ctx, c.meta, c.objStore, backupID, false)
 }
 
 // RunSweep runs the leader-gated lifecycle sweep loop until ctx is done (Phase 3d). On each tick, when
 // this node leads the meta shard, it expires/retires intents (SweepIntents) and reconciles orphan
-// objects (ReconcileOrphans). Transient errors are swallowed — the next tick retries.
+// objects (ReconcileOrphans). Transient errors are logged; the next tick retries.
+//
+// NOTE (alt-destination GC gap, 3e): the sweep operates on the node's DEFAULT store (c.objStore). Object
+// deletion (retention/orphans) for backups written to non-default destinations is NOT performed — those
+// alt-bucket objects would linger. Per-descriptor store re-resolution for the sweep lands in 3c Task 0;
+// until then alt-destination backups are single-node only (see the BeginBackup guard), and their objects
+// must be reclaimed out of band.
 func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()

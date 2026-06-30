@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"testing"
 
+	"connectrpc.com/connect"
+
 	"github.com/yannick/wavespan/internal/config"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"wavesdb/objstore"
@@ -25,7 +27,9 @@ func TestCoordinatorAltDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	meta := newFakeMetaStore()
-	nodes := buildCluster(t, defaultStore, "m1", "m2") // member stores default to defaultStore
+	// Single node: alt-destination backups are restricted to single-node clusters in 3e (the multi-node
+	// guard is exercised separately in TestCoordinatorAltDestinationMultiNodeRejected).
+	nodes := buildCluster(t, defaultStore, "m1") // member store defaults to defaultStore
 
 	// Creds live only in env; the opener maps the resolved destination to an FS store (no real S3 in tests).
 	env := map[string]string{"OPS_ACCESS_KEY": "ops-access-SECRET", "OPS_SECRET_KEY": "ops-secret-SECRET"}
@@ -44,7 +48,7 @@ func TestCoordinatorAltDestination(t *testing.T) {
 		Self:      "m1",
 		Meta:      meta,
 		ObjStore:  defaultStore,
-		Roster:    fakeRoster{live: []string{"m1", "m2"}},
+		Roster:    fakeRoster{live: []string{"m1"}},
 		ClientFor: func(id string) (NodeClient, error) { return nodes[id], nil },
 		Assigner:  AllExportAssigner{},
 		BackupCfg: config.BackupConfig{AllowInlineDestinationCreds: true},
@@ -94,5 +98,45 @@ func TestCoordinatorAltDestination(t *testing.T) {
 		if bytes.Contains(blob, []byte(secret)) {
 			t.Fatalf("persisted intent leaks credential %q", secret)
 		}
+	}
+}
+
+// TestCoordinatorAltDestinationMultiNodeRejected proves an alt destination is refused on a multi-node
+// cluster (it would otherwise be silently incomplete — remote nodes export to their own default store),
+// while the default destination is still allowed with multiple nodes.
+func TestCoordinatorAltDestinationMultiNodeRejected(t *testing.T) {
+	ctx := context.Background()
+	defaultStore, _ := objstore.NewFS(t.TempDir())
+	meta := newFakeMetaStore()
+	nodes := buildCluster(t, defaultStore, "m1", "m2")
+	coord := NewCoordinator(Config{
+		Self:      "m1",
+		Meta:      meta,
+		ObjStore:  defaultStore,
+		Roster:    fakeRoster{live: []string{"m1", "m2"}},
+		ClientFor: func(id string) (NodeClient, error) { return nodes[id], nil },
+		Assigner:  AllExportAssigner{},
+		BackupCfg: config.BackupConfig{AllowInlineDestinationCreds: true},
+		Getenv:    func(string) string { return "" },
+	})
+
+	// Alt (explicit) destination on a 2-node cluster → rejected.
+	altSpec := &wavespanv1.BackupSpec{
+		Planes:      []wavespanv1.BackupPlane{wavespanv1.BackupPlane_BACKUP_PLANE_LOGICAL},
+		Destination: &wavespanv1.Destination{Bucket: "alt-bucket", Endpoint: "s3.alt.net", Credential: &wavespanv1.CredentialRef{SecretName: "OPS"}},
+	}
+	if _, err := coord.BeginBackup(ctx, altSpec); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("alt destination on multi-node = %v, want FailedPrecondition", err)
+	}
+
+	// Named destination on a 2-node cluster → also rejected.
+	namedSpec := &wavespanv1.BackupSpec{Destination: &wavespanv1.Destination{Name: "cold"}}
+	if _, err := coord.BeginBackup(ctx, namedSpec); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("named destination on multi-node = %v, want FailedPrecondition", err)
+	}
+
+	// Default destination (no destination in the spec) is unaffected by the guard.
+	if _, err := coord.BeginBackup(ctx, &wavespanv1.BackupSpec{}); err != nil {
+		t.Fatalf("default destination on multi-node rejected: %v", err)
 	}
 }

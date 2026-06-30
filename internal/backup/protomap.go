@@ -86,22 +86,6 @@ func planesToStrings(ps []Plane) []string {
 	return out
 }
 
-func descriptorFromProto(d *wavespanv1.Destination) Descriptor {
-	if d == nil {
-		return Descriptor{}
-	}
-	return Descriptor{
-		Name:         d.GetName(),
-		Bucket:       d.GetBucket(),
-		Prefix:       d.GetPrefix(),
-		Region:       d.GetRegion(),
-		Endpoint:     d.GetEndpoint(),
-		UseSSL:       d.GetUseSsl(),
-		UsePathStyle: d.GetUsePathStyle(),
-		SecretName:   d.GetCredential().GetSecretName(),
-	}
-}
-
 func descriptorToProto(d Descriptor) *wavespanv1.Destination {
 	dst := &wavespanv1.Destination{
 		Name:         d.Name,
