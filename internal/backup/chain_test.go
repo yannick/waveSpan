@@ -48,3 +48,24 @@ func TestResolveChain(t *testing.T) {
 		t.Fatalf("ResolveChain(missing) = nil err, want error")
 	}
 }
+
+// TestResolveChainCycle guards the cycle branch: a parent pointer that loops back must surface a loud
+// error rather than walking forever.
+func TestResolveChainCycle(t *testing.T) {
+	store, err := objstore.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(id, parent string) {
+		cm := &ClusterManifest{FormatVersion: clusterManifestFormatVersion, BackupID: id, Parent: parent, Planes: []string{"physical"}, Status: "COMPLETE"}
+		if err := WriteClusterManifest(store, cm); err != nil {
+			t.Fatalf("write %s: %v", id, err)
+		}
+	}
+	// C1 -> C2 -> C1 (a cycle).
+	write("C1", "C2")
+	write("C2", "C1")
+	if _, err := ResolveChain(store, "C1"); err == nil {
+		t.Fatalf("ResolveChain over a cycle = nil err, want loud error")
+	}
+}

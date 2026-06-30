@@ -440,12 +440,16 @@ func (c *Coordinator) PrepareLocal(ctx context.Context, req *wavespanv1.PrepareB
 
 // ExportLocal serves the node-internal ExportBackup RPC against this node's store.
 //
-// NOTE (cross-node incremental gap): the parent checkpoint is passed as nil here. ExportBackupRequest
-// carries no parent reference yet, so when a coordinator fans an incremental out over gRPC the remote
-// node does a FULL physical export. In-process exports (the coordinator's own node, and the multi-node
-// test harness) thread the parent via ExportRequest.ParentCkpt and diff correctly. Carrying the parent
-// over the wire (a parent_backup_id field on ExportBackupRequest, resolved node-side) is tracked
-// alongside the StorageUUID cross-node gap — likely on a split-out BackupNodeService.
+// NOTE (incremental scope — production binary): the parent checkpoint is passed as nil here because
+// ExportBackupRequest carries no parent reference. The shipping binary's gRPC ClientFactory dials EVERY
+// member — including the coordinator's own node (there is no self-shortcut in exportAll) — and
+// grpcNodeClient.Export drops ExportRequest.ParentCkpt. So in production NO node produces a delta: every
+// incremental silently degrades to a FULL physical export. The incremental delta path is currently
+// exercised ONLY by the in-process test harness (which calls the agent directly with ParentCkpt). This
+// is cost-only — a full export is a complete, correct backup, and the cluster.manifest parent pointer
+// remains valid metadata (the chain resolves). Producing real deltas in production needs a
+// parent_backup_id field on ExportBackupRequest, resolved node-side (3c Task 0), alongside the
+// StorageUUID cross-node gap — likely on a split-out BackupNodeService.
 func (c *Coordinator) ExportLocal(ctx context.Context, req *wavespanv1.ExportBackupRequest) (*wavespanv1.ExportBackupResult, error) {
 	if c.localStore == nil {
 		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("backup: node holds no local store"))
