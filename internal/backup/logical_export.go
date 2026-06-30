@@ -44,8 +44,14 @@ func ExportLogical(src storage.LocalStore, store ObjectStore, keyPrefix string, 
 	// KV tier to "version ≤ T" — CFKVData records newer than T are excluded so every node captures the
 	// same instant. captureMs <= 0 disables the cut (back-compat: export everything). The cut applies to
 	// CFKVData ONLY: graph/vector are single-slot and captured snapshot-current (not sealed to T, by
-	// design — strict-dropping them would lose data), and CFKVMeta is derived (rebuilt on restore).
+	// design — strict-dropping them would lose data).
 	cutKV := captureMs > 0
+	// RebuildWhenCut CFs (CFKVMeta) are skipped ONLY while cutting and rebuilt on restore from the
+	// surviving ≤T data; on a full backup they are exported verbatim (preserving e.g. CFKVMeta siblings).
+	var skipWhenCut map[storage.ColumnFamily]bool
+	if cutKV {
+		skipWhenCut = reg.CutDerivedCFs()
+	}
 
 	snap, err := src.Snapshot()
 	if err != nil {
@@ -55,6 +61,9 @@ func ExportLogical(src storage.LocalStore, store ObjectStore, keyPrefix string, 
 
 	var entries []CFEntry
 	for _, cf := range reg.AuthoritativeCFs() {
+		if skipWhenCut[cf] {
+			continue // derived-when-cut (CFKVMeta): rebuilt on restore from the ≤T CFKVData
+		}
 		it, err := snap.Scan(cf, nil, nil, 0) // nil bounds = whole CF
 		if err != nil {
 			return nil, err

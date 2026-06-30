@@ -102,21 +102,27 @@ func vectorVersionOf(cf storage.ColumnFamily, _ []byte, value []byte) (version.V
 func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	// system: CFSys is cluster config/identity — always backed up (selects nil).
-	r.Register(funcContributor{name: "system", cfs: []CFSpec{{storage.CFSys, true}}})
-	// kv: CFKVData is authoritative; CFKVMeta is DERIVED (not exported) and rebuilt on restore from the
-	// surviving (≤T) CFKVData via recordstore.RebuildMeta — copying the latest pointers verbatim while the
-	// HLC cut dropped their >T winners would dangle the pointer → silent key loss (design/backup §5.2).
+	r.Register(funcContributor{name: "system", cfs: []CFSpec{{CF: storage.CFSys, Authoritative: true}}})
+	// kv: CFKVData is authoritative. CFKVMeta is authoritative too — a FULL backup exports it verbatim so
+	// the latest-pointer's SiblingVersions / conflict-tracking state survives (the LWW rebuild cannot
+	// reconstruct it). It is flagged RebuildWhenCut: an HLC ≤T cut skips it on export and rebuilds it on
+	// restore from the surviving (≤T) CFKVData via recordstore.RebuildMetaIfAbsent — copying the pointers
+	// verbatim while the cut dropped their >T winners would dangle the pointer → silent key loss. A ≤T cut
+	// therefore collapses concurrent siblings to the LWW winner (documented limitation, design/backup §5.2);
+	// full backups preserve them.
 	r.Register(funcContributor{
-		name: "kv", cfs: []CFSpec{{storage.CFKVData, true}, {storage.CFKVMeta, false}},
+		name: "kv", cfs: []CFSpec{{CF: storage.CFKVData, Authoritative: true}, {CF: storage.CFKVMeta, Authoritative: true, RebuildWhenCut: true}},
 		selects: func(_ storage.ColumnFamily, key []byte, sel Selector) bool {
 			ns, ok := recordstore.NamespaceOfKey(key)
 			return ok && contains(sel.Namespaces, ns)
 		},
 		versionOf: kvVersionOf,
-		rebuild:   func(dst storage.LocalStore, _ RestoreInfo) error { return recordstore.RebuildMeta(dst) },
+		// Rebuild only when CFKVMeta is ABSENT (a ≤T cut omitted it). A full backup restored CFKVMeta
+		// verbatim → present → this is a no-op, preserving siblings/conflict state.
+		rebuild: func(dst storage.LocalStore, _ RestoreInfo) error { return recordstore.RebuildMetaIfAbsent(dst) },
 	})
 	r.Register(funcContributor{
-		name: "collections", cfs: []CFSpec{{storage.CFReplData, true}},
+		name: "collections", cfs: []CFSpec{{CF: storage.CFReplData, Authoritative: true}},
 		selects: func(_ storage.ColumnFamily, key []byte, sel Selector) bool {
 			ns, _, ok := collections.NamespaceCollectionOfKey(key)
 			return ok && contains(sel.Namespaces, ns)
@@ -124,7 +130,7 @@ func DefaultRegistry() *Registry {
 	})
 	// TODO(phase2b): flip CFGraphIndex to derived (Authoritative: false) + wire rebuild here.
 	r.Register(funcContributor{
-		name: "graph", cfs: []CFSpec{{storage.CFGraphData, true}, {storage.CFGraphIndex, true}},
+		name: "graph", cfs: []CFSpec{{CF: storage.CFGraphData, Authoritative: true}, {CF: storage.CFGraphIndex, Authoritative: true}},
 		selects: func(_ storage.ColumnFamily, key []byte, sel Selector) bool {
 			g, ok := graph.OfKey(key)
 			return ok && contains(sel.Graphs, g)
@@ -134,7 +140,7 @@ func DefaultRegistry() *Registry {
 	// TODO(phase2b): flip CFVectorIndex to derived (Authoritative: false) + wire rebuild here
 	// (also solve vector index-spec capture, which lives in config/CRD not in the backed-up data).
 	r.Register(funcContributor{
-		name: "vector", cfs: []CFSpec{{storage.CFVectorRaw, true}, {storage.CFVectorIndex, true}},
+		name: "vector", cfs: []CFSpec{{CF: storage.CFVectorRaw, Authoritative: true}, {CF: storage.CFVectorIndex, Authoritative: true}},
 		selects: func(_ storage.ColumnFamily, key []byte, sel Selector) bool {
 			c, ok := vector.CollectionOfKey(key)
 			return ok && contains(sel.VectorCollections, c)

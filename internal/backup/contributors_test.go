@@ -18,9 +18,11 @@ func TestDefaultRegistryCoverage(t *testing.T) {
 			owned[s.CF] = true
 		}
 	}
-	// Every authoritative (backed-up) CF must be covered.
+	// Every authoritative (backed-up) CF must be covered. CFKVMeta is authoritative too: a full backup
+	// exports it verbatim (preserving siblings/conflict state) — it is only SKIPPED while an HLC ≤T cut is
+	// active, then rebuilt on restore (RebuildWhenCut).
 	for _, cf := range []storage.ColumnFamily{
-		storage.CFSys, storage.CFKVData,
+		storage.CFSys, storage.CFKVData, storage.CFKVMeta,
 		storage.CFGraphData, storage.CFGraphIndex,
 		storage.CFVectorRaw, storage.CFVectorIndex, storage.CFReplData,
 	} {
@@ -28,13 +30,12 @@ func TestDefaultRegistryCoverage(t *testing.T) {
 			t.Errorf("CF %v not authoritative in DefaultRegistry", cf)
 		}
 	}
-	// CFKVMeta is DERIVED (3a.1: rebuilt on restore from the surviving ≤T CFKVData, not exported), so it
-	// is OWNED by the kv contributor but NOT authoritative.
-	if auth[storage.CFKVMeta] {
-		t.Error("CFKVMeta must be derived (non-authoritative) in 3a.1, not backed up verbatim")
-	}
+	// CFKVMeta must be flagged RebuildWhenCut: exported on full backups, skipped + rebuilt on a ≤T cut.
 	if !owned[storage.CFKVMeta] {
-		t.Error("CFKVMeta must still be owned by the kv contributor (it drives the rebuild hook)")
+		t.Error("CFKVMeta must be owned by the kv contributor")
+	}
+	if !reg.CutDerivedCFs()[storage.CFKVMeta] {
+		t.Error("CFKVMeta must be RebuildWhenCut (skipped + rebuilt only when a ≤T cut is active)")
 	}
 	// Transient CFs are owned by nobody (never backed up).
 	for _, cf := range []storage.ColumnFamily{storage.CFReplLog, storage.CFCacheMeta} {

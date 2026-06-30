@@ -130,8 +130,11 @@ objects), so resume/retry is safe.
 - **Logical full backup → cluster-wide HLC cut `T`** (master spec §1), realised for the **KV tier**:
   each node filters **CFKVData** to `Version.HLCPhysicalMs ≤ T` over its own consistent snapshot, and
   the same `T` (recorded in `cluster.manifest`) is applied on every node, so the union is a single
-  cluster-wide instant for KV. **CFKVMeta is derived** — not exported; rebuilt on restore from the
-  surviving `≤T` records (else a dropped `>T` winner would dangle the latest pointer → key loss).
+  cluster-wide instant for KV. **CFKVMeta is exported verbatim on a FULL backup** (preserving the latest
+  pointer's `SiblingVersions` / conflict state) and is **skipped + rebuilt on restore ONLY when a `≤T`
+  cut is active** (`RebuildWhenCut`): copying the pointers verbatim while the cut dropped their `>T`
+  winners would dangle the latest pointer → key loss. A `≤T` cut therefore collapses concurrent siblings
+  to the LWW winner — a documented cut-only limitation (winner value stays correct; see §5.2).
   **Graph and vector** are single-slot (no version history): they are captured **snapshot-current** at
   export time (NOT strict-dropped to `T` — dropping a `>T` overwrite would lose the only copy);
   documented limitation. **Collections (CFReplData)** is raft/CP — consistent by per-shard applied
@@ -144,10 +147,11 @@ objects), so resume/retry is safe.
 > **Implementation status (2026-06-30): the cluster-wide HLC cut is DONE for KV (Phase 3a.1).**
 > The coordinator picks one `T = now + lease` and records it in `cluster.manifest`; every node applies
 > the SAME `T` as a comparison ceiling in `ExportLogical`, filtering **CFKVData** to
-> `Version.HLCPhysicalMs ≤ T` over its own consistent snapshot. **CFKVMeta** is a derived CF (not
-> exported) rebuilt on restore via `recordstore.RebuildMeta` (latest pointer + TTL index recomputed
-> from the surviving `≤T` records) — the no-dangling-pointer guarantee. The cut needs a per-contributor
-> `VersionOf` extractor (KV `StoredRecord`; graph/vector record value field).
+> `Version.HLCPhysicalMs ≤ T` over its own consistent snapshot. **CFKVMeta** is authoritative and
+> exported verbatim on a full backup; only a `≤T` cut skips it (`RebuildWhenCut`) and rebuilds it on
+> restore via `recordstore.RebuildMetaIfAbsent` (latest pointer + TTL index recomputed from the
+> surviving `≤T` records, *only* when CFKVMeta is absent) — the no-dangling-pointer guarantee. The cut
+> needs a per-contributor `VersionOf` extractor (KV `StoredRecord`; graph/vector record value field).
 >
 > Mechanism note (corrected): there is **NO HLC-clock advance, NO `Clock.Update`/`SkewError` handling,
 > and NO write-barrier/drain** — none exists and none is needed. `T` is purely a `≤T` comparison
@@ -240,6 +244,14 @@ Implemented and reviewed, with these honest consequences to operate around:
 - **Physical node match is by `MemberID`** (the manifest also carries `StorageUUID`, currently
   unused for matching) — correct while member ids are stable (ordinal DNS); id reassignment would
   need the `StorageUUID` fallback.
+- **A `≤T` cut collapses concurrent KV siblings to the LWW winner (cut-only).** When a cut is active,
+  CFKVMeta is rebuilt from the surviving `≤T` CFKVData via `RebuildLatestPointer`, which recovers only
+  the winner / tombstone / expiry — `SiblingVersions` and the `SIBLINGS_PRESENT` conflict flag are NOT
+  reconstructed (the winner's value is correct, and the sibling *values* survive as distinct CFKVData
+  versions). **Full (non-cut) backups export CFKVMeta verbatim and preserve siblings/conflict state**
+  (`RebuildWhenCut` skips it only when cutting; `RebuildMetaIfAbsent` rebuilds only when CFKVMeta is
+  absent). Reconstructing siblings in a cut needs causality/conflict-policy info the LWW selector lacks
+  — a tracked follow-up, not blocking 3a.1.
 
 ## 6. Durable-artifact lifecycle & GC (the "no trash" requirement)
 
