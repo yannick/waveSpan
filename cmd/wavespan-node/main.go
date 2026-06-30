@@ -176,6 +176,19 @@ func run() error {
 	}
 	applyRuntimeTunables(tun) // gogc/memLimit after overrides so a persisted override applies
 
+	// Bootstrap-restore from a backup (design/backup phase 3c), BEFORE the main store opens and before
+	// EnsureStorageUUID — so a restored identity is read, not minted, and physical DR can inject SSTables
+	// at the file level. Env-gated (WAVESPAN_RESTORE_FROM) and one-shot (a CFSys marker); a failure is
+	// fatal (a node must not serve empty/stale data after a requested restore).
+	if rc, ok, perr := backup.ParseRestoreConfig(os.LookupEnv); perr != nil {
+		return fmt.Errorf("backup restore config: %w", perr)
+	} else if ok {
+		logger.Info("backup: bootstrap-restore requested", "backup", rc.BackupID, "intent", rc.Intent)
+		if err := backup.RunBootstrapRestore(cfg.Storage.Path, cfg.MemberID, rc, logger); err != nil {
+			return fmt.Errorf("backup bootstrap-restore: %w", err)
+		}
+	}
+
 	store, err := storage.OpenWavesdbWith(cfg.Storage.Path, engineOptions(tun))
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)

@@ -13,6 +13,14 @@ import (
 // returns the object store. It mirrors a single-node 3a logical full backup.
 func seedLogicalBackup(t *testing.T, backupID string, srcN uint64) *objstore.FS {
 	t.Helper()
+	store, _ := seedLogicalBackupAt(t, t.TempDir(), backupID, srcN)
+	return store
+}
+
+// seedLogicalBackupAt seeds a logical backup into an FS object store rooted at objDir, returning the store
+// and objDir (so callers can build an fs:// restore URL).
+func seedLogicalBackupAt(t *testing.T, objDir, backupID string, srcN uint64) (*objstore.FS, string) {
+	t.Helper()
 	src, err := storage.OpenWavesdb(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +40,7 @@ func seedLogicalBackup(t *testing.T, backupID string, srcN uint64) *objstore.FS 
 	dedup = append(dedup, []byte("idem-token")...)
 	mustPut(t, src, storage.CFReplData, dedup, []byte("seen"))
 
-	objStore, err := objstore.NewFS(t.TempDir())
+	objStore, err := objstore.NewFS(objDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +58,7 @@ func seedLogicalBackup(t *testing.T, backupID string, srcN uint64) *objstore.FS 
 	if err := WriteClusterManifest(objStore, cm); err != nil {
 		t.Fatal(err)
 	}
-	return objStore
+	return objStore, objDir
 }
 
 // TestRestoreBootstrapLogicalReshard restores an N=4 logical backup into a fresh N=8 store: KV/graph/
