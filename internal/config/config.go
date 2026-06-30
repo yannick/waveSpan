@@ -40,6 +40,7 @@ type Config struct {
 	Namespaces        []NamespaceConfig       `yaml:"namespaces"`
 	VectorIndexes     []VectorIndexConfig     `yaml:"vectorIndexes"`
 	Features          FeaturesConfig          `yaml:"features"`
+	Backup            BackupConfig            `yaml:"backup"`
 }
 
 // FeaturesConfig toggles optional, non-core capabilities. Defaults keep features ON; an operator
@@ -235,6 +236,7 @@ func (c *Config) applyEnv(get func(string) (string, bool)) {
 	}
 	c.applyGlobalEnv(get)
 	c.applyVectorEnv(get)
+	c.applyBackupEnv(get)
 }
 
 func (c *Config) applyDefaults() {
@@ -255,6 +257,7 @@ func (c *Config) applyDefaults() {
 	}
 	// replica-count defaults are provided by ReplicationConfig.Target()/MinAck() so an explicit 0
 	// (single-node dev) is preserved.
+	c.applyBackupDefaults()
 }
 
 // Validate enforces the fail-fast rules (TS-002).
