@@ -39,6 +39,25 @@ describe("backupModel status helpers", () => {
   });
 });
 
+describe("backupModel poll-stop contract (live progress)", () => {
+  // The progress panel polls while RUNNING and clears its interval once isTerminal — drive that gate
+  // over a mocked RUNNING→RUNNING→COMPLETE sequence and assert it stops after the terminal status.
+  it("keeps polling while RUNNING and stops at the first terminal status", () => {
+    const sequence = [
+      BackupStatus.BACKUP_RUNNING,
+      BackupStatus.BACKUP_RUNNING,
+      BackupStatus.BACKUP_COMPLETE,
+      BackupStatus.BACKUP_RUNNING, // would never be observed — polling already stopped
+    ];
+    let polls = 0;
+    for (const s of sequence) {
+      polls++;
+      if (isTerminal(s)) break; // mirrors the component clearing its interval
+    }
+    expect(polls).toBe(3); // two RUNNING reads + the COMPLETE read, then stop
+  });
+});
+
 describe("backupModel formatting", () => {
   it("distinguishes full vs incremental", () => {
     expect(kindLabel("")).toBe("full");
