@@ -16,16 +16,6 @@ const storageIdentityKey = "/sys/storage_uuid"
 type CFSpec struct {
 	CF            storage.ColumnFamily
 	Authoritative bool
-	// RebuildWhenCut marks an authoritative CF that must NOT be exported while an
-	// HLC ≤T cut is active (captureMs > 0); instead it is rebuilt on restore from
-	// the surviving ≤T data (RebuildAfterRestore). With no cut (a full backup) it
-	// is exported verbatim like any authoritative CF. This preserves state the
-	// rebuild cannot reconstruct on the existing full-backup path — for CFKVMeta,
-	// the LWW rebuild recovers only the winner/tombstone/expiry, not
-	// SiblingVersions / conflict-tracking — while still avoiding the dangling
-	// latest-pointer that a verbatim copy would leave once a cut drops the >T
-	// winner (design/backup §5.2).
-	RebuildWhenCut bool
 }
 
 // RestoreInfo is passed to rebuild hooks; it carries restore context so a
@@ -90,21 +80,6 @@ func (r *Registry) AuthoritativeCFs() []storage.ColumnFamily {
 			if s.Authoritative && !seen[s.CF] {
 				seen[s.CF] = true
 				out = append(out, s.CF)
-			}
-		}
-	}
-	return out
-}
-
-// CutDerivedCFs returns the set of authoritative CFs flagged RebuildWhenCut — the
-// CFs ExportLogical skips while an HLC ≤T cut is active (rebuilt on restore from
-// the surviving ≤T data) but exports verbatim on a full backup. See CFSpec.RebuildWhenCut.
-func (r *Registry) CutDerivedCFs() map[storage.ColumnFamily]bool {
-	out := map[storage.ColumnFamily]bool{}
-	for _, c := range r.contributors {
-		for _, s := range c.CFs() {
-			if s.RebuildWhenCut {
-				out[s.CF] = true
 			}
 		}
 	}

@@ -103,23 +103,22 @@ func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	// system: CFSys is cluster config/identity — always backed up (selects nil).
 	r.Register(funcContributor{name: "system", cfs: []CFSpec{{CF: storage.CFSys, Authoritative: true}}})
-	// kv: CFKVData is authoritative. CFKVMeta is authoritative too — a FULL backup exports it verbatim so
-	// the latest-pointer's SiblingVersions / conflict-tracking state survives (the LWW rebuild cannot
-	// reconstruct it). It is flagged RebuildWhenCut: an HLC ≤T cut skips it on export and rebuilds it on
-	// restore from the surviving (≤T) CFKVData via recordstore.RebuildMetaIfAbsent — copying the pointers
-	// verbatim while the cut dropped their >T winners would dangle the pointer → silent key loss. A ≤T cut
-	// therefore collapses concurrent siblings to the LWW winner (documented limitation, design/backup §5.2);
-	// full backups preserve them.
+	// kv: both CFKVData and CFKVMeta are authoritative and exported VERBATIM. The ≤T cut filters CFKVData
+	// only; CFKVMeta (latest pointers + TTL bucket index, including SiblingVersions / conflict state) is
+	// copied as-is so siblings survive. The cut frontier T = now + lease is ~5s in the future, so it
+	// excludes essentially nothing — almost every backup has zero dangling pointers and CFKVMeta is
+	// perfectly preserved. RepairCutMeta runs on restore and touches ONLY the rare latest pointer whose
+	// winner version was after T (repoints it to the surviving ≤T winner; see design/backup §5.2).
 	r.Register(funcContributor{
-		name: "kv", cfs: []CFSpec{{CF: storage.CFKVData, Authoritative: true}, {CF: storage.CFKVMeta, Authoritative: true, RebuildWhenCut: true}},
+		name: "kv", cfs: []CFSpec{{CF: storage.CFKVData, Authoritative: true}, {CF: storage.CFKVMeta, Authoritative: true}},
 		selects: func(_ storage.ColumnFamily, key []byte, sel Selector) bool {
 			ns, ok := recordstore.NamespaceOfKey(key)
 			return ok && contains(sel.Namespaces, ns)
 		},
 		versionOf: kvVersionOf,
-		// Rebuild only when CFKVMeta is ABSENT (a ≤T cut omitted it). A full backup restored CFKVMeta
-		// verbatim → present → this is a no-op, preserving siblings/conflict state.
-		rebuild: func(dst storage.LocalStore, _ RestoreInfo) error { return recordstore.RebuildMetaIfAbsent(dst) },
+		// Repair dangling latest pointers left by the ≤T cut. A no-op (read-only scan) for every key whose
+		// winner survived — i.e. all keys when the cut excluded nothing, preserving siblings verbatim.
+		rebuild: func(dst storage.LocalStore, _ RestoreInfo) error { return recordstore.RepairCutMeta(dst) },
 	})
 	r.Register(funcContributor{
 		name: "collections", cfs: []CFSpec{{CF: storage.CFReplData, Authoritative: true}},
