@@ -40,10 +40,13 @@ physical fast-path, designed together.
 - **`proto/wavespan/v1/backup.proto` → `BackupService`** — gRPC on data port (inter-node + clients),
   Connect on admin port (UI/CLI/operator). Admin RPCs: `BeginBackup(BackupSpec)→{backupID}`,
   `BackupStatus(backupID)→BackupState`, `ListBackups()→[]BackupSummary`, `DeleteBackup(backupID,
-  force)`. Internal node RPCs: `PrepareBackup(backupID, frontierT, assignment)→{globalSeq,
-  heldRanges}`, `ExportBackup(backupID)→{subManifestRef}` (or a single `RunBackup` that prepares
-  then exports), and progress reporting (gossip piggyback preferred; an explicit ack RPC as
-  fallback).
+  force)`. `BackupSpec` carries `{selection, planes, parent, destination}` — see §1.1 for the
+  destination override and §11 for the admin Backup UI that consumes these RPCs. `BackupState`
+  carries `{status, phase, perNode[]{memberID, phase, objects, bytes, done}, overallPct, gaps,
+  destination, startedMs, finishedMs, parent}` so the UI can render live progress. Internal node
+  RPCs: `PrepareBackup(backupID, frontierT, assignment, destination)→{globalSeq, heldRanges}`,
+  `ExportBackup(backupID)→{subManifestRef}` (or a single `RunBackup` that prepares then exports),
+  and progress reporting (gossip piggyback preferred; an explicit ack RPC as fallback).
 - **`internal/backup/coordinator.go`** — drives the phased protocol; any node that receives
   `BeginBackup`; resumable from the meta-shard intent.
 - **`internal/backup/agent.go`** — node-side: executes `PrepareBackup`/`ExportBackup` (Phase 2
@@ -63,15 +66,41 @@ physical fast-path, designed together.
 - **`internal/backup/restore_bootstrap.go`** + `cmd/wavespan-node/main.go` — startup restore.
 - **`internal/backup/gc.go`** — chain-aware retention + S3 orphan reconciliation.
 - **`internal/grpcsrv/backup.go`** — `BackupService` gRPC handler bridging to the coordinator/agent.
-- **S3 config** — reuse `wavesdb/objstore` S3 backend; bucket/prefix/region/endpoint/creds via env.
+- **`ui/` Backup view** (admin SPA) — a new page backed by the `BackupService` Connect endpoint
+  (§11), the same way the Budget/KV/Vector views are mounted.
+- **S3 config + destinations** — reuse `wavesdb/objstore` S3 backend. Config supplies a **default
+  destination** plus zero or more **named alternate destinations** (each a bucket/prefix/region/
+  endpoint + a credential *reference*, e.g. a sealed-secret/IAM-role name); see §1.1.
+
+### 1.1 Backup destination (default, named, or explicit override)
+`BackupSpec.destination` selects where a backup is written, so a backup is **not limited to the
+config/env bucket**:
+- **Omitted** → the **default** destination from config (the common case).
+- **Named** → one of the operator-pre-registered named destinations from config (a dropdown in the
+  UI). No secrets in the request — credentials are resolved server-side from the named reference.
+- **Explicit override** → `{bucket, prefix, region, endpoint, credential}` supplied in the request,
+  for an ad-hoc bucket the operator hasn't pre-registered. `credential` is preferably a **secret
+  reference** (resolved server-side); raw inline credentials are accepted only over the
+  authenticated admin endpoint and are **transient** — used for that backup run and **never
+  persisted** (the `BackupIntent` and `cluster.manifest` store only the non-secret destination
+  descriptor — bucket/prefix/region/endpoint — and the credential *reference*, never raw secrets),
+  and never logged. Every node's agent receives the destination (incl. resolved/transient creds)
+  via `PrepareBackup` over the authenticated inter-node channel.
+- **Security:** destination override is an authenticated admin operation (the admin port enforces
+  identity via `EnforceHTTP`). The endpoint/bucket are used as the operator specifies (the operator
+  is trusted for where their data goes); creds are excluded from the intent, manifest, and logs.
+  `DeleteBackup`/GC/retention all key off the recorded destination descriptor, so alternate-bucket
+  backups are lifecycle-managed exactly like default-bucket ones.
 
 ## 2. Backup coordination protocol (phased, durable, resumable)
 
 The catalog/intent lives in the **meta shard** (raft) — a single serialization point that survives
 coordinator failure. Phases (master spec §2):
-1. **Begin** — coordinator allocates `backupID` + frontier `T = HLC.now()+lease`; persists
-   `BackupIntent{backupID, frontierT, captureWallClockMs, selection, planes, parent, status=RUNNING,
-   leaseDeadlineMs, perNodeState}` via `opBackupBegin`.
+1. **Begin** — coordinator allocates `backupID` + frontier `T = HLC.now()+lease`; resolves the
+   destination (§1.1; named refs resolved here, inline creds held transiently — not persisted);
+   persists `BackupIntent{backupID, frontierT, captureWallClockMs, selection, planes, parent,
+   destination(descriptor + cred *reference* only), status=RUNNING, leaseDeadlineMs, perNodeState}`
+   via `opBackupBegin`.
 2. **Assign** — ownership from holder-directory + placement + live roster: each KV/graph/vector
    range → one live owner; each collection shard → its raft leader; **no live owner → all-export
    fallback**. Physical plane: every live node owns its own SSTables.
@@ -189,9 +218,13 @@ multipart part size, max concurrency, bandwidth rate-limit. Restore config:
 - `internal/backup/{coordinator,agent,intent,restore_bootstrap,gc,progress}.go`.
 - `internal/collections/meta.go` — `opBackup*` metaCommands + intent sweep.
 - `internal/grpcsrv/backup.go` — `BackupService` gRPC handler.
-- `cmd/wavespan-node/main.go` — register `BackupService` (gRPC + Connect), objstore config, node
-  agent wiring, bootstrap-restore before serving, intent-sweep start.
-- gitops `apps/ovh-stag/.../wavespan/` — S3 creds env + (per-node) restore-from config.
+- `cmd/wavespan-node/main.go` — register `BackupService` (gRPC + Connect at `bckPath`, admin-auth),
+  objstore config + named destinations, node agent wiring, bootstrap-restore before serving,
+  intent-sweep start.
+- `ui/` — a "Backups" SPA view (list / live progress / trigger-with-destination / delete) using the
+  `BackupService` Connect client (§11), mirroring the existing Budget view.
+- gitops `apps/ovh-stag/.../wavespan/` — S3 creds env, named alternate destinations, (per-node)
+  restore-from config.
 
 ## 10. Testing (real OVH stag cluster)
 
@@ -201,12 +234,47 @@ multipart part size, max concurrency, bandwidth rate-limit. Restore config:
 - **Integration (cluster):** full logical backup → bootstrap-clone into a **different-N** cluster
   (all datatypes verified); physical full + incremental → same-shape DR bootstrap-restore; PITR via
   physical chain; partial extract → bootstrap-clone; lifecycle (`DeleteBackup` chain-aware refuse +
-  cascade; abandoned-coordinator intent lease-expires; retention/orphan sweep).
+  cascade; abandoned-coordinator intent lease-expires; retention/orphan sweep);
+  **destination override** — trigger a backup to an alternate (named and explicit) bucket and
+  confirm objects land there + the intent/manifest record the destination but **no raw creds**.
+- **UI:** `ListBackups`/`BackupStatus`/`BeginBackup`/`DeleteBackup` exercised via the Connect
+  endpoint (admin-auth enforced); live-progress rendering during a `RUNNING` backup; trigger form
+  produces a backup to the chosen destination; creds never appear in `BackupStatus`/`ListBackups`
+  responses or logs.
 - **Chaos/overload:** kill a node mid-backup → reassignment + `PARTIAL`; coordinator crash → resume
   (and lease-expire path); write flood during backup → no crash, cut excludes `>T`; disk-pressure
   during restore → graceful.
 
-## 11. Open implementation questions (for the plan)
+## 11. Admin Backup UI (the admin SPA "Backups" view)
+
+A new page in the embedded admin SPA (served on the admin port, gated by `EnforceHTTP` admin
+identity — same mounting as the Budget/KV/Vector views), backed entirely by the `BackupService`
+**Connect** endpoint. No new server surface beyond `BackupService`; the UI is a client of it.
+
+- **See which backups exist** — `ListBackups()` renders a table: `backupID`, status
+  (`RUNNING`/`COMPLETE`/`PARTIAL`/`FAILED`), planes (logical/physical/both), full vs incremental +
+  parent chain, started/finished time, total size, **destination** (bucket/prefix), and
+  `retainUntilMs`. `PARTIAL` rows expand to show the enumerated gaps.
+- **See in-progress backups + live progress** — for a `RUNNING` backup the view polls
+  `BackupStatus(backupID)` (or consumes a server-stream) and renders the **phase**
+  (assign/prepare/export/commit), an **overall %**, and a **per-node breakdown** (`memberID`, phase,
+  objects/bytes uploaded, done) from `BackupState.perNode[]`. Progress data originates from the
+  coordinator's `perNodeState` (intent) fed by gossip-piggybacked node progress.
+- **Trigger a backup** — a form invokes `BeginBackup(BackupSpec)`: choose **selection** (full, or
+  pick namespaces / graphs / vector-collections — Phase 2c `Selector`), **planes** (logical /
+  physical / both), full vs incremental (pick a `parent`), and **destination** (§1.1): the default,
+  a **named** alternate from a dropdown, or an **explicit** bucket/prefix/region/endpoint + a
+  credential (secret-reference preferred; inline only over the authenticated admin endpoint,
+  transient, never persisted/logged). The UI shows the resulting `backupID` and switches to its
+  live-progress view.
+- **Manage** — `DeleteBackup(backupID, force)` from the row (chain-aware; the UI warns + offers
+  `force` when a backup has live incremental children).
+
+All four capabilities are pure `BackupService` calls, so the CLI/operator (Phase 4) reuse the same
+RPCs. The UI adds a `ui/` view + a `BackupService` Connect handler mounted at a `bckPath` in
+`main.go` (mirroring `budPath`); no other backend change.
+
+## 12. Open implementation questions (for the plan)
 
 - Single `RunBackup` node RPC (prepare+export) vs separate `PrepareBackup`/`ExportBackup` (two-phase
   lets the coordinator establish the cut across all nodes before exporting — likely two-phase).
@@ -220,3 +288,8 @@ multipart part size, max concurrency, bandwidth rate-limit. Restore config:
   durable `StorageUUID`, recorded per source node in `cluster.manifest`) — there is no numeric
   ordinal field; the match is by `MemberID`/DNS.
 - S3 credential sourcing on OVH stag (IAM-role-equivalent vs sealed-secret).
+- `BackupStatus` for the UI: server-streamed live updates vs UI polling (poll is simplest; stream is
+  nicer for progress — decide in the plan).
+- Config schema for **named alternate destinations** (a list of `{name, bucket, prefix, region,
+  endpoint, credentialRef}`) and whether explicit inline-credential overrides are enabled by policy
+  (some deployments may want to restrict destinations to the named set only).
