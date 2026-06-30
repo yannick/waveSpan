@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/yannick/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/version"
 )
 
 func TestRegistryRegisterAndList(t *testing.T) {
@@ -36,4 +37,7 @@ func (s staticContributor) RebuildAfterRestore(_ storage.LocalStore, _ RestoreIn
 }
 func (s staticContributor) Selects(_ storage.ColumnFamily, _ []byte, _ Selector) bool {
 	return true
+}
+func (s staticContributor) VersionOf(_ storage.ColumnFamily, _, _ []byte) (version.Version, bool) {
+	return version.Version{}, false
 }

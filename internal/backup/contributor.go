@@ -1,6 +1,9 @@
 package backup
 
-import "github.com/yannick/wavespan/internal/storage"
+import (
+	"github.com/yannick/wavespan/internal/storage"
+	"github.com/yannick/wavespan/internal/version"
+)
 
 // storageIdentityKey is the node-local storage identity key in CFSys. It mirrors
 // storage.storageUUIDKey ("/sys/storage_uuid"), which is unexported. Export reads
@@ -40,6 +43,19 @@ type Contributor interface {
 	// only when sel is non-empty — see ExportLogical). It decodes the key's
 	// selector entity (namespace / graph / collection) for its CF.
 	Selects(cf storage.ColumnFamily, key []byte, sel Selector) bool
+	// VersionOf decodes the HLC version of a (cf,key,value) record, for the HLC
+	// consistent cut (Phase 3a.1). ok is false for CFs that carry no per-record
+	// version usable for the ≤T cut — derived/index CFs, system config, and the
+	// raft-consistent collections CF (CFReplData). Only CFKVData's version drives
+	// the cut today (ExportLogical filters CFKVData only); graph/vector decode their
+	// version for completeness but are exported snapshot-current, not sealed to T.
+	VersionOf(cf storage.ColumnFamily, key, value []byte) (version.Version, bool)
+}
+
+// versionLEQ reports whether a record's HLC version is at or below the frontier ceiling T (physical-ms
+// comparison; equal ms is included). It is the per-record test that realises the consistent cut.
+func versionLEQ(v version.Version, frontierMs int64) bool {
+	return v.HLCPhysicalMs <= uint64(frontierMs)
 }
 
 // Registry holds the registered contributors.

@@ -108,11 +108,12 @@ coordinator failure. Phases (master spec §2):
    replica-fill worker (sends `StoreReplica` RPCs), NOT a generic coordination fan-out — the
    coordinator iterates `Roster.Live()` and calls each node via the `BackupService` client (the
    same live-member iteration pattern as `Fanout.fillEverywhere`, not the worker itself); progress
-   comes back via gossip piggyback. Each node seals `T` (advance HLC past `T` via `Clock.Update`,
-   drain in-flight `≤T`, pin `LocalStore.Snapshot()` for logical / a wavesdb snapshot for physical),
-   ACKs its `GlobalSeq` + held-range summary. **`T` must be within the HLC skew cap** — `Clock.Update`
-   returns a `*SkewError` and refuses to advance past `wall + maxSkewMs`, so the frontier lease must
-   be chosen inside the cap; the coordinator handles the seal-rejection path (retry with a nearer `T`).
+   comes back via gossip piggyback. Each node confirms readiness: it pins (and releases) a
+   read-consistent snapshot and ACKs its `GlobalSeq` + held-range summary. There is **NO HLC-clock
+   advance and NO write-barrier / drain** — `T` is a comparison **ceiling** applied at export time
+   (`Version ≤ T`), not a quiesce point (see §3 / §5.2). The frontier `T = now + lease` is chosen as a
+   small lease ahead of now; correctness comes from the `≤T` filter over each node's consistent
+   snapshot plus the all-export union, so no node needs to stop taking writes.
 4. **Export** — each node streams assigned data to `s3://…/backups/<backupID>/…` (Phase 2
    `ExportLogical(selector, ownedRanges)` + Phase 1 `CheckpointToObjectStore(parent)`), writes its
    per-node sub-manifest, reports progress; coordinator renews the intent lease as progress arrives.
@@ -126,25 +127,42 @@ objects), so resume/retry is safe.
 
 ## 3. Consistency (two planes)
 
-- **Logical full backup → cluster-wide HLC cut `T`** (master spec §1). Each owner exports its
-  `Version ≤ T` converged view (AP, bounded by the skew cap). Logical is full-only, so writes not
-  yet converged to an owner at seal are simply captured by the next full backup.
+- **Logical full backup → cluster-wide HLC cut `T`** (master spec §1), realised for the **KV tier**:
+  each node filters **CFKVData** to `Version.HLCPhysicalMs ≤ T` over its own consistent snapshot, and
+  the same `T` (recorded in `cluster.manifest`) is applied on every node, so the union is a single
+  cluster-wide instant for KV. **CFKVMeta is exported VERBATIM** (latest pointers + TTL index, including
+  `SiblingVersions` / conflict state); on restore a repair pass (`recordstore.RepairCutMeta`) repoints
+  ONLY a latest pointer whose winner version was after `T` (so the cut dropped its CFKVData record →
+  the pointer would dangle) to the surviving `≤T` winner. Since `T = now + lease` is in the future, the
+  cut excludes essentially nothing, so almost every backup has zero dangling pointers and CFKVMeta is
+  preserved exactly (siblings intact). Only a key whose *latest* write was genuinely after `T` is
+  repointed, losing that one key's concurrent-sibling metadata — a bounded, documented limitation (winner
+  value stays correct; see §5.2). **Graph and vector** are single-slot (no version history): captured **snapshot-current** at
+  export time (NOT strict-dropped to `T` — dropping a `>T` overwrite would lose the only copy);
+  documented limitation. **Collections (CFReplData)** is raft/CP — consistent by per-shard applied
+  index, orthogonal to the HLC cut. Logical is full-only, so writes not yet converged to an owner are
+  captured by the next full backup.
 - **Physical → per-node pinned snapshot** at each node's `GlobalSeq`. No cluster barrier; each
   shard's raft state is internally consistent and recovers independently. Physical incrementals
   (3b) = SSTable file-ids absent from the parent (`SSTablesSince`), per node.
 
-> **Implementation status (2026-06-30): the cluster-wide HLC cut is DEFERRED to Phase 3a.1.**
-> Phase 3a as built delivers **per-node snapshot isolation** — each live node exports a consistent
-> point-in-time snapshot of its *own* store taken at export time (correct full-coverage union via
-> all-export + LWW dedup on restore), but there is **no coordinated cluster-wide frontier `T` and no
-> `Version ≤ T` AP-tier filtering** yet. So a 3a logical backup is internally consistent per node but
-> not sealed to a single cluster-wide instant. **Phase 3a.1** implements the spec's cut: coordinator
-> picks `T = now + lease` (skew-cap bounded), each node advances its HLC past `T` (`Clock.Update`,
-> handling `*SkewError`), drains in-flight `≤T`, and AP-tier export filters `Version ≤ T` (needs a
-> per-contributor `VersionOf` extractor — KV version key-suffix, graph/vector value field — which
-> Phase 2 left out). 3a.1 also adds the commit-time coverage cross-check (held-ranges vs assignment)
-> so `PARTIAL` reflects real cluster gaps, not only an assigner-supplied list. Until 3a.1, treat the
-> logical backup's cross-node consistency as eventual (bounded by replication lag), not a hard cut.
+> **Implementation status (2026-06-30): the cluster-wide HLC cut is DONE for KV (Phase 3a.1).**
+> The coordinator picks one `T = now + lease` and records it in `cluster.manifest`; every node applies
+> the SAME `T` as a comparison ceiling in `ExportLogical`, filtering **CFKVData** to
+> `Version.HLCPhysicalMs ≤ T` over its own consistent snapshot. **CFKVMeta** is authoritative and
+> exported VERBATIM (always); on restore `recordstore.RepairCutMeta` repoints only the latest pointers
+> whose winner was dropped by the cut (winner version after `T`) to the surviving `≤T` winner, and
+> filters any `>T`-cut sibling refs — the no-dangling-pointer guarantee, with siblings preserved verbatim
+> for every key whose winner survived (≈ all keys). The cut needs a per-contributor `VersionOf` extractor
+> (KV `StoredRecord`; graph/vector record value field).
+>
+> Mechanism note (corrected): there is **NO HLC-clock advance, NO `Clock.Update`/`SkewError` handling,
+> and NO write-barrier/drain** — none exists and none is needed. `T` is purely a `≤T` comparison
+> ceiling; correctness is the per-node consistent snapshot + the `≤T` filter + the all-export union.
+> `frontierT ≤ 0` disables the cut (back-compat). **Graph/vector** stay snapshot-current (single-slot,
+> not sealed to `T`, to avoid losing the only copy of a `>T` overwrite); **collections** stay raft/
+> applied-index consistent. The commit-time held-range coverage cross-check (real `PARTIAL`) remains a
+> follow-up (Task 5, optional); `PARTIAL` today is driven by the assigner's gap list.
 
 ## 4. Physical incrementals (3b)
 
@@ -229,6 +247,16 @@ Implemented and reviewed, with these honest consequences to operate around:
 - **Physical node match is by `MemberID`** (the manifest also carries `StorageUUID`, currently
   unused for matching) — correct while member ids are stable (ordinal DNS); id reassignment would
   need the `StorageUUID` fallback.
+- **A `≤T` cut loses concurrent-sibling metadata ONLY for a key whose latest write was after `T`.**
+  CFKVMeta is exported verbatim, so every latest pointer (with its `SiblingVersions` / `SIBLINGS_PRESENT`
+  conflict flag) is preserved as-is. On restore, `RepairCutMeta` touches only pointers left dangling by
+  the cut: a pointer whose winner version is `> T` (its CFKVData record was dropped) is repointed via
+  `RebuildLatestPointer` to the surviving `≤T` winner, which recovers only winner / tombstone / expiry —
+  so *that one key's* siblings/conflict flag are dropped (the winner value is correct; sibling *values*
+  survive as distinct CFKVData versions). Because `T = now + lease` is in the future, the cut normally
+  excludes nothing → no pointer dangles → siblings are preserved verbatim for **every** key. Only a
+  genuinely-after-`T` write loses its conflict metadata. Reconstructing siblings on a repoint needs
+  causality/conflict-policy info the LWW selector lacks — a tracked follow-up, not blocking 3a.1.
 
 ## 6. Durable-artifact lifecycle & GC (the "no trash" requirement)
 
@@ -249,9 +277,9 @@ leader-driven sweep (same pattern as the existing TTL / budget-lease sweeps):
 
 Down node → ranges reassign to a live holder; fully-unavailable range → `PARTIAL`+gap. Coordinator
 crash → resume from intent, else lease-expire → `FAILED`. Export reads bypass the disk-pressure
-write gate but are rate-limited; `Prepare` drain is bounded; corrupt keys can't panic (Phase 2c
-guards). A write flood during backup is excluded by the `>T` cut. No node crashes. No silent
-success (explicit `PARTIAL` + gaps).
+write gate but are rate-limited; corrupt keys can't panic (Phase 2c guards). A write flood during
+backup is excluded from the KV cut by the `>T` ceiling (no drain needed — `T` is a comparison filter,
+not a quiesce). No node crashes. No silent success (explicit `PARTIAL` + gaps).
 
 ## 8. S3 / object-store config
 
@@ -328,7 +356,7 @@ RPCs. The UI adds a `ui/` view + a `BackupService` Connect handler mounted at a 
   lets the coordinator establish the cut across all nodes before exporting — likely two-phase).
 - Progress dissemination: gossip piggyback (a `BackupProgressWire`) vs coordinator-poll. Lean
   piggyback (matches existing gossip hooks), poll as fallback.
-- Frontier-`T` lease duration + `Prepare` drain timeout defaults.
+- Frontier-`T` lease duration default (`frontierLeaseMs`; no drain timeout — `T` is a `≤T` ceiling).
 - Intent lease-deadline + default `retainUntilMs` / retention policy values (operator overrides them
   in Phase 4).
 - Bootstrap-restore physical mapping: exact rule for matching a target node to a source node's
