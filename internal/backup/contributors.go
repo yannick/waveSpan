@@ -103,13 +103,17 @@ func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	// system: CFSys is cluster config/identity — always backed up (selects nil).
 	r.Register(funcContributor{name: "system", cfs: []CFSpec{{storage.CFSys, true}}})
+	// kv: CFKVData is authoritative; CFKVMeta is DERIVED (not exported) and rebuilt on restore from the
+	// surviving (≤T) CFKVData via recordstore.RebuildMeta — copying the latest pointers verbatim while the
+	// HLC cut dropped their >T winners would dangle the pointer → silent key loss (design/backup §5.2).
 	r.Register(funcContributor{
-		name: "kv", cfs: []CFSpec{{storage.CFKVData, true}, {storage.CFKVMeta, true}},
+		name: "kv", cfs: []CFSpec{{storage.CFKVData, true}, {storage.CFKVMeta, false}},
 		selects: func(_ storage.ColumnFamily, key []byte, sel Selector) bool {
 			ns, ok := recordstore.NamespaceOfKey(key)
 			return ok && contains(sel.Namespaces, ns)
 		},
 		versionOf: kvVersionOf,
+		rebuild:   func(dst storage.LocalStore, _ RestoreInfo) error { return recordstore.RebuildMeta(dst) },
 	})
 	r.Register(funcContributor{
 		name: "collections", cfs: []CFSpec{{storage.CFReplData, true}},
