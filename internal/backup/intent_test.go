@@ -13,6 +13,7 @@ import (
 // Marshal→Unmarshal unchanged (including the Selector maps, the assignment plan, and per-node records).
 func TestIntentRoundTrip(t *testing.T) {
 	in := &BackupIntent{
+		SchemaVersion:      intentSchemaVersion,
 		BackupID:           "bk-2026-0001",
 		FrontierT:          1234567890,
 		CaptureWallClockMs: 1719720000000,
@@ -25,7 +26,7 @@ func TestIntentRoundTrip(t *testing.T) {
 		LeaseDeadlineMs:    1719720600000,
 		RetainUntilMs:      1722312000000,
 		PerNode: []NodeRecord{
-			{MemberID: "m1", Phase: PhaseExport, Objects: 7, Bytes: 4096, Done: true, SubManifestKey: "bk/nodes/m1/node.manifest.json", HeldRanges: []string{"a-m"}},
+			{MemberID: "m1", Phase: PhaseExport, Objects: 7, Bytes: 4096, Done: true, SubManifestKey: "bk/nodes/m1/node.manifest.json", HeldRanges: []string{"a-m"}, StorageUUID: "uuid-m1"},
 			{MemberID: "m2", Phase: PhasePrepare, HeldRanges: []string{"m-z"}},
 		},
 		Gaps:        []string{"x-y"},

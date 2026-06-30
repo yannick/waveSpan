@@ -7,7 +7,13 @@ import (
 	"sort"
 )
 
+// intentSchemaVersion is the current BackupIntent schema version, stamped into every persisted intent
+// (the durable meta-shard blob). A reader can branch on it if the layout ever changes; gob already
+// tolerates added fields, this guards against an incompatible reinterpretation of existing ones.
+const intentSchemaVersion = 1
+
 // Status is a backup's lifecycle state (mirrors proto BackupStatus).
+// These enum values are gob-persisted positionally in BackupIntent — append-only; never reorder.
 type Status int32
 
 const (
@@ -19,6 +25,7 @@ const (
 )
 
 // Phase is the coordinator's current phase (mirrors proto BackupPhase).
+// These enum values are gob-persisted positionally in BackupIntent — append-only; never reorder.
 type Phase int32
 
 const (
@@ -30,6 +37,7 @@ const (
 )
 
 // Plane selects the logical and/or physical export plane (mirrors proto BackupPlane).
+// These enum values are gob-persisted positionally in BackupIntent — append-only; never reorder.
 type Plane int32
 
 const (
@@ -53,7 +61,8 @@ type Descriptor struct {
 }
 
 // NodeRecord is one node's recorded participation in a backup: its phase, export counts, the key of the
-// per-node sub-manifest it wrote, and the ranges it reported holding at prepare time.
+// per-node sub-manifest it wrote, the ranges it reported holding at prepare time, and its stable storage
+// identity (needed by 3c physical restore to match exported state back to a node).
 type NodeRecord struct {
 	MemberID       string
 	Phase          Phase
@@ -62,6 +71,7 @@ type NodeRecord struct {
 	Done           bool
 	SubManifestKey string
 	HeldRanges     []string
+	StorageUUID    string
 }
 
 // BackupIntent is the durable catalog record of a backup, stored as a blob in the meta shard. It is the
@@ -69,6 +79,7 @@ type NodeRecord struct {
 // to do next: the chosen frontier, the assignment plan, per-node progress, and the current phase/status.
 // It never holds raw secrets (the destination carries only a credential reference).
 type BackupIntent struct {
+	SchemaVersion      int
 	BackupID           string
 	FrontierT          int64
 	CaptureWallClockMs int64

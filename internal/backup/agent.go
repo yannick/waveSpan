@@ -49,11 +49,13 @@ func (a *Agent) Prepare(ctx context.Context, store storage.LocalStore, backupID 
 }
 
 // ExportResult is the outcome of one node's export: the object/byte counts, the key of the per-node
-// sub-manifest, and the decoded manifest itself (for the coordinator's cluster.manifest).
+// sub-manifest, the node's stable storage identity (recorded in the cluster manifest for 3c restore),
+// and the decoded manifest itself (for the coordinator's cluster.manifest).
 type ExportResult struct {
 	Objects        int64
 	Bytes          int64
 	SubManifestKey string
+	StorageUUID    string
 	Manifest       *NodeManifest
 }
 
@@ -82,6 +84,7 @@ func (a *Agent) Export(ctx context.Context, store storage.LocalStore, objStore O
 		Objects:        objects,
 		Bytes:          bytes,
 		SubManifestKey: keyPrefix + "/node.manifest.json",
+		StorageUUID:    man.StorageUUID,
 		Manifest:       man,
 	}, nil
 }

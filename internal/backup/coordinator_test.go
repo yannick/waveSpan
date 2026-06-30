@@ -50,6 +50,7 @@ func buildCluster(t *testing.T, objStore ObjectStore, ids ...string) map[string]
 	for _, id := range ids {
 		mem := storage.NewMemStore()
 		t.Cleanup(func() { _ = mem.Close() })
+		mustPut(t, mem, storage.CFSys, []byte(storageIdentityKey), []byte("uuid-"+id))
 		mustPut(t, mem, storage.CFKVData, kvKey("ns-"+id, "k"), []byte("v-"+id))
 		mustPut(t, mem, storage.CFReplData, replDataKey("ns-"+id, "c", "row", 4), []byte("set"))
 		nodes[id] = &memberNode{id: id, store: mem, objStore: objStore, agent: NewAgent(nil)}
@@ -130,6 +131,16 @@ func TestCoordinatorFullBackupComplete(t *testing.T) {
 			t.Fatalf("sub-manifest %q referenced but missing", ref.Ref)
 		}
 	}
+
+	// Each node's stable storage identity is captured in the manifest topology (needed by 3c restore).
+	if len(cm.SourceTopology) != 3 {
+		t.Fatalf("source topology = %d entries, want 3", len(cm.SourceTopology))
+	}
+	for _, te := range cm.SourceTopology {
+		if te.StorageUUID != "uuid-"+te.MemberID {
+			t.Fatalf("topology %s StorageUUID = %q, want %q", te.MemberID, te.StorageUUID, "uuid-"+te.MemberID)
+		}
+	}
 }
 
 // TestCoordinatorPartialOnGap asserts an uncovered range (no live holder) commits PARTIAL with the gap
@@ -189,11 +200,16 @@ func TestCoordinatorListAndDelete(t *testing.T) {
 		t.Fatalf("ListBackups = %d, want 2", len(list))
 	}
 
-	if _, err := coord.DeleteBackup(ctx, id1); err != nil {
-		t.Fatalf("DeleteBackup: %v", err)
+	// Deleting an existing backup reports deleted=true.
+	if deleted, err := coord.DeleteBackup(ctx, id1); err != nil || !deleted {
+		t.Fatalf("DeleteBackup(existing) = %v err %v, want true nil", deleted, err)
 	}
 	if _, err := coord.BackupStatus(ctx, id1); err == nil {
 		t.Fatalf("BackupStatus(deleted) = nil err, want NotFound")
+	}
+	// Deleting an unknown id reports deleted=false, not a silent success.
+	if deleted, err := coord.DeleteBackup(ctx, "bk-does-not-exist"); err != nil || deleted {
+		t.Fatalf("DeleteBackup(unknown) = %v err %v, want false nil", deleted, err)
 	}
 	if _, err := coord.BackupStatus(ctx, id2); err != nil {
 		t.Fatalf("BackupStatus(%s): %v", id2, err)

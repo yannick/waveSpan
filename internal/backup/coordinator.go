@@ -69,9 +69,10 @@ type Config struct {
 }
 
 // Coordinator drives a consistent cluster backup: it records a durable BackupIntent in the meta shard,
-// picks a cluster frontier, assigns owners, fans PrepareBackup/ExportBackup out to the live nodes over
-// the BackupService client, and commits a cluster.manifest with explicit PARTIAL detection
-// (design/backup phase 3a). It also serves the node-internal Prepare/Export for its own node via Agent.
+// picks a cluster frontier, assigns owners, drives PrepareBackup/ExportBackup to the live nodes over the
+// BackupService client (sequentially in 3a), and commits a cluster.manifest with explicit PARTIAL
+// detection (design/backup phase 3a). It also serves the node-internal Prepare/Export for its own node
+// via Agent.
 type Coordinator struct {
 	self       string
 	meta       MetaStore
@@ -128,6 +129,7 @@ func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSp
 	now := c.clock.NowMs()
 	id := newBackupID(now)
 	in := &BackupIntent{
+		SchemaVersion:      intentSchemaVersion,
 		BackupID:           id,
 		FrontierT:          now + frontierLeaseMs,
 		CaptureWallClockMs: now,
@@ -197,7 +199,8 @@ func (c *Coordinator) run(ctx context.Context, in *BackupIntent) error {
 	return nil
 }
 
-// prepareAll fans PrepareBackup out to every assigned member and records the ranges they report holding.
+// prepareAll calls PrepareBackup on every assigned member (sequentially in 3a) and records the ranges
+// they report holding.
 func (c *Coordinator) prepareAll(ctx context.Context, in *BackupIntent) error {
 	for _, mid := range sortedMembers(in.Assignments) {
 		cl, err := c.clientFor(mid)
@@ -213,7 +216,8 @@ func (c *Coordinator) prepareAll(ctx context.Context, in *BackupIntent) error {
 	return nil
 }
 
-// exportAll fans ExportBackup out to every assigned member and records each node's export result.
+// exportAll calls ExportBackup on every assigned member (sequentially in 3a) and records each node's
+// export result.
 func (c *Coordinator) exportAll(ctx context.Context, in *BackupIntent) error {
 	for _, mid := range sortedMembers(in.Assignments) {
 		cl, err := c.clientFor(mid)
@@ -236,20 +240,26 @@ func (c *Coordinator) exportAll(ctx context.Context, in *BackupIntent) error {
 			Objects:        res.Objects,
 			Bytes:          res.Bytes,
 			SubManifestKey: res.SubManifestKey,
+			StorageUUID:    res.StorageUUID,
 			Done:           true,
 		})
 	}
 	return nil
 }
 
-// commit cross-checks coverage, writes the cluster.manifest, and finalizes the intent status. A backup
-// with enumerated gaps (ranges with no live holder) is committed PARTIAL — never silently COMPLETE.
+// commit writes the cluster.manifest and finalizes the intent status. A backup with enumerated gaps is
+// committed PARTIAL — never silently COMPLETE.
+//
+// 3a: PARTIAL is driven solely by the assigner's gap list (ranges it found with no live holder). The
+// HeldRanges plumbed via Prepare→NodeRecord is NOT yet compared against the assignments here — that
+// held-range-vs-assignment coverage cross-check (catching real cluster gaps a node failed to cover)
+// lands in 3a.1. HeldRanges is recorded now so that cross-check has its input when it ships.
 func (c *Coordinator) commit(ctx context.Context, in *BackupIntent) error {
 	refs := make([]PerNodeRef, 0, len(in.PerNode))
 	topo := make([]TopologyEntry, 0, len(in.PerNode))
 	for _, n := range in.PerNode {
 		refs = append(refs, PerNodeRef{MemberID: n.MemberID, Ref: n.SubManifestKey, Objects: n.Objects, Bytes: n.Bytes})
-		topo = append(topo, TopologyEntry{MemberID: n.MemberID})
+		topo = append(topo, TopologyEntry{MemberID: n.MemberID, StorageUUID: n.StorageUUID})
 	}
 	status := StatusComplete
 	if len(in.Gaps) > 0 {
@@ -324,8 +334,17 @@ func (c *Coordinator) ListBackups(ctx context.Context) ([]*wavespanv1.BackupSumm
 	return out, nil
 }
 
-// DeleteBackup removes a backup's catalog intent (object GC is Phase 3d).
+// DeleteBackup removes a backup's catalog intent (object GC is Phase 3d). It reports deleted=false for an
+// unknown id rather than silently claiming success — DeleteBlob on a missing key is a no-op, so the
+// truthful answer requires an existence check first.
 func (c *Coordinator) DeleteBackup(ctx context.Context, backupID string) (bool, error) {
+	_, found, err := GetIntent(ctx, c.meta, backupID)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
 	if err := DeleteIntent(ctx, c.meta, backupID); err != nil {
 		return false, err
 	}

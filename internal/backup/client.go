@@ -50,13 +50,18 @@ func (g grpcNodeClient) Export(ctx context.Context, req ExportRequest) (ExportRe
 	if err != nil {
 		return ExportResult{}, err
 	}
+	// StorageUUID is left empty over the wire: ExportBackupResult carries no storage_uuid field yet, so a
+	// remote node's identity does not reach the cluster manifest in 3a (the local node's does, via
+	// ExportLocal/Agent). Carrying it cross-node — likely on a split-out BackupNodeService — is tracked
+	// for 3c physical restore, which matches nodes by stable identity.
 	return ExportResult{Objects: res.GetObjects(), Bytes: res.GetBytes(), SubManifestKey: res.GetSubManifestKey()}, nil
 }
 
 // NewGRPCClientFactory builds a ClientFactory that dials each member's BackupService over gRPC. addrFor
 // resolves a member id to its data-port address (e.g. from gossip membership); dialed clients are cached
 // per member. Dialing reuses the shared rpcopts pooled, mTLS-secured connections (as the write
-// forwarder does), so the coordinator fans prepare/export out over the same secured data plane.
+// forwarder does), so the coordinator drives prepare/export (sequentially in 3a) over the same secured
+// data plane.
 func NewGRPCClientFactory(addrFor func(memberID string) (string, error)) ClientFactory {
 	var mu sync.Mutex
 	clients := map[string]NodeClient{}
