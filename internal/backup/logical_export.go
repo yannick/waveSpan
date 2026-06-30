@@ -29,17 +29,23 @@ func ExportLogical(src storage.LocalStore, store ObjectStore, keyPrefix string, 
 		uuid = string(v)
 	}
 
-	// Owning contributor per CF (each CF is owned by exactly one), so the per-key
-	// filter can consult the right matcher. Only built/used when a filter is active.
+	// Owning contributor per CF (each CF is owned by exactly one), so the per-key selection filter and
+	// the HLC ≤T cut can consult the right matcher/version-decoder. Built unconditionally now (the cut
+	// needs it even with no selector).
 	filtering := !sel.IsEmpty()
 	owner := map[storage.ColumnFamily]Contributor{}
-	if filtering {
-		for _, c := range reg.Contributors() {
-			for _, s := range c.CFs() {
-				owner[s.CF] = c
-			}
+	for _, c := range reg.Contributors() {
+		for _, s := range c.CFs() {
+			owner[s.CF] = c
 		}
 	}
+
+	// HLC consistent cut (Phase 3a.1): captureMs is the cluster-wide frontier T. A positive T seals the
+	// KV tier to "version ≤ T" — CFKVData records newer than T are excluded so every node captures the
+	// same instant. captureMs <= 0 disables the cut (back-compat: export everything). The cut applies to
+	// CFKVData ONLY: graph/vector are single-slot and captured snapshot-current (not sealed to T, by
+	// design — strict-dropping them would lose data), and CFKVMeta is derived (rebuilt on restore).
+	cutKV := captureMs > 0
 
 	snap, err := src.Snapshot()
 	if err != nil {
@@ -61,6 +67,12 @@ func ExportLogical(src storage.LocalStore, store ObjectStore, keyPrefix string, 
 			if filtering && !owner[cf].Selects(cf, k, sel) {
 				it.Next()
 				continue
+			}
+			if cutKV && cf == storage.CFKVData {
+				if ver, ok := owner[cf].VersionOf(cf, k, v); ok && !versionLEQ(ver, captureMs) {
+					it.Next()
+					continue // KV record newer than the frontier T — excluded from the cut
+				}
 			}
 			writeBytes(bw, k)
 			writeBytes(bw, v)
