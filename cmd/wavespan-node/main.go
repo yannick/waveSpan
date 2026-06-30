@@ -89,13 +89,14 @@ func newBackupCoordinator(mgr *collections.Manager, store storage.LocalStore, se
 		return "", fmt.Errorf("backup: unknown member %q", id)
 	}
 	return backup.NewCoordinator(backup.Config{
-		Self:       self.MemberID,
-		Meta:       collections.NewMetaBackupStore(mgr),
-		ObjStore:   objStore,
-		Roster:     backupRoster{svc: svc},
-		ClientFor:  backup.NewGRPCClientFactory(addrFor),
-		Assigner:   backup.AllExportAssigner{},
-		LocalStore: store,
+		Self:         self.MemberID,
+		Meta:         collections.NewMetaBackupStore(mgr),
+		ObjStore:     objStore,
+		Roster:       backupRoster{svc: svc},
+		ClientFor:    backup.NewGRPCClientFactory(addrFor),
+		Assigner:     backup.AllExportAssigner{},
+		LocalStore:   store,
+		IsMetaLeader: func() bool { return mgr.IsLeader(collections.MetaShardID) },
 	}), nil
 }
 
@@ -715,6 +716,7 @@ func run() error {
 				logger.Error("backup: coordinator init failed; BackupService disabled", "err", berr)
 			} else {
 				collectionsSvc = collectionsSvc.WithBackup(bc)
+				go bc.RunSweep(ctx, time.Minute) // leader-gated lifecycle GC (Phase 3d)
 			}
 			cypherCollections := collections.NewCypherCollections(cols)
 			cypherSvc.WithCollections(cypherCollections)
@@ -751,6 +753,7 @@ func run() error {
 					logger.Error("backup: coordinator init failed; BackupService disabled", "err", berr)
 				} else {
 					collectionsSvc = collectionsSvc.WithBackup(bc)
+					go bc.RunSweep(ctx, time.Minute) // leader-gated lifecycle GC (Phase 3d)
 				}
 				cypherCollections := collections.NewCypherCollections(cols) // set.*/hash.*/zset.* built-ins
 				cypherSvc.WithCollections(cypherCollections)

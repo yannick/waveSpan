@@ -60,16 +60,18 @@ func (realClock) NowMs() int64 { return time.Now().UnixMilli() }
 
 // Config wires a Coordinator's dependencies.
 type Config struct {
-	Self       string            // this node's member id
-	Meta       MetaStore         // durable intent catalog (the meta shard)
-	ObjStore   ObjectStore       // backup destination (also used by the local agent)
-	Roster     Roster            // live membership
-	ClientFor  ClientFactory     // dial a node's BackupService
-	Assigner   Assigner          // ownership/assignment plan
-	Clock      Clock             // nil = real time
-	LocalStore storage.LocalStore // this node's store, for the node-internal Prepare/Export RPCs
-	Registry   *Registry         // export contributor registry (nil = DefaultRegistry)
-	LeaseMs    int64             // intent lease window (0 = default)
+	Self        string             // this node's member id
+	Meta        MetaStore          // durable intent catalog (the meta shard)
+	ObjStore    ObjectStore        // backup destination (also used by the local agent)
+	Roster      Roster             // live membership
+	ClientFor   ClientFactory      // dial a node's BackupService
+	Assigner    Assigner           // ownership/assignment plan
+	Clock       Clock              // nil = real time
+	LocalStore  storage.LocalStore // this node's store, for the node-internal Prepare/Export RPCs
+	Registry    *Registry          // export contributor registry (nil = DefaultRegistry)
+	LeaseMs     int64              // intent lease window (0 = default)
+	RetainMs    int64              // terminal-intent retention window (0 = default; Phase 3d)
+	IsMetaLeader func() bool       // reports whether this node leads the meta shard (gates the sweep; nil = always)
 }
 
 // Coordinator drives a consistent cluster backup: it records a durable BackupIntent in the meta shard,
@@ -85,16 +87,19 @@ type Coordinator struct {
 	clientFor  ClientFactory
 	assigner   Assigner
 	clock      Clock
-	localStore storage.LocalStore
-	agent      *Agent
-	leaseMs    int64
+	localStore   storage.LocalStore
+	agent        *Agent
+	leaseMs      int64
+	retainMs     int64
+	isMetaLeader func() bool
 
 	// failAfterPhase, when set (test hook), makes run() persist the named phase's completion and then
 	// return early — simulating coordinator loss for the resumability test.
 	failAfterPhase Phase
 }
 
-const defaultLeaseMs = 10 * 60 * 1000 // 10 minutes
+const defaultLeaseMs = 10 * 60 * 1000        // 10 minutes
+const defaultRetainMs = 30 * 24 * 60 * 60 * 1000 // 30 days terminal-intent retention (Phase 3d)
 
 // frontierLeaseMs is the small lease added to now when picking the backup frontier T (spec §2 Begin:
 // T = HLC.now()+lease). In 3a T is recorded for provenance only and not yet used as a Version<=T cut
@@ -112,17 +117,23 @@ func NewCoordinator(cfg Config) *Coordinator {
 	if lease == 0 {
 		lease = defaultLeaseMs
 	}
+	retain := cfg.RetainMs
+	if retain == 0 {
+		retain = defaultRetainMs
+	}
 	return &Coordinator{
-		self:       cfg.Self,
-		meta:       cfg.Meta,
-		objStore:   cfg.ObjStore,
-		roster:     cfg.Roster,
-		clientFor:  cfg.ClientFor,
-		assigner:   cfg.Assigner,
-		clock:      clk,
-		localStore: cfg.LocalStore,
-		agent:      NewAgent(cfg.Registry),
-		leaseMs:    lease,
+		self:         cfg.Self,
+		meta:         cfg.Meta,
+		objStore:     cfg.ObjStore,
+		roster:       cfg.Roster,
+		clientFor:    cfg.ClientFor,
+		assigner:     cfg.Assigner,
+		clock:        clk,
+		localStore:   cfg.LocalStore,
+		agent:        NewAgent(cfg.Registry),
+		leaseMs:      lease,
+		retainMs:     retain,
+		isMetaLeader: cfg.IsMetaLeader,
 	}
 }
 
@@ -355,9 +366,11 @@ func (c *Coordinator) commit(ctx context.Context, in *BackupIntent) error {
 	if err := WriteClusterManifest(c.objStore, cm); err != nil {
 		return err
 	}
+	now := c.clock.NowMs()
 	in.Status = status
 	in.Phase = PhaseCommit
-	in.FinishedMs = c.clock.NowMs()
+	in.FinishedMs = now
+	in.RetainUntilMs = now + c.retainMs // terminal: schedule retention deletion (Phase 3d)
 	return c.persist(ctx, in)
 }
 
@@ -409,21 +422,39 @@ func (c *Coordinator) ListBackups(ctx context.Context) ([]*wavespanv1.BackupSumm
 	return out, nil
 }
 
-// DeleteBackup removes a backup's catalog intent (object GC is Phase 3d). It reports deleted=false for an
-// unknown id rather than silently claiming success — DeleteBlob on a missing key is a no-op, so the
-// truthful answer requires an existence check first.
+// DeleteBackup removes a backup's catalog intent AND its object-store objects, chain-aware (Phase 3d):
+// it refuses to delete a backup that a live incremental child still depends on. It reports deleted=false
+// for an unknown id rather than silently claiming success.
+//
+// NOTE (force over RPC): force-cascade is not reachable over the Connect/gRPC surface — DeleteBackupRequest
+// has no `force` field — so the RPC always calls force=false. gc.DeleteBackup implements the full
+// force-cascade and is covered by tests; exposing it over the wire needs a proto `force` field (tracked
+// with the other cross-node proto gaps).
 func (c *Coordinator) DeleteBackup(ctx context.Context, backupID string) (bool, error) {
-	_, found, err := GetIntent(ctx, c.meta, backupID)
-	if err != nil {
-		return false, err
+	return DeleteBackup(ctx, c.meta, c.objStore, backupID, false)
+}
+
+// RunSweep runs the leader-gated lifecycle sweep loop until ctx is done (Phase 3d). On each tick, when
+// this node leads the meta shard, it expires/retires intents (SweepIntents) and reconciles orphan
+// objects (ReconcileOrphans). Transient errors are swallowed — the next tick retries.
+func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if c.isMetaLeader != nil && !c.isMetaLeader() {
+				continue // only the meta-shard leader sweeps
+			}
+			now := c.clock.NowMs()
+			if _, err := SweepIntents(ctx, c.meta, c.objStore, now, c.retainMs); err != nil {
+				continue
+			}
+			_, _ = ReconcileOrphans(ctx, c.meta, c.objStore, "")
+		}
 	}
-	if !found {
-		return false, nil
-	}
-	if err := DeleteIntent(ctx, c.meta, backupID); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // PrepareLocal serves the node-internal PrepareBackup RPC against this node's store.
