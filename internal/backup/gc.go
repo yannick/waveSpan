@@ -184,7 +184,10 @@ func deletePrefix(objStore ObjectStore, prefix string) error {
 // TOCTOU safety: the live set is a snapshot taken before listing; before deleting any candidate the
 // intent is re-checked FRESH (GetIntent), so an in-flight backup that Began after the snapshot is never
 // collected. clusterPrefix MUST be the dedicated backups root, so every first path segment is a backup id.
-func ReconcileOrphans(ctx context.Context, store MetaStore, storeFor StoreForIntent, defaultStore ObjectStore, clusterPrefix string) ([]string, error) {
+// defaultKey is the destinationKey of the node's default destination, so a default-S3 backup's descriptor
+// (which carries a bucket-based key) is recognised as the already-scanned default store rather than
+// scanned a second time. Pass "" when the default is the FS fallback.
+func ReconcileOrphans(ctx context.Context, store MetaStore, storeFor StoreForIntent, defaultStore ObjectStore, defaultKey, clusterPrefix string) ([]string, error) {
 	intents, err := ListIntents(ctx, store)
 	if err != nil {
 		return nil, err
@@ -194,9 +197,10 @@ func ReconcileOrphans(ctx context.Context, store MetaStore, storeFor StoreForInt
 		live[in.BackupID] = true
 	}
 
-	// Distinct stores to scan: the default, plus each live intent's destination (deduped by descriptor).
+	// Distinct stores to scan: the default, plus each live intent's destination (deduped by descriptor;
+	// the default destination's own key is pre-seeded so a default-S3 backup is not scanned twice).
 	stores := []ObjectStore{defaultStore}
-	seen := map[string]bool{"": true}
+	seen := map[string]bool{"": true, defaultKey: true}
 	for _, in := range intents {
 		k := destinationKey(in.Destination)
 		if k == "" || seen[k] {

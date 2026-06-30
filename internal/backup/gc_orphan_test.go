@@ -37,7 +37,7 @@ func TestReconcileOrphans(t *testing.T) {
 		put(k)
 	}
 
-	deleted, err := ReconcileOrphans(ctx, store, toStore(objStore), objStore, "")
+	deleted, err := ReconcileOrphans(ctx, store, toStore(objStore), objStore, "", "")
 	if err != nil {
 		t.Fatalf("ReconcileOrphans: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestReconcileOrphans(t *testing.T) {
 	}
 
 	// Idempotent: a second pass finds nothing to delete.
-	if deleted2, err := ReconcileOrphans(ctx, store, toStore(objStore), objStore, ""); err != nil || len(deleted2) != 0 {
+	if deleted2, err := ReconcileOrphans(ctx, store, toStore(objStore), objStore, "", ""); err != nil || len(deleted2) != 0 {
 		t.Fatalf("second ReconcileOrphans = %v err %v, want none", deleted2, err)
 	}
 }
@@ -105,7 +105,7 @@ func TestReconcileOrphansTOCTOU(t *testing.T) {
 	put("dead-bk/cluster.manifest.json")
 
 	store := &hidingMetaStore{MetaStore: base, hidden: "racing-bk"}
-	deleted, err := ReconcileOrphans(ctx, store, toStore(objStore), objStore, "")
+	deleted, err := ReconcileOrphans(ctx, store, toStore(objStore), objStore, "", "")
 	if err != nil {
 		t.Fatalf("ReconcileOrphans: %v", err)
 	}

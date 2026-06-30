@@ -11,9 +11,10 @@ import (
 
 // DestinationSpec is the resolution input: a request's destination, mapped from the proto, optionally
 // carrying transient inline credentials for an explicit ad-hoc destination. Inline creds are used for a
-// single run and never persisted or logged. (The proto Destination has no inline-credential fields yet,
-// so over the wire only Name / explicit+SecretRef destinations are reachable; the inline path is for the
-// resolution engine + tests until the proto carries them — tracked with the other node-RPC proto gaps.)
+// single run and never persisted or logged. They ARE carried over the wire (CredentialRef.access_key/
+// secret_key on the BackupNodeService ExportBackup RPC, Phase 3c Task 0) so a remote node can resolve an
+// explicit destination — that RPC is on the mTLS-authenticated data port, and only the non-secret
+// descriptor + credential reference is ever persisted.
 type DestinationSpec struct {
 	Name            string
 	Bucket          string
@@ -34,9 +35,9 @@ type ResolvedDestination struct {
 	S3    objstore.S3Config
 }
 
-// destinationSpecFromProto maps a BackupSpec's proto Destination to the resolution input. The proto's
-// CredentialRef.SecretName is treated as a credential env-var reference (resolved server-side); raw
-// inline credentials are not carried over the wire.
+// destinationSpecFromProto maps a proto Destination to the resolution input. CredentialRef.secret_name is
+// a credential env-var reference (resolved server-side); CredentialRef.access_key/secret_key are transient
+// inline credentials (carried over the mTLS data port for an explicit destination, never persisted).
 func destinationSpecFromProto(d *wavespanv1.Destination) DestinationSpec {
 	if d == nil {
 		return DestinationSpec{}

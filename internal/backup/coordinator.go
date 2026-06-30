@@ -573,6 +573,10 @@ func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	storeFor := func(in *BackupIntent) (ObjectStore, error) { return c.storeForIntent(in) }
+	// The default destination's descriptor key, so orphan reconciliation doesn't scan a default-S3 bucket
+	// twice (once as the default store, once via a default-destination backup's descriptor).
+	_, defDesc, _ := ResolveDestination(c.backupCfg, DestinationSpec{}, c.getenv)
+	defaultKey := destinationKey(defDesc)
 	for {
 		select {
 		case <-ctx.Done():
@@ -591,7 +595,7 @@ func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
 			if stats.Failed > 0 || stats.Deleted > 0 {
 				c.logger.Info("backup: intent sweep", "lease_expired", stats.Failed, "retention_deleted", stats.Deleted)
 			}
-			deleted, err := ReconcileOrphans(ctx, c.meta, storeFor, c.objStore, "")
+			deleted, err := ReconcileOrphans(ctx, c.meta, storeFor, c.objStore, defaultKey, "")
 			if err != nil {
 				c.logger.Warn("backup: orphan reconciliation failed", "err", err)
 				continue
