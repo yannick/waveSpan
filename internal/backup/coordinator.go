@@ -595,7 +595,14 @@ func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
 			if stats.Failed > 0 || stats.Deleted > 0 {
 				c.logger.Info("backup: intent sweep", "lease_expired", stats.Failed, "retention_deleted", stats.Deleted)
 			}
-			deleted, err := ReconcileOrphans(ctx, c.meta, storeFor, c.objStore, defaultKey, "")
+			deleted, err := ReconcileOrphans(ctx, c.meta, ReconcileOptions{
+				StoreFor:     storeFor,
+				DefaultStore: c.objStore,
+				DefaultKey:   defaultKey,
+				NowMs:        now,
+				GraceMs:      defaultReconcileGraceMs,
+				Logger:       c.logger,
+			})
 			if err != nil {
 				c.logger.Warn("backup: orphan reconciliation failed", "err", err)
 				continue
