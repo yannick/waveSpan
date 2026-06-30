@@ -24,7 +24,7 @@ func TestReconcileOrphans(t *testing.T) {
 	}
 
 	// A live backup with an intent.
-	if err := PutIntent(ctx, store, &BackupIntent{BackupID: "live-bk", Status: StatusComplete}); err != nil {
+	if err := PutIntent(ctx, store, &Intent{BackupID: "live-bk", Status: StatusComplete}); err != nil {
 		t.Fatal(err)
 	}
 	liveKeys := []string{"live-bk/cluster.manifest.json", "live-bk/nodes/m1/cf/kv_data"}
@@ -97,7 +97,7 @@ func TestReconcileOrphansTOCTOU(t *testing.T) {
 	}
 
 	// "racing-bk" has an intent (it exists fresh) but is hidden from the live snapshot.
-	if err := PutIntent(ctx, base, &BackupIntent{BackupID: "racing-bk", Status: StatusRunning}); err != nil {
+	if err := PutIntent(ctx, base, &Intent{BackupID: "racing-bk", Status: StatusRunning}); err != nil {
 		t.Fatal(err)
 	}
 	put("racing-bk/nodes/m1/cf/kv_data")

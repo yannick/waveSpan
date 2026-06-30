@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// TestIntentRoundTrip pins the durable codec: every field of a fully-populated BackupIntent survives
+// TestIntentRoundTrip pins the durable codec: every field of a fully-populated Intent survives
 // Marshal→Unmarshal unchanged (including the Selector maps, the assignment plan, and per-node records).
 func TestIntentRoundTrip(t *testing.T) {
-	in := &BackupIntent{
+	in := &Intent{
 		SchemaVersion:      intentSchemaVersion,
 		BackupID:           "bk-2026-0001",
 		FrontierT:          1234567890,
@@ -106,8 +106,8 @@ func TestIntentHelpers(t *testing.T) {
 		t.Fatalf("GetIntent(missing) = found %v err %v, want not-found nil", found, err)
 	}
 
-	a := &BackupIntent{BackupID: "bk-a", Status: StatusRunning, Phase: PhasePrepare}
-	b := &BackupIntent{BackupID: "bk-b", Status: StatusComplete, Phase: PhaseCommit}
+	a := &Intent{BackupID: "bk-a", Status: StatusRunning, Phase: PhasePrepare}
+	b := &Intent{BackupID: "bk-b", Status: StatusComplete, Phase: PhaseCommit}
 	if err := PutIntent(ctx, store, a); err != nil {
 		t.Fatalf("PutIntent a: %v", err)
 	}

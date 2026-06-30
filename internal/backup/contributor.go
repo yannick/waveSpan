@@ -45,10 +45,13 @@ type Contributor interface {
 // Registry holds the registered contributors.
 type Registry struct{ contributors []Contributor }
 
+// NewRegistry returns an empty contributor registry.
 func NewRegistry() *Registry { return &Registry{} }
 
+// Register adds a contributor to the registry.
 func (r *Registry) Register(c Contributor) { r.contributors = append(r.contributors, c) }
 
+// Contributors returns the registered contributors in registration order.
 func (r *Registry) Contributors() []Contributor { return r.contributors }
 
 // AuthoritativeCFs returns the deduplicated set of authoritative CFs across all

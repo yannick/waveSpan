@@ -31,9 +31,9 @@ type staticContributor struct {
 
 func (s staticContributor) Name() string { return s.name }
 func (s staticContributor) CFs() []CFSpec { return s.cfs }
-func (s staticContributor) RebuildAfterRestore(dst storage.LocalStore, ri RestoreInfo) error {
+func (s staticContributor) RebuildAfterRestore(_ storage.LocalStore, _ RestoreInfo) error {
 	return nil
 }
-func (s staticContributor) Selects(cf storage.ColumnFamily, key []byte, sel Selector) bool {
+func (s staticContributor) Selects(_ storage.ColumnFamily, _ []byte, _ Selector) bool {
 	return true
 }

@@ -134,7 +134,7 @@ func restoreCFObject(dst storage.LocalStore, store ObjectStore, objKey string, c
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	br := bufio.NewReader(rc)
 
 	reshard := cf == storage.CFReplData && ri.CollectionsDataShards > 0

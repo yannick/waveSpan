@@ -114,7 +114,7 @@ type Config struct {
 	OpenStore func(ResolvedDestination) (ObjectStore, error)
 }
 
-// Coordinator drives a consistent cluster backup: it records a durable BackupIntent in the meta shard,
+// Coordinator drives a consistent cluster backup: it records a durable Intent in the meta shard,
 // picks a cluster frontier, assigns owners, drives PrepareBackup/ExportBackup to the live nodes over the
 // BackupService client (sequentially in 3a), and commits a cluster.manifest with explicit PARTIAL
 // detection (design/backup phase 3a). It also serves the node-internal Prepare/Export for its own node
@@ -230,7 +230,7 @@ func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSp
 		return "", connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	in := &BackupIntent{
+	in := &Intent{
 		SchemaVersion:      intentSchemaVersion,
 		BackupID:           id,
 		FrontierT:          now + frontierLeaseMs,
@@ -265,7 +265,7 @@ func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSp
 // so a resuming coordinator can pick up exactly where this one left off. store is the coordinator's
 // resolved destination (commit + in-process export write there); protoDest is forwarded to gRPC nodes so
 // they re-resolve the same target.
-func (c *Coordinator) run(ctx context.Context, in *BackupIntent, store ObjectStore, protoDest *wavespanv1.Destination) error {
+func (c *Coordinator) run(ctx context.Context, in *Intent, store ObjectStore, protoDest *wavespanv1.Destination) error {
 	if in.Phase == PhaseAssign {
 		assignments, gaps := c.assigner.Assign(c.roster.Live())
 		in.Assignments = assignments
@@ -310,7 +310,7 @@ func (c *Coordinator) run(ctx context.Context, in *BackupIntent, store ObjectSto
 
 // prepareAll calls PrepareBackup on every assigned member (sequentially in 3a) and records the ranges
 // they report holding.
-func (c *Coordinator) prepareAll(ctx context.Context, in *BackupIntent) error {
+func (c *Coordinator) prepareAll(ctx context.Context, in *Intent) error {
 	for _, mid := range sortedMembers(in.Assignments) {
 		cl, err := c.clientFor(mid)
 		if err != nil {
@@ -329,7 +329,7 @@ func (c *Coordinator) prepareAll(ctx context.Context, in *BackupIntent) error {
 // export result. store is the coordinator's resolved destination (used by the in-process path); protoDest
 // is the original request destination, forwarded so a gRPC node re-resolves the same target. Each node
 // resolves its own parent checkpoint from ParentBackupID.
-func (c *Coordinator) exportAll(ctx context.Context, in *BackupIntent, store ObjectStore, protoDest *wavespanv1.Destination) error {
+func (c *Coordinator) exportAll(ctx context.Context, in *Intent, store ObjectStore, protoDest *wavespanv1.Destination) error {
 	for _, mid := range sortedMembers(in.Assignments) {
 		cl, err := c.clientFor(mid)
 		if err != nil {
@@ -398,7 +398,7 @@ func containsString(ss []string, want string) bool {
 // HeldRanges plumbed via Prepare→NodeRecord is NOT yet compared against the assignments here — that
 // held-range-vs-assignment coverage cross-check (catching real cluster gaps a node failed to cover)
 // lands in 3a.1. HeldRanges is recorded now so that cross-check has its input when it ships.
-func (c *Coordinator) commit(ctx context.Context, in *BackupIntent, store ObjectStore) error {
+func (c *Coordinator) commit(ctx context.Context, in *Intent, store ObjectStore) error {
 	refs := make([]PerNodeRef, 0, len(in.PerNode))
 	topo := make([]TopologyEntry, 0, len(in.PerNode))
 	for _, n := range in.PerNode {
@@ -488,7 +488,7 @@ func (c *Coordinator) storeForDescriptor(d Descriptor) (ObjectStore, error) {
 	return store, err
 }
 
-func (c *Coordinator) persist(ctx context.Context, in *BackupIntent) error {
+func (c *Coordinator) persist(ctx context.Context, in *Intent) error {
 	return PutIntent(ctx, c.meta, in)
 }
 
@@ -557,7 +557,7 @@ func (c *Coordinator) gcStoreFor(ctx context.Context, backupID string) (ObjectSt
 // storeForIntent re-resolves the object store for a backup from its persisted destination descriptor. An
 // inline-credential destination falls back to the default store (its creds were never persisted, so its
 // alt bucket can't be re-resolved — documented at DeleteBackup / ReconcileOrphans).
-func (c *Coordinator) storeForIntent(in *BackupIntent) (ObjectStore, error) {
+func (c *Coordinator) storeForIntent(in *Intent) (ObjectStore, error) {
 	if in.Destination.SecretName == "inline" {
 		return c.objStore, nil
 	}
@@ -572,7 +572,7 @@ func (c *Coordinator) storeForIntent(in *BackupIntent) (ObjectStore, error) {
 func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
-	storeFor := func(in *BackupIntent) (ObjectStore, error) { return c.storeForIntent(in) }
+	storeFor := func(in *Intent) (ObjectStore, error) { return c.storeForIntent(in) }
 	// The default destination's descriptor key, so orphan reconciliation doesn't scan a default-S3 bucket
 	// twice (once as the default store, once via a default-destination backup's descriptor).
 	_, defDesc, _ := ResolveDestination(c.backupCfg, DestinationSpec{}, c.getenv)
@@ -651,7 +651,7 @@ func (c *Coordinator) ExportLocal(ctx context.Context, req *wavespanv1.ExportBac
 
 // upsertNode merges a node record into the intent's PerNode list by member id, preserving the held-range
 // summary captured at prepare time when a later (export) record carries none.
-func upsertNode(in *BackupIntent, rec NodeRecord) {
+func upsertNode(in *Intent, rec NodeRecord) {
 	for i := range in.PerNode {
 		if in.PerNode[i].MemberID == rec.MemberID {
 			if len(rec.HeldRanges) == 0 {

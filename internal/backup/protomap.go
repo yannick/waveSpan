@@ -147,7 +147,7 @@ func phaseToProto(p Phase) wavespanv1.BackupPhase {
 	}
 }
 
-func intentToState(in *BackupIntent) *wavespanv1.BackupState {
+func intentToState(in *Intent) *wavespanv1.BackupState {
 	perNode := make([]*wavespanv1.NodeProgress, 0, len(in.PerNode))
 	done := 0
 	for _, n := range in.PerNode {

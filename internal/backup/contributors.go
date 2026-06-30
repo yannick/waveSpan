@@ -61,7 +61,7 @@ func DefaultRegistry() *Registry {
 	r.Register(funcContributor{
 		name: "graph", cfs: []CFSpec{{storage.CFGraphData, true}, {storage.CFGraphIndex, true}},
 		selects: func(_ storage.ColumnFamily, key []byte, sel Selector) bool {
-			g, ok := graph.GraphOfKey(key)
+			g, ok := graph.OfKey(key)
 			return ok && contains(sel.Graphs, g)
 		},
 	})

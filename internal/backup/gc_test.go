@@ -9,9 +9,9 @@ import (
 )
 
 // seedBackup writes an intent + a couple of objects under <id>/ to simulate a committed backup.
-func seedBackup(t *testing.T, ctx context.Context, store MetaStore, objStore ObjectStore, id, parent string) {
+func seedBackup(ctx context.Context, t *testing.T, store MetaStore, objStore ObjectStore, id, parent string) {
 	t.Helper()
-	if err := PutIntent(ctx, store, &BackupIntent{BackupID: id, Status: StatusComplete, Parent: parent, Planes: []Plane{PlanePhysical}}); err != nil {
+	if err := PutIntent(ctx, store, &Intent{BackupID: id, Status: StatusComplete, Parent: parent, Planes: []Plane{PlanePhysical}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, k := range []string{id + "/cluster.manifest.json", id + "/nodes/m1/physical/cf_kv_data/1.klog"} {
@@ -39,8 +39,8 @@ func TestDeleteBackupChainAware(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedBackup(t, ctx, store, objStore, "B0", "")
-	seedBackup(t, ctx, store, objStore, "B1", "B0") // incremental child of B0
+	seedBackup(ctx, t, store, objStore, "B0", "")
+	seedBackup(ctx, t, store, objStore, "B1", "B0") // incremental child of B0
 
 	// Deleting the base with a live child is refused (no force).
 	if deleted, err := DeleteBackup(ctx, store, objStore, "B0", false); err == nil || deleted {
@@ -86,9 +86,9 @@ func TestDeleteBackupForceCascade(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeMetaStore()
 	objStore, _ := objstore.NewFS(t.TempDir())
-	seedBackup(t, ctx, store, objStore, "B0", "")
-	seedBackup(t, ctx, store, objStore, "B1", "B0")
-	seedBackup(t, ctx, store, objStore, "B2", "B1")
+	seedBackup(ctx, t, store, objStore, "B0", "")
+	seedBackup(ctx, t, store, objStore, "B1", "B0")
+	seedBackup(ctx, t, store, objStore, "B2", "B1")
 
 	if deleted, err := DeleteBackup(ctx, store, objStore, "B0", true); err != nil || !deleted {
 		t.Fatalf("force DeleteBackup(B0) = %v err %v, want true nil", deleted, err)

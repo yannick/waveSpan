@@ -11,7 +11,7 @@ import (
 // toStore returns a StoreForIntent that resolves every intent to the same object store (the single-store
 // case the unit tests exercise; multi-store re-resolution is covered via the coordinator).
 func toStore(s ObjectStore) StoreForIntent {
-	return func(*BackupIntent) (ObjectStore, error) { return s, nil }
+	return func(*Intent) (ObjectStore, error) { return s, nil }
 }
 
 // TestSweepIntents covers the lifecycle sweep: a RUNNING intent past its lease becomes FAILED (with a
@@ -35,17 +35,17 @@ func TestSweepIntents(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	put := func(in *BackupIntent) {
+	put := func(in *Intent) {
 		if err := PutIntent(ctx, store, in); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	put(&BackupIntent{BackupID: "run-expired", Status: StatusRunning, LeaseDeadlineMs: past})
-	put(&BackupIntent{BackupID: "run-active", Status: StatusRunning, LeaseDeadlineMs: future})
-	put(&BackupIntent{BackupID: "done-old", Status: StatusComplete, RetainUntilMs: past})
+	put(&Intent{BackupID: "run-expired", Status: StatusRunning, LeaseDeadlineMs: past})
+	put(&Intent{BackupID: "run-active", Status: StatusRunning, LeaseDeadlineMs: future})
+	put(&Intent{BackupID: "done-old", Status: StatusComplete, RetainUntilMs: past})
 	seedObj("done-old/cluster.manifest.json")
-	put(&BackupIntent{BackupID: "done-fresh", Status: StatusComplete, RetainUntilMs: future})
+	put(&Intent{BackupID: "done-fresh", Status: StatusComplete, RetainUntilMs: future})
 	seedObj("done-fresh/cluster.manifest.json")
 
 	stats, err := SweepIntents(ctx, store, toStore(objStore), now, retain)
@@ -104,14 +104,14 @@ func TestSweepRetentionDeletesInOwnStore(t *testing.T) {
 	past := now - 1_000
 
 	// An alt-destination backup, terminal + past retention; its objects live in altStore.
-	_ = PutIntent(ctx, store, &BackupIntent{
+	_ = PutIntent(ctx, store, &Intent{
 		BackupID: "alt-bk", Status: StatusComplete, RetainUntilMs: past,
 		Destination: Descriptor{Bucket: "alt-bucket", Endpoint: "s3.alt.net", SecretName: "OPS"},
 	})
 	_ = altStore.Put("alt-bk/cluster.manifest.json", bytes.NewReader([]byte("x")), 1)
 
 	// storeFor routes the alt backup to altStore (mirrors the coordinator's per-descriptor resolution).
-	storeFor := func(in *BackupIntent) (ObjectStore, error) {
+	storeFor := func(in *Intent) (ObjectStore, error) {
 		if in.Destination.Bucket == "alt-bucket" {
 			return altStore, nil
 		}
@@ -139,8 +139,8 @@ func TestSweepRetentionDefersToLiveChild(t *testing.T) {
 	past := now - 1_000
 	future := now + 1_000_000
 
-	_ = PutIntent(ctx, store, &BackupIntent{BackupID: "B0", Status: StatusComplete, RetainUntilMs: past})
-	_ = PutIntent(ctx, store, &BackupIntent{BackupID: "B1", Status: StatusComplete, Parent: "B0", RetainUntilMs: future})
+	_ = PutIntent(ctx, store, &Intent{BackupID: "B0", Status: StatusComplete, RetainUntilMs: past})
+	_ = PutIntent(ctx, store, &Intent{BackupID: "B1", Status: StatusComplete, Parent: "B0", RetainUntilMs: future})
 
 	if _, err := SweepIntents(ctx, store, toStore(objStore), now, 5_000); err != nil {
 		t.Fatalf("SweepIntents: %v", err)

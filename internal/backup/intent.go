@@ -7,15 +7,16 @@ import (
 	"sort"
 )
 
-// intentSchemaVersion is the current BackupIntent schema version, stamped into every persisted intent
+// intentSchemaVersion is the current Intent schema version, stamped into every persisted intent
 // (the durable meta-shard blob). A reader can branch on it if the layout ever changes; gob already
 // tolerates added fields, this guards against an incompatible reinterpretation of existing ones.
 const intentSchemaVersion = 1
 
 // Status is a backup's lifecycle state (mirrors proto BackupStatus).
-// These enum values are gob-persisted positionally in BackupIntent — append-only; never reorder.
+// These enum values are gob-persisted positionally in Intent — append-only; never reorder.
 type Status int32
 
+// Backup lifecycle states.
 const (
 	StatusUnspecified Status = iota
 	StatusRunning
@@ -25,9 +26,10 @@ const (
 )
 
 // Phase is the coordinator's current phase (mirrors proto BackupPhase).
-// These enum values are gob-persisted positionally in BackupIntent — append-only; never reorder.
+// These enum values are gob-persisted positionally in Intent — append-only; never reorder.
 type Phase int32
 
+// Coordinator phases (assign → prepare → export → commit).
 const (
 	PhaseUnspecified Phase = iota
 	PhaseAssign
@@ -37,9 +39,10 @@ const (
 )
 
 // Plane selects the logical and/or physical export plane (mirrors proto BackupPlane).
-// These enum values are gob-persisted positionally in BackupIntent — append-only; never reorder.
+// These enum values are gob-persisted positionally in Intent — append-only; never reorder.
 type Plane int32
 
+// Export planes.
 const (
 	PlaneUnspecified Plane = iota
 	PlaneLogical
@@ -79,11 +82,11 @@ type NodeRecord struct {
 	PhysicalGlobalSeq   uint64 // physical plane only — the checkpoint cut sequence
 }
 
-// BackupIntent is the durable catalog record of a backup, stored as a blob in the meta shard. It is the
+// Intent is the durable catalog record of a backup, stored as a blob in the meta shard. It is the
 // single source of truth a coordinator (or a new coordinator resuming after failure) reads to know what
 // to do next: the chosen frontier, the assignment plan, per-node progress, and the current phase/status.
 // It never holds raw secrets (the destination carries only a credential reference).
-type BackupIntent struct {
+type Intent struct {
 	SchemaVersion      int
 	BackupID           string
 	FrontierT          int64
@@ -103,10 +106,10 @@ type BackupIntent struct {
 	Assignments        map[string]Selector // member id -> the ranges/namespaces it was asked to export
 }
 
-// MarshalIntent serializes a BackupIntent to a self-describing gob blob. gob is forward-compatible:
+// MarshalIntent serializes a Intent to a self-describing gob blob. gob is forward-compatible:
 // fields added by a newer writer are ignored by an older reader, and fields a newer reader expects but
 // an older blob lacks decode to their zero value.
-func MarshalIntent(in *BackupIntent) ([]byte, error) {
+func MarshalIntent(in *Intent) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(in); err != nil {
 		return nil, err
@@ -115,8 +118,8 @@ func MarshalIntent(in *BackupIntent) ([]byte, error) {
 }
 
 // UnmarshalIntent decodes a gob blob produced by MarshalIntent.
-func UnmarshalIntent(b []byte) (*BackupIntent, error) {
-	var in BackupIntent
+func UnmarshalIntent(b []byte) (*Intent, error) {
+	var in Intent
 	if err := gob.NewDecoder(bytes.NewReader(b)).Decode(&in); err != nil {
 		return nil, err
 	}
@@ -135,7 +138,7 @@ type MetaStore interface {
 }
 
 // PutIntent serializes and durably stores an intent under its BackupID.
-func PutIntent(ctx context.Context, store MetaStore, in *BackupIntent) error {
+func PutIntent(ctx context.Context, store MetaStore, in *Intent) error {
 	blob, err := MarshalIntent(in)
 	if err != nil {
 		return err
@@ -144,7 +147,7 @@ func PutIntent(ctx context.Context, store MetaStore, in *BackupIntent) error {
 }
 
 // GetIntent loads the intent for id; found is false when no such intent exists.
-func GetIntent(ctx context.Context, store MetaStore, id string) (*BackupIntent, bool, error) {
+func GetIntent(ctx context.Context, store MetaStore, id string) (*Intent, bool, error) {
 	blob, found, err := store.GetBlob(ctx, id)
 	if err != nil || !found {
 		return nil, found, err
@@ -157,12 +160,12 @@ func GetIntent(ctx context.Context, store MetaStore, id string) (*BackupIntent, 
 }
 
 // ListIntents loads every intent from the catalog, ordered by BackupID for a stable listing.
-func ListIntents(ctx context.Context, store MetaStore) ([]*BackupIntent, error) {
+func ListIntents(ctx context.Context, store MetaStore) ([]*Intent, error) {
 	blobs, err := store.ListBlobs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*BackupIntent, 0, len(blobs))
+	out := make([]*Intent, 0, len(blobs))
 	for _, b := range blobs {
 		in, err := UnmarshalIntent(b)
 		if err != nil {

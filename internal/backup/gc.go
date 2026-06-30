@@ -36,7 +36,7 @@ type SweepStats struct {
 
 // StoreForIntent resolves the object store holding a backup's objects, from its persisted destination
 // descriptor (Phase 3c Task 0). Returning an error aborts the sweep/delete for that backup.
-type StoreForIntent func(in *BackupIntent) (ObjectStore, error)
+type StoreForIntent func(in *Intent) (ObjectStore, error)
 
 // SweepIntents is the lifecycle pass over the (low-cardinality) backup catalog: a RUNNING intent past
 // its lease deadline transitions to FAILED with a retention deadline set; a terminal intent past its
