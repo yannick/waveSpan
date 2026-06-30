@@ -211,6 +211,25 @@ a sibling (each must keep a distinct live `ClusterID`, which config already ensu
 needs its own vector-index config to rebuild ANN (raw vectors restore regardless; specs are
 config-only).
 
+### 5.2 Restore operational consequences & known limitations (verified 2026-06-30)
+Implemented and reviewed, with these honest consequences to operate around:
+- **Restore resets the meta shard → the BackupIntent catalog is dropped.** `StripRaftBookkeeping`
+  clears the whole meta shard (so collections re-bootstrap fresh), which includes the `subBackup`
+  BackupIntent catalog. A restored/cloned cluster therefore starts with **no backup history or
+  schedule** — the S3 backups themselves remain, but the operator must **re-register backup intents
+  post-restore**. Correct for a clone (it shouldn't inherit the source's schedule); for same-cluster
+  DR the catalog is rebuildable by listing S3 / re-registering.
+- **Multi-node logical restore over-replicates (wasteful, not wrong).** The startup hook has each
+  node restore the full per-node export set into its own store; collections rows for shards a node
+  doesn't host are inert (each shard SM scans only its own prefix), and KV over-replication is
+  tolerated (versioned + holder-directory/repair). **Caveat:** KV repair only converges *up* (adds
+  replicas to target) — there is **no shed/prune path**, so multi-node-clone KV over-replication is
+  *permanent* until an external placement-GC/compaction removes the extra copies. Acceptable at
+  current scale; a **"restore only my shards/placement"** optimization is a tracked follow-up.
+- **Physical node match is by `MemberID`** (the manifest also carries `StorageUUID`, currently
+  unused for matching) — correct while member ids are stable (ordinal DNS); id reassignment would
+  need the `StorageUUID` fallback.
+
 ## 6. Durable-artifact lifecycle & GC (the "no trash" requirement)
 
 Every durable artifact is explicitly deletable AND TTL/retention-bounded, enforced by a
