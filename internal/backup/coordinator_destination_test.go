@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"testing"
 
-	"connectrpc.com/connect"
-
 	"github.com/yannick/wavespan/internal/config"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"wavesdb/objstore"
@@ -101,14 +99,26 @@ func TestCoordinatorAltDestination(t *testing.T) {
 	}
 }
 
-// TestCoordinatorAltDestinationMultiNodeRejected proves an alt destination is refused on a multi-node
-// cluster (it would otherwise be silently incomplete — remote nodes export to their own default store),
-// while the default destination is still allowed with multiple nodes.
-func TestCoordinatorAltDestinationMultiNodeRejected(t *testing.T) {
+// TestCoordinatorAltDestinationMultiNode proves the 3e single-node guard is lifted (Phase 3c Task 0): an
+// alt-destination backup on a 2-node cluster lands EVERY node's objects in the alt store (not the
+// default), and DeleteBackup re-resolves the descriptor to remove them from the alt store.
+func TestCoordinatorAltDestinationMultiNode(t *testing.T) {
 	ctx := context.Background()
 	defaultStore, _ := objstore.NewFS(t.TempDir())
+	altStore, _ := objstore.NewFS(t.TempDir())
 	meta := newFakeMetaStore()
 	nodes := buildCluster(t, defaultStore, "m1", "m2")
+
+	env := map[string]string{"OPS_ACCESS_KEY": "ops-ak", "OPS_SECRET_KEY": "ops-sk"}
+	openStore := func(rd ResolvedDestination) (ObjectStore, error) {
+		if rd.UseFS {
+			return defaultStore, nil
+		}
+		if rd.S3.Bucket == "alt-bucket" {
+			return altStore, nil
+		}
+		return nil, fmt.Errorf("unexpected bucket %q", rd.S3.Bucket)
+	}
 	coord := NewCoordinator(Config{
 		Self:      "m1",
 		Meta:      meta,
@@ -116,27 +126,40 @@ func TestCoordinatorAltDestinationMultiNodeRejected(t *testing.T) {
 		Roster:    fakeRoster{live: []string{"m1", "m2"}},
 		ClientFor: func(id string) (NodeClient, error) { return nodes[id], nil },
 		Assigner:  AllExportAssigner{},
-		BackupCfg: config.BackupConfig{AllowInlineDestinationCreds: true},
-		Getenv:    func(string) string { return "" },
+		BackupCfg: config.BackupConfig{},
+		Getenv:    func(k string) string { return env[k] },
+		OpenStore: openStore,
 	})
 
-	// Alt (explicit) destination on a 2-node cluster → rejected.
 	altSpec := &wavespanv1.BackupSpec{
 		Planes:      []wavespanv1.BackupPlane{wavespanv1.BackupPlane_BACKUP_PLANE_LOGICAL},
 		Destination: &wavespanv1.Destination{Bucket: "alt-bucket", Endpoint: "s3.alt.net", Credential: &wavespanv1.CredentialRef{SecretName: "OPS"}},
 	}
-	if _, err := coord.BeginBackup(ctx, altSpec); connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("alt destination on multi-node = %v, want FailedPrecondition", err)
+	id, err := coord.BeginBackup(ctx, altSpec)
+	if err != nil {
+		t.Fatalf("BeginBackup(alt, multi-node): %v", err)
+	}
+	if st, _ := coord.BackupStatus(ctx, id); st.GetStatus() != wavespanv1.BackupStatus_BACKUP_COMPLETE {
+		t.Fatalf("status = %v, want COMPLETE", st.GetStatus())
 	}
 
-	// Named destination on a 2-node cluster → also rejected.
-	namedSpec := &wavespanv1.BackupSpec{Destination: &wavespanv1.Destination{Name: "cold"}}
-	if _, err := coord.BeginBackup(ctx, namedSpec); connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("named destination on multi-node = %v, want FailedPrecondition", err)
+	// EVERY node's objects landed in the alt store, none in the default.
+	for _, m := range []string{"m1", "m2"} {
+		if ok, _ := altStore.Exists(id + "/nodes/" + m + "/cf/kv_data"); !ok {
+			t.Fatalf("node %s objects not in the alt store", m)
+		}
+		if ok, _ := defaultStore.Exists(id + "/nodes/" + m + "/cf/kv_data"); ok {
+			t.Fatalf("node %s objects wrongly in the default store", m)
+		}
 	}
 
-	// Default destination (no destination in the spec) is unaffected by the guard.
-	if _, err := coord.BeginBackup(ctx, &wavespanv1.BackupSpec{}); err != nil {
-		t.Fatalf("default destination on multi-node rejected: %v", err)
+	// DeleteBackup re-resolves the descriptor and removes the objects from the ALT store.
+	if deleted, err := coord.DeleteBackup(ctx, id, false); err != nil || !deleted {
+		t.Fatalf("DeleteBackup = %v err %v, want true nil", deleted, err)
+	}
+	for _, m := range []string{"m1", "m2"} {
+		if ok, _ := altStore.Exists(id + "/nodes/" + m + "/cf/kv_data"); ok {
+			t.Fatalf("node %s alt objects not deleted", m)
+		}
 	}
 }

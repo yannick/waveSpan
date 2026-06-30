@@ -222,21 +222,10 @@ func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSp
 	id := newBackupID(now)
 
 	// Resolve the destination at Begin: build the object store for this run (transient creds live only
-	// here) and capture the NON-SECRET descriptor to persist in the intent/manifest.
-	dspec := destinationSpecFromProto(spec.GetDestination())
-
-	// Multi-node guard (3e): a non-default destination (named/explicit) currently lands only the
-	// coordinator node's objects in the alt store — remote gRPC nodes export to their OWN default store
-	// (ExportRequest.ObjStore is in-process only). Rather than silently produce an INCOMPLETE backup at
-	// the alt destination, reject it on a multi-node cluster. 3c Task 0 lifts this by carrying the
-	// destination (descriptor + transient creds) over the BackupNodeService RPC. Default destination and
-	// single-node clusters are unaffected.
-	if (dspec.Name != "" || dspec.Bucket != "") && len(c.roster.Live()) > 1 {
-		return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-			"backup: alt-destination backups require a single-node cluster until per-node destination is wired over the node RPC (3c Task 0); %d nodes live", len(c.roster.Live())))
-	}
-
-	store, desc, err := c.resolveStore(dspec)
+	// here) and capture the NON-SECRET descriptor to persist in the intent/manifest. Each node also
+	// re-resolves the destination from the forwarded request (Phase 3c Task 0), so alt destinations work
+	// across a multi-node cluster — there is no single-node restriction.
+	store, desc, err := c.resolveStore(destinationSpecFromProto(spec.GetDestination()))
 	if err != nil {
 		return "", connect.NewError(connect.CodeInvalidArgument, err)
 	}
