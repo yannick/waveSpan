@@ -130,6 +130,29 @@ The bootstrap config names the backupID + intent (DR vs clone) + target shape; s
 (physical vs logical) follows the master spec §7 rule (DR-same-shape → physical fast path; clone /
 shape-change → logical).
 
+### 5.1 Forking multiple independent clones from one backup (first-class)
+A single backup can seed **any number** of independent clone clusters (master spec goal #2). This
+works because:
+- **The S3 backup is immutable / read-only** — restore only reads it; no step assumes a single
+  target or mutates the backup. N clusters can each bootstrap-restore the same `backupID`,
+  concurrently or over time, with no contention beyond S3 read load.
+- **Node identity is not imported** — the logical clone path skips `/sys/storage_uuid`, so every
+  node in every clone generates its own fresh `StorageUUID`; no collision across clones or with the
+  source.
+- **Cluster identity is deployment config, not backup data** — `ClusterID` comes only from
+  `WAVESPAN_CLUSTER_ID` (never persisted to `CFSys`), so each clone is deployed with its own
+  `ClusterID` and gets a distinct cluster identity automatically.
+- **Re-shard on restore** — each clone may use a different shard count `N` than the source.
+
+To fork: deploy each clone cluster with its own `ClusterID` + `WAVESPAN_RESTORE_FROM=<same backupID>`
++ intent=`clone`. Clones always use the **logical** path (the physical fast-path is DR-only — it
+carries source identity). Caveats: backed-up records carry the source's `writer_cluster_id` in their
+historical HLC versions (harmless for a standalone clone; *new* writes use the clone's `ClusterID`)
+— it only needs attention if a clone later joins active-active global replication with the source or
+a sibling (each must keep a distinct live `ClusterID`, which config already ensures). Each clone
+needs its own vector-index config to rebuild ANN (raw vectors restore regardless; specs are
+config-only).
+
 ## 6. Durable-artifact lifecycle & GC (the "no trash" requirement)
 
 Every durable artifact is explicitly deletable AND TTL/retention-bounded, enforced by a
