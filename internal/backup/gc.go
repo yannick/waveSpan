@@ -3,8 +3,14 @@ package backup
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 )
+
+// defaultReconcileGraceMs is the age below which an object is never reaped as an orphan: a backup's
+// objects, once written, are immune to orphan-GC for this long, so a sweep racing a just-finished (or
+// in-flight) backup cannot destroy it. One hour by default.
+const defaultReconcileGraceMs int64 = 60 * 60 * 1000
 
 // This file implements Phase 3d lifecycle GC: the leader-gated intent sweep (lease-expiry → FAILED,
 // retention deletion), chain-aware DeleteBackup (intent + objects), and S3 orphan reconciliation.
@@ -168,12 +174,29 @@ func deletePrefix(objStore ObjectStore, prefix string) error {
 	return nil
 }
 
-// ReconcileOrphans deletes objects whose backup id (the first path segment after clusterPrefix) has no
+// ReconcileOptions configures orphan reconciliation. NowMs/GraceMs gate the age grace; DefaultKey is the
+// node default destination's descriptor key (so a default-S3 backup isn't scanned twice); ClusterPrefix
+// MUST be the dedicated backups root. Logger may be nil (→ slog.Default()).
+type ReconcileOptions struct {
+	StoreFor      StoreForIntent
+	DefaultStore  ObjectStore
+	DefaultKey    string
+	ClusterPrefix string
+	NowMs         int64
+	GraceMs       int64
+	Logger        *slog.Logger
+}
+
+// ReconcileOrphans deletes objects whose backup id (the first path segment after ClusterPrefix) has no
 // live intent — debris from a failed or partially-written export, or from a backup whose intent was
 // removed. It scans the default store AND each distinct destination store referenced by a live intent
 // (Phase 3c Task 0), so alt-bucket debris of live-intent backups is reconciled in its own bucket. It
 // never touches objects of a live backup (chain-aware retention keeps an ancestor's intent alive while a
 // child depends on it). It returns the keys it deleted.
+//
+// FAIL-SAFE: an EMPTY intent catalog reaps NOTHING (never "everything is an orphan"), and an object
+// younger than GraceMs is never reaped — so a sweep racing a just-finished/in-flight backup can't destroy
+// it. Both guard the catastrophic case where a node's catalog view is empty or stale.
 //
 // LIMITATION: a fully-deleted alt-destination backup (no live intent points at its bucket) cannot be
 // discovered — there is no record naming that bucket to scan. And an inline-credential destination's
@@ -183,15 +206,26 @@ func deletePrefix(objStore ObjectStore, prefix string) error {
 //
 // TOCTOU safety: the live set is a snapshot taken before listing; before deleting any candidate the
 // intent is re-checked FRESH (GetIntent), so an in-flight backup that Began after the snapshot is never
-// collected. clusterPrefix MUST be the dedicated backups root, so every first path segment is a backup id.
-// defaultKey is the destinationKey of the node's default destination, so a default-S3 backup's descriptor
-// (which carries a bucket-based key) is recognised as the already-scanned default store rather than
-// scanned a second time. Pass "" when the default is the FS fallback.
-func ReconcileOrphans(ctx context.Context, store MetaStore, storeFor StoreForIntent, defaultStore ObjectStore, defaultKey, clusterPrefix string) ([]string, error) {
+// collected.
+func ReconcileOrphans(ctx context.Context, store MetaStore, opt ReconcileOptions) ([]string, error) {
+	logger := opt.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	intents, err := ListIntents(ctx, store)
 	if err != nil {
 		return nil, err
 	}
+
+	// FAIL-SAFE (critical): never reap against an empty/unconfirmed catalog. An empty ListIntents must NOT
+	// be read as "every object is an orphan" — doing so destroyed a live COMPLETE backup when a node's
+	// meta-shard catalog view was empty (e.g. a not-fully-joined meta replica). Keeping debris is the safe
+	// error; deleting live backups is catastrophic. A genuinely empty cluster has no objects to reap anyway.
+	if len(intents) == 0 {
+		logger.Warn("backup: orphan reconcile skipped — empty intent catalog (fail-safe; nothing reaped)")
+		return nil, nil
+	}
+
 	live := map[string]bool{}
 	for _, in := range intents {
 		live[in.BackupID] = true
@@ -199,14 +233,14 @@ func ReconcileOrphans(ctx context.Context, store MetaStore, storeFor StoreForInt
 
 	// Distinct stores to scan: the default, plus each live intent's destination (deduped by descriptor;
 	// the default destination's own key is pre-seeded so a default-S3 backup is not scanned twice).
-	stores := []ObjectStore{defaultStore}
-	seen := map[string]bool{"": true, defaultKey: true}
+	stores := []ObjectStore{opt.DefaultStore}
+	seen := map[string]bool{"": true, opt.DefaultKey: true}
 	for _, in := range intents {
 		k := destinationKey(in.Destination)
 		if k == "" || seen[k] {
 			continue
 		}
-		s, ferr := storeFor(in)
+		s, ferr := opt.StoreFor(in)
 		if ferr != nil {
 			continue // unresolvable (e.g. inline creds) — its bucket can't be scanned; documented limitation
 		}
@@ -216,7 +250,7 @@ func ReconcileOrphans(ctx context.Context, store MetaStore, storeFor StoreForInt
 
 	var deleted []string
 	for _, s := range stores {
-		d, rerr := reconcileStore(ctx, store, s, live, clusterPrefix)
+		d, rerr := reconcileStore(ctx, store, s, live, opt, logger)
 		deleted = append(deleted, d...)
 		if rerr != nil {
 			return deleted, rerr
@@ -225,10 +259,10 @@ func ReconcileOrphans(ctx context.Context, store MetaStore, storeFor StoreForInt
 	return deleted, nil
 }
 
-// reconcileStore deletes orphan objects (backup id not in live, confirmed by a fresh re-check) from a
-// single object store.
-func reconcileStore(ctx context.Context, store MetaStore, objStore ObjectStore, live map[string]bool, clusterPrefix string) ([]string, error) {
-	keys, err := objStore.List(clusterPrefix)
+// reconcileStore deletes orphan objects (backup id not in live, confirmed by a fresh re-check, and older
+// than the age grace) from a single object store.
+func reconcileStore(ctx context.Context, store MetaStore, objStore ObjectStore, live map[string]bool, opt ReconcileOptions, logger *slog.Logger) ([]string, error) {
+	keys, err := objStore.List(opt.ClusterPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +284,7 @@ func reconcileStore(ctx context.Context, store MetaStore, objStore ObjectStore, 
 	}
 	var deleted []string
 	for _, k := range keys {
-		id := backupIDOf(k, clusterPrefix)
+		id := backupIDOf(k, opt.ClusterPrefix)
 		if id == "" {
 			continue
 		}
@@ -260,6 +294,19 @@ func reconcileStore(ctx context.Context, store MetaStore, objStore ObjectStore, 
 		}
 		if !dead {
 			continue
+		}
+		// AGE GRACE: never reap an object younger than the grace window — protects an in-flight or
+		// just-finished backup from a racing sweep (the bug that destroyed a COMPLETE backup ~21s after it
+		// finished). If the mtime can't be read, fail safe and KEEP the object.
+		if opt.GraceMs > 0 {
+			mt, merr := objStore.ModTime(k)
+			if merr != nil {
+				logger.Warn("backup: orphan reconcile keeping object (mtime unavailable)", "key", k, "err", merr)
+				continue
+			}
+			if opt.NowMs-mt.UnixMilli() < opt.GraceMs {
+				continue // too young to reap
+			}
 		}
 		if err := objStore.Delete(k); err != nil {
 			return deleted, err

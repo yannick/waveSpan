@@ -4,9 +4,17 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"time"
 
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"wavesdb/objstore"
 )
+
+// recOpts builds ReconcileOptions for tests with the age grace OFF (objects of any age reapable) — used
+// by tests that assert orphan deletion without faking time.
+func recOpts(objStore ObjectStore) ReconcileOptions {
+	return ReconcileOptions{StoreFor: toStore(objStore), DefaultStore: objStore}
+}
 
 // TestReconcileOrphans seeds a live backup's objects plus orphan objects (a backup id with no live
 // intent — failed-export debris) and asserts only the orphans are deleted.
@@ -37,7 +45,7 @@ func TestReconcileOrphans(t *testing.T) {
 		put(k)
 	}
 
-	deleted, err := ReconcileOrphans(ctx, store, toStore(objStore), objStore, "", "")
+	deleted, err := ReconcileOrphans(ctx, store, recOpts(objStore))
 	if err != nil {
 		t.Fatalf("ReconcileOrphans: %v", err)
 	}
@@ -58,7 +66,7 @@ func TestReconcileOrphans(t *testing.T) {
 	}
 
 	// Idempotent: a second pass finds nothing to delete.
-	if deleted2, err := ReconcileOrphans(ctx, store, toStore(objStore), objStore, "", ""); err != nil || len(deleted2) != 0 {
+	if deleted2, err := ReconcileOrphans(ctx, store, recOpts(objStore)); err != nil || len(deleted2) != 0 {
 		t.Fatalf("second ReconcileOrphans = %v err %v, want none", deleted2, err)
 	}
 }
@@ -96,6 +104,12 @@ func TestReconcileOrphansTOCTOU(t *testing.T) {
 		}
 	}
 
+	// A visible live intent keeps the catalog NON-empty (so the empty-catalog fail-safe isn't what's
+	// under test here — the TOCTOU re-check is).
+	if err := PutIntent(ctx, base, &Intent{BackupID: "keep-bk", Status: StatusComplete}); err != nil {
+		t.Fatal(err)
+	}
+	put("keep-bk/cluster.manifest.json")
 	// "racing-bk" has an intent (it exists fresh) but is hidden from the live snapshot.
 	if err := PutIntent(ctx, base, &Intent{BackupID: "racing-bk", Status: StatusRunning}); err != nil {
 		t.Fatal(err)
@@ -105,7 +119,7 @@ func TestReconcileOrphansTOCTOU(t *testing.T) {
 	put("dead-bk/cluster.manifest.json")
 
 	store := &hidingMetaStore{MetaStore: base, hidden: "racing-bk"}
-	deleted, err := ReconcileOrphans(ctx, store, toStore(objStore), objStore, "", "")
+	deleted, err := ReconcileOrphans(ctx, store, recOpts(objStore))
 	if err != nil {
 		t.Fatalf("ReconcileOrphans: %v", err)
 	}
@@ -115,5 +129,119 @@ func TestReconcileOrphansTOCTOU(t *testing.T) {
 	}
 	if ok, _ := objStore.Exists("dead-bk/cluster.manifest.json"); ok {
 		t.Fatalf("true orphan dead-bk not deleted")
+	}
+	if ok, _ := objStore.Exists("keep-bk/cluster.manifest.json"); !ok {
+		t.Fatalf("live keep-bk wrongly deleted")
+	}
+}
+
+// TestReconcileOrphansKeepsLiveCoordinatorBackup writes a backup through the REAL coordinator/agent export
+// layout (<id>/cluster.manifest.json + <id>/nodes/<member>/cf/...) with its intent live, then runs
+// reconciliation — which must delete NOTHING. (This is the layout the production bug reaped.)
+func TestReconcileOrphansKeepsLiveCoordinatorBackup(t *testing.T) {
+	ctx := context.Background()
+	objStore, err := objstore.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := newFakeMetaStore()
+	nodes := buildCluster(t, objStore, "m1")
+	coord := newCoord(t, objStore, meta, nodes, fakeAssigner{assignments: map[string]Selector{"m1": {}}})
+
+	id, err := coord.BeginBackup(ctx, &wavespanv1.BackupSpec{})
+	if err != nil {
+		t.Fatalf("BeginBackup: %v", err)
+	}
+	manifestKey := id + "/cluster.manifest.json"
+	if ok, _ := objStore.Exists(manifestKey); !ok {
+		t.Fatalf("expected the real export to write %q", manifestKey)
+	}
+
+	deleted, err := ReconcileOrphans(ctx, meta, recOpts(objStore))
+	if err != nil {
+		t.Fatalf("ReconcileOrphans: %v", err)
+	}
+	if len(deleted) != 0 {
+		t.Fatalf("reconcile DELETED live backup objects: %v", deleted)
+	}
+	if ok, _ := objStore.Exists(manifestKey); !ok {
+		t.Fatalf("DATA LOSS: live backup manifest %q was reaped", manifestKey)
+	}
+}
+
+// TestReconcileOrphansEmptyCatalogReapsNothing is the data-loss guard: an EMPTY intent catalog (e.g. a
+// node whose meta-shard view is empty) must reap NOTHING even with objects present — an empty catalog is
+// never "everything is an orphan".
+func TestReconcileOrphansEmptyCatalogReapsNothing(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeMetaStore() // no intents at all
+	objStore, err := objstore.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := []string{"bk-1/cluster.manifest.json", "bk-1/nodes/m1/cf/kv_data"}
+	for _, k := range keys {
+		if err := objStore.Put(k, bytes.NewReader([]byte("x")), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deleted, err := ReconcileOrphans(ctx, store, recOpts(objStore))
+	if err != nil {
+		t.Fatalf("ReconcileOrphans: %v", err)
+	}
+	if len(deleted) != 0 {
+		t.Fatalf("empty-catalog reconcile reaped objects (data loss): %v", deleted)
+	}
+	for _, k := range keys {
+		if ok, _ := objStore.Exists(k); !ok {
+			t.Fatalf("DATA LOSS: object %q reaped against an empty catalog", k)
+		}
+	}
+}
+
+// TestReconcileOrphansAgeGrace proves the age grace: with a NON-EMPTY catalog, a genuine orphan OLDER than
+// the grace is still reaped, but a freshly-written orphan (younger than the grace) is kept — so a sweep
+// racing a just-finished backup cannot destroy it.
+func TestReconcileOrphansAgeGrace(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeMetaStore()
+	objStore, err := objstore.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A live intent makes the catalog non-empty (so the empty-catalog guard isn't what's tested here).
+	if err := PutIntent(ctx, store, &Intent{BackupID: "live-bk", Status: StatusComplete}); err != nil {
+		t.Fatal(err)
+	}
+	if err := objStore.Put("live-bk/cluster.manifest.json", bytes.NewReader([]byte("x")), 1); err != nil {
+		t.Fatal(err)
+	}
+	// A genuine orphan (no intent), written now.
+	if err := objStore.Put("orphan-bk/cluster.manifest.json", bytes.NewReader([]byte("x")), 1); err != nil {
+		t.Fatal(err)
+	}
+	const graceMs = int64(60 * 60 * 1000) // 1h
+	realNow := time.Now().UnixMilli()
+
+	// Young orphan (now): age < grace → KEPT.
+	opt := ReconcileOptions{StoreFor: toStore(objStore), DefaultStore: objStore, NowMs: realNow, GraceMs: graceMs}
+	if deleted, err := ReconcileOrphans(ctx, store, opt); err != nil || len(deleted) != 0 {
+		t.Fatalf("young orphan: deleted %v err %v, want none kept by grace", deleted, err)
+	}
+	if ok, _ := objStore.Exists("orphan-bk/cluster.manifest.json"); !ok {
+		t.Fatalf("young orphan reaped despite age grace")
+	}
+
+	// Same orphan seen 2h later: age > grace → REAPED; the live backup is untouched.
+	opt.NowMs = realNow + 2*graceMs
+	if _, err := ReconcileOrphans(ctx, store, opt); err != nil {
+		t.Fatalf("ReconcileOrphans (aged): %v", err)
+	}
+	if ok, _ := objStore.Exists("orphan-bk/cluster.manifest.json"); ok {
+		t.Fatalf("old orphan not reaped after the grace elapsed")
+	}
+	if ok, _ := objStore.Exists("live-bk/cluster.manifest.json"); !ok {
+		t.Fatalf("live backup wrongly reaped")
 	}
 }
