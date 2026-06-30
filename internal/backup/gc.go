@@ -34,18 +34,22 @@ type SweepStats struct {
 	Deleted int // terminal intents past retention that were deleted
 }
 
+// StoreForIntent resolves the object store holding a backup's objects, from its persisted destination
+// descriptor (Phase 3c Task 0). Returning an error aborts the sweep/delete for that backup.
+type StoreForIntent func(in *BackupIntent) (ObjectStore, error)
+
 // SweepIntents is the lifecycle pass over the (low-cardinality) backup catalog: a RUNNING intent past
 // its lease deadline transitions to FAILED with a retention deadline set; a terminal intent past its
-// retention deadline is deleted (intent + objects), unless a live incremental child still depends on it
-// (then it is left for a later sweep, once the child is gone). It is idempotent — a second sweep finds
-// the FAILED intent not-yet-due and the deleted intent absent — and every mutation is a meta-shard
-// proposal (routed through the raft leader), so transitions are durable. retainMs is the retention window
-// applied to a freshly-FAILED intent.
+// retention deadline is deleted (intent + objects in its OWN destination, via storeFor), unless a live
+// incremental child still depends on it (then it is left for a later sweep, once the child is gone). It
+// is idempotent — a second sweep finds the FAILED intent not-yet-due and the deleted intent absent — and
+// every mutation is a meta-shard proposal (routed through the raft leader), so transitions are durable.
+// retainMs is the retention window applied to a freshly-FAILED intent.
 //
 // This is a full-scan over ListIntents rather than a meta-shard due-index: backups are low-cardinality
 // (the catalog holds tens to low-thousands of intents, not the millions of keys the budget/TTL due-index
 // exists for), so a periodic scan is simpler and cheap. Callers gate it on meta-shard leadership.
-func SweepIntents(ctx context.Context, store MetaStore, objStore ObjectStore, nowMs, retainMs int64) (SweepStats, error) {
+func SweepIntents(ctx context.Context, store MetaStore, storeFor StoreForIntent, nowMs, retainMs int64) (SweepStats, error) {
 	intents, err := ListIntents(ctx, store)
 	if err != nil {
 		return SweepStats{}, err
@@ -73,6 +77,10 @@ func SweepIntents(ctx context.Context, store MetaStore, objStore ObjectStore, no
 		case isTerminal(in.Status) && in.RetainUntilMs > 0 && nowMs > in.RetainUntilMs:
 			if hasLiveChild(in.BackupID, childrenOf, live) {
 				continue // a live incremental depends on this base; defer deletion until it is gone
+			}
+			objStore, err := storeFor(in) // delete objects in the backup's OWN destination
+			if err != nil {
+				return stats, err
 			}
 			deleted, err := DeleteBackup(ctx, store, objStore, in.BackupID, false)
 			if err != nil {
@@ -160,22 +168,23 @@ func deletePrefix(objStore ObjectStore, prefix string) error {
 	return nil
 }
 
-// ReconcileOrphans deletes objects under clusterPrefix whose backup id (the first path segment after the
-// prefix) has no live intent — debris from a failed or partially-written export, or from a backup whose
-// intent was already removed. It never touches objects of a live backup (chain-aware retention keeps an
-// ancestor's intent alive while a child depends on it, so all chain members' objects are retained). It
-// returns the keys it deleted.
+// ReconcileOrphans deletes objects whose backup id (the first path segment after clusterPrefix) has no
+// live intent — debris from a failed or partially-written export, or from a backup whose intent was
+// removed. It scans the default store AND each distinct destination store referenced by a live intent
+// (Phase 3c Task 0), so alt-bucket debris of live-intent backups is reconciled in its own bucket. It
+// never touches objects of a live backup (chain-aware retention keeps an ancestor's intent alive while a
+// child depends on it). It returns the keys it deleted.
 //
-// TOCTOU safety: the live set is a snapshot taken before listing objects, so a backup that Begins in
-// between would have objects on disk but be absent from the snapshot. Before deleting any candidate we
-// therefore re-check the intent FRESH (GetIntent) and skip it if it now exists — an in-flight backup's
-// objects are never collected. The fresh check is memoised per backup id, so a backup with many objects
-// costs one extra read, not one per object.
+// LIMITATION: a fully-deleted alt-destination backup (no live intent points at its bucket) cannot be
+// discovered — there is no record naming that bucket to scan. And an inline-credential destination's
+// store can't be re-resolved (creds were never persisted; storeFor falls back to the default), so its
+// alt bucket is not scanned. Default/named/secret-ref destinations with at least one live intent are
+// reconciled.
 //
-// clusterPrefix MUST be the dedicated backups root (the node points objstore at <storagePath>/backups),
-// so every first path segment under it is a backup id. Do NOT point this at a shared/foreign bucket
-// root — it would treat unrelated top-level keys as orphan backups and delete them.
-func ReconcileOrphans(ctx context.Context, store MetaStore, objStore ObjectStore, clusterPrefix string) ([]string, error) {
+// TOCTOU safety: the live set is a snapshot taken before listing; before deleting any candidate the
+// intent is re-checked FRESH (GetIntent), so an in-flight backup that Began after the snapshot is never
+// collected. clusterPrefix MUST be the dedicated backups root, so every first path segment is a backup id.
+func ReconcileOrphans(ctx context.Context, store MetaStore, storeFor StoreForIntent, defaultStore ObjectStore, clusterPrefix string) ([]string, error) {
 	intents, err := ListIntents(ctx, store)
 	if err != nil {
 		return nil, err
@@ -184,6 +193,37 @@ func ReconcileOrphans(ctx context.Context, store MetaStore, objStore ObjectStore
 	for _, in := range intents {
 		live[in.BackupID] = true
 	}
+
+	// Distinct stores to scan: the default, plus each live intent's destination (deduped by descriptor).
+	stores := []ObjectStore{defaultStore}
+	seen := map[string]bool{"": true}
+	for _, in := range intents {
+		k := destinationKey(in.Destination)
+		if k == "" || seen[k] {
+			continue
+		}
+		s, ferr := storeFor(in)
+		if ferr != nil {
+			continue // unresolvable (e.g. inline creds) — its bucket can't be scanned; documented limitation
+		}
+		seen[k] = true
+		stores = append(stores, s)
+	}
+
+	var deleted []string
+	for _, s := range stores {
+		d, rerr := reconcileStore(ctx, store, s, live, clusterPrefix)
+		deleted = append(deleted, d...)
+		if rerr != nil {
+			return deleted, rerr
+		}
+	}
+	return deleted, nil
+}
+
+// reconcileStore deletes orphan objects (backup id not in live, confirmed by a fresh re-check) from a
+// single object store.
+func reconcileStore(ctx context.Context, store MetaStore, objStore ObjectStore, live map[string]bool, clusterPrefix string) ([]string, error) {
 	keys, err := objStore.List(clusterPrefix)
 	if err != nil {
 		return nil, err
@@ -223,6 +263,22 @@ func ReconcileOrphans(ctx context.Context, store MetaStore, objStore ObjectStore
 		deleted = append(deleted, k)
 	}
 	return deleted, nil
+}
+
+// destinationKey is a stable identity for a destination descriptor, used to dedup stores during orphan
+// reconciliation. "" means the default store. Inline-credential destinations return "" (their store
+// can't be re-resolved, so they fold into the default and their bucket is not separately scanned).
+func destinationKey(d Descriptor) string {
+	switch {
+	case d.DefaultFS, d.SecretName == "inline":
+		return ""
+	case d.Name != "":
+		return "name:" + d.Name
+	case d.Bucket != "":
+		return "s3:" + d.Endpoint + "/" + d.Bucket
+	default:
+		return ""
+	}
 }
 
 // backupIDOf extracts the backup id (first path segment) from an object key, after stripping

@@ -8,6 +8,12 @@ import (
 	"wavesdb/objstore"
 )
 
+// toStore returns a StoreForIntent that resolves every intent to the same object store (the single-store
+// case the unit tests exercise; multi-store re-resolution is covered via the coordinator).
+func toStore(s ObjectStore) StoreForIntent {
+	return func(*BackupIntent) (ObjectStore, error) { return s, nil }
+}
+
 // TestSweepIntents covers the lifecycle sweep: a RUNNING intent past its lease becomes FAILED (with a
 // retention deadline set); a terminal intent past its retention is deleted (intent + objects); not-yet-due
 // intents are untouched; and a second sweep is a no-op (idempotent).
@@ -42,7 +48,7 @@ func TestSweepIntents(t *testing.T) {
 	put(&BackupIntent{BackupID: "done-fresh", Status: StatusComplete, RetainUntilMs: future})
 	seedObj("done-fresh/cluster.manifest.json")
 
-	stats, err := SweepIntents(ctx, store, objStore, now, retain)
+	stats, err := SweepIntents(ctx, store, toStore(objStore), now, retain)
 	if err != nil {
 		t.Fatalf("SweepIntents: %v", err)
 	}
@@ -76,12 +82,49 @@ func TestSweepIntents(t *testing.T) {
 
 	// Idempotent: a second sweep at the same time changes nothing (the freshly-FAILED intent now has a
 	// future retention deadline).
-	stats2, err := SweepIntents(ctx, store, objStore, now, retain)
+	stats2, err := SweepIntents(ctx, store, toStore(objStore), now, retain)
 	if err != nil {
 		t.Fatalf("second SweepIntents: %v", err)
 	}
 	if stats2.Failed != 0 || stats2.Deleted != 0 {
 		t.Fatalf("second sweep stats = %+v, want all zero", stats2)
+	}
+}
+
+// TestSweepRetentionDeletesInOwnStore proves the retention sweep re-resolves each backup's destination:
+// a terminal alt-destination backup past retention has its objects deleted from its OWN store, not the
+// default.
+func TestSweepRetentionDeletesInOwnStore(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeMetaStore()
+	defaultStore, _ := objstore.NewFS(t.TempDir())
+	altStore, _ := objstore.NewFS(t.TempDir())
+
+	const now = int64(1_000_000)
+	past := now - 1_000
+
+	// An alt-destination backup, terminal + past retention; its objects live in altStore.
+	_ = PutIntent(ctx, store, &BackupIntent{
+		BackupID: "alt-bk", Status: StatusComplete, RetainUntilMs: past,
+		Destination: Descriptor{Bucket: "alt-bucket", Endpoint: "s3.alt.net", SecretName: "OPS"},
+	})
+	_ = altStore.Put("alt-bk/cluster.manifest.json", bytes.NewReader([]byte("x")), 1)
+
+	// storeFor routes the alt backup to altStore (mirrors the coordinator's per-descriptor resolution).
+	storeFor := func(in *BackupIntent) (ObjectStore, error) {
+		if in.Destination.Bucket == "alt-bucket" {
+			return altStore, nil
+		}
+		return defaultStore, nil
+	}
+	if _, err := SweepIntents(ctx, store, storeFor, now, 5_000); err != nil {
+		t.Fatalf("SweepIntents: %v", err)
+	}
+	if ok, _ := altStore.Exists("alt-bk/cluster.manifest.json"); ok {
+		t.Fatalf("alt-destination backup's objects not deleted from its own store")
+	}
+	if _, found, _ := GetIntent(ctx, store, "alt-bk"); found {
+		t.Fatalf("alt-bk intent not deleted")
 	}
 }
 
@@ -99,7 +142,7 @@ func TestSweepRetentionDefersToLiveChild(t *testing.T) {
 	_ = PutIntent(ctx, store, &BackupIntent{BackupID: "B0", Status: StatusComplete, RetainUntilMs: past})
 	_ = PutIntent(ctx, store, &BackupIntent{BackupID: "B1", Status: StatusComplete, Parent: "B0", RetainUntilMs: future})
 
-	if _, err := SweepIntents(ctx, store, objStore, now, 5_000); err != nil {
+	if _, err := SweepIntents(ctx, store, toStore(objStore), now, 5_000); err != nil {
 		t.Fatalf("SweepIntents: %v", err)
 	}
 	if _, found, _ := GetIntent(ctx, store, "B0"); !found {

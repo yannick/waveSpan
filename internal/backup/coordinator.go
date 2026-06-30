@@ -552,15 +552,24 @@ func (c *Coordinator) DeleteBackup(ctx context.Context, backupID string, force b
 }
 
 // gcStoreFor returns the object store holding a backup's objects, re-resolved from its persisted
-// destination descriptor (Phase 3c Task 0). An unknown backup or an inline-credential destination falls
-// back to the default store (the caller treats a missing backup as deleted=false; inline-cred alt objects
-// are not GC-able — documented at DeleteBackup).
+// destination descriptor (Phase 3c Task 0). An unknown backup falls back to the default store (the caller
+// treats a missing backup as deleted=false).
 func (c *Coordinator) gcStoreFor(ctx context.Context, backupID string) (ObjectStore, error) {
 	in, found, err := GetIntent(ctx, c.meta, backupID)
 	if err != nil {
 		return nil, err
 	}
-	if !found || in.Destination.SecretName == "inline" {
+	if !found {
+		return c.objStore, nil
+	}
+	return c.storeForIntent(in)
+}
+
+// storeForIntent re-resolves the object store for a backup from its persisted destination descriptor. An
+// inline-credential destination falls back to the default store (its creds were never persisted, so its
+// alt bucket can't be re-resolved — documented at DeleteBackup / ReconcileOrphans).
+func (c *Coordinator) storeForIntent(in *BackupIntent) (ObjectStore, error) {
+	if in.Destination.SecretName == "inline" {
 		return c.objStore, nil
 	}
 	return c.storeForDescriptor(in.Destination)
@@ -568,16 +577,13 @@ func (c *Coordinator) gcStoreFor(ctx context.Context, backupID string) (ObjectSt
 
 // RunSweep runs the leader-gated lifecycle sweep loop until ctx is done (Phase 3d). On each tick, when
 // this node leads the meta shard, it expires/retires intents (SweepIntents) and reconciles orphan
-// objects (ReconcileOrphans). Transient errors are logged; the next tick retries.
-//
-// NOTE (alt-destination GC gap, 3e): the sweep operates on the node's DEFAULT store (c.objStore). Object
-// deletion (retention/orphans) for backups written to non-default destinations is NOT performed — those
-// alt-bucket objects would linger. Per-descriptor store re-resolution for the sweep lands in 3c Task 0;
-// until then alt-destination backups are single-node only (see the BeginBackup guard), and their objects
-// must be reclaimed out of band.
+// objects (ReconcileOrphans). Both re-resolve each backup's OWN destination store from its descriptor
+// (Phase 3c Task 0), so alt-destination backups are GC'd in their own bucket. Transient errors are
+// logged; the next tick retries.
 func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
+	storeFor := func(in *BackupIntent) (ObjectStore, error) { return c.storeForIntent(in) }
 	for {
 		select {
 		case <-ctx.Done():
@@ -587,7 +593,7 @@ func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
 				continue // only the meta-shard leader sweeps
 			}
 			now := c.clock.NowMs()
-			stats, err := SweepIntents(ctx, c.meta, c.objStore, now, c.retainMs)
+			stats, err := SweepIntents(ctx, c.meta, storeFor, now, c.retainMs)
 			if err != nil {
 				// A persistently failing sweep (e.g. objstore outage) must not be invisible.
 				c.logger.Warn("backup: intent sweep failed", "err", err)
@@ -596,7 +602,7 @@ func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
 			if stats.Failed > 0 || stats.Deleted > 0 {
 				c.logger.Info("backup: intent sweep", "lease_expired", stats.Failed, "retention_deleted", stats.Deleted)
 			}
-			deleted, err := ReconcileOrphans(ctx, c.meta, c.objStore, "")
+			deleted, err := ReconcileOrphans(ctx, c.meta, storeFor, c.objStore, "")
 			if err != nil {
 				c.logger.Warn("backup: orphan reconciliation failed", "err", err)
 				continue
