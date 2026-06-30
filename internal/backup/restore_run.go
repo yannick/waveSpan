@@ -19,6 +19,12 @@ const restoreMarkerKey = "/sys/restored_from"
 // against a live store. It is one-shot (guarded by the CFSys marker) and selects the path by intent +
 // shape (master spec §7): clone or a shard-count change → logical clone/re-shard; same-shape DR → physical
 // when the backup has a physical plane, else logical same-shape.
+//
+// NOTE (backup catalog reset): both paths reset the collections meta shard (StripRaftBookkeeping), which
+// clears the BackupIntent catalog (subBackup) — a restored/cloned cluster starts with NO backup history
+// or schedule. The S3 backups themselves remain; the operator re-registers backup intents/schedule after
+// restore. For a clone this is correct (don't inherit the source's schedule); for same-cluster DR the
+// catalog can be rebuilt by listing S3 / re-registering.
 func RunBootstrapRestore(dataDir, memberID string, rc *RestoreConfig, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
@@ -84,6 +90,11 @@ func RunBootstrapRestore(dataDir, memberID string, rc *RestoreConfig, logger *sl
 
 // matchSourceMember resolves THIS node to a source node in the backup topology by stable identity (member
 // id). Same-shape DR assumes a node restores from its own counterpart in the backup.
+//
+// NOTE: it matches by MemberID only. The topology also carries StorageUUID (recorded in 3c Task 0) but it
+// is not consulted here — correct while member ids are stable. If member ids are ever reassigned (a node
+// taking over another's id with a different storage identity), the match would need to also verify
+// StorageUUID to avoid restoring the wrong node's checkpoint.
 func matchSourceMember(cm *ClusterManifest, memberID string) (string, error) {
 	for _, te := range cm.SourceTopology {
 		if te.MemberID == memberID {
@@ -114,6 +125,9 @@ func markRestored(s storage.LocalStore, backupID string) error {
 
 // withStore opens dataDir as a wavesdb store, runs fn, and closes it — used for the short-lived opens the
 // bootstrap needs (marker check / write, logical restore) before the node's main store opens for serving.
+// It opens with plain OpenWavesdb (default engine options), not the serving store's
+// OpenWavesdbWith(engineOptions(tun)) — the difference is runtime tunables (memtable sizes, gogc), not the
+// on-disk format, and this store is always closed before the serving store opens, so it is harmless.
 func withStore(dataDir string, fn func(storage.LocalStore) error) error {
 	s, err := storage.OpenWavesdb(dataDir)
 	if err != nil {

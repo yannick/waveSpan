@@ -17,6 +17,12 @@ import (
 // It KEEPS data rows (subData) and the routable secondary indexes (subTTL/subBudExp/subBudTombGC). It is
 // idempotent and safe to run after either restore path (logical re-shard already drops these; same-shape
 // restore relies on this pass). Deletes are batched.
+//
+// NOTE (backup catalog reset): dropping every meta-shard row (shardID 1) also clears the BackupIntent
+// catalog stored under the meta shard's subBackup sub-space — so a restored/cloned cluster starts with NO
+// backup history or schedule. The S3 backup objects themselves are untouched; the operator re-registers
+// backup intents/schedule post-restore. For a clone this is correct (don't inherit the source's
+// schedule); for same-cluster DR the catalog can be rebuilt by listing S3 or re-registering.
 func StripRaftBookkeeping(store storage.LocalStore) error {
 	it, err := store.Scan(storage.CFReplData, nil, nil, 0)
 	if err != nil {

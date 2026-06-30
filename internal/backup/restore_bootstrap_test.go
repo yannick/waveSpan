@@ -61,6 +61,88 @@ func seedLogicalBackupAt(t *testing.T, objDir, backupID string, srcN uint64) (*o
 	return objStore, objDir
 }
 
+// seedTwoNodeLogicalBackup seeds a 2-node logical backup: two per-node sub-manifests with DISJOINT KV
+// keys + collections rows, plus a cluster.manifest listing both nodes.
+func seedTwoNodeLogicalBackup(t *testing.T, backupID string) *objstore.FS {
+	t.Helper()
+	objStore, err := objstore.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedNode := func(member, uuid, kvKeyName, ns, coll string) {
+		src, err := storage.OpenWavesdb(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = src.Close() })
+		mustPut(t, src, storage.CFSys, []byte(storageIdentityKey), []byte(uuid))
+		mustPut(t, src, storage.CFKVData, kvKey("app", kvKeyName), []byte("val-"+kvKeyName))
+		mustPut(t, src, storage.CFReplData, replDataKey(ns, coll, "doc", 4), []byte("row-"+ns))
+		metaApplied := append(be8(2), subMetaByte)
+		metaApplied = append(metaApplied, []byte("applied")...)
+		mustPut(t, src, storage.CFReplData, metaApplied, []byte("7"))
+		if _, err := ExportLogical(src, objStore, backupID+"/nodes/"+member, DefaultRegistry(), 1719000000000, Selector{}); err != nil {
+			t.Fatalf("export %s: %v", member, err)
+		}
+	}
+	seedNode("m1", "SRC1", "k1", "ns1", "c1")
+	seedNode("m2", "SRC2", "k2", "ns2", "c2")
+
+	cm := &ClusterManifest{
+		FormatVersion: clusterManifestFormatVersion,
+		BackupID:      backupID,
+		Planes:        []string{"logical"},
+		PerNode: []PerNodeRef{
+			{MemberID: "m1", Ref: backupID + "/nodes/m1/node.manifest.json"},
+			{MemberID: "m2", Ref: backupID + "/nodes/m2/node.manifest.json"},
+		},
+		Status: "COMPLETE",
+	}
+	if err := WriteClusterManifest(objStore, cm); err != nil {
+		t.Fatal(err)
+	}
+	return objStore
+}
+
+// TestRestoreBootstrapLogicalTwoNodeAccumulation locks in the multi-node union loop: a 2-node logical
+// backup restored into ONE fresh store has BOTH nodes' (disjoint) data, identity preserved, bookkeeping
+// stripped.
+func TestRestoreBootstrapLogicalTwoNodeAccumulation(t *testing.T) {
+	objStore := seedTwoNodeLogicalBackup(t, "bk-2node")
+
+	dst, err := storage.OpenWavesdb(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dst.Close() })
+	mustPut(t, dst, storage.CFSys, []byte(storageIdentityKey), []byte("DEST-UUID"))
+
+	if err := RestoreBootstrapLogical(dst, objStore, "bk-2node", RestoreInfo{Clone: true}); err != nil {
+		t.Fatalf("RestoreBootstrapLogical: %v", err)
+	}
+
+	// Both nodes' KV + collections data accumulated into the one store.
+	for _, c := range []struct{ kv, want string }{{"k1", "val-k1"}, {"k2", "val-k2"}} {
+		if v, ok, _ := dst.Get(storage.CFKVData, kvKey("app", c.kv)); !ok || string(v) != c.want {
+			t.Fatalf("kv %s: ok=%v v=%q, want %q", c.kv, ok, v, c.want)
+		}
+	}
+	for _, nc := range []struct{ ns, coll string }{{"ns1", "c1"}, {"ns2", "c2"}} {
+		if _, ok, _ := dst.Get(storage.CFReplData, replDataKey(nc.ns, nc.coll, "doc", 4)); !ok {
+			t.Fatalf("collections row %s/%s missing after 2-node restore", nc.ns, nc.coll)
+		}
+	}
+	// Bookkeeping stripped, identity preserved.
+	metaApplied := append(be8(2), subMetaByte)
+	metaApplied = append(metaApplied, []byte("applied")...)
+	if _, ok, _ := dst.Get(storage.CFReplData, metaApplied); ok {
+		t.Fatal("raft bookkeeping must be stripped after 2-node restore")
+	}
+	if v, _, _ := dst.Get(storage.CFSys, []byte(storageIdentityKey)); string(v) != "DEST-UUID" {
+		t.Fatalf("identity = %q, want DEST-UUID (neither source's)", v)
+	}
+}
+
 // TestRestoreBootstrapLogicalReshard restores an N=4 logical backup into a fresh N=8 store: KV/graph/
 // vector restored, collections data re-routed to N=8, raft bookkeeping absent, identity preserved.
 func TestRestoreBootstrapLogicalReshard(t *testing.T) {
