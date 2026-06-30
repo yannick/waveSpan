@@ -50,7 +50,16 @@ physical fast-path, designed together.
   `ExportLogical` + Phase 1 `CheckpointToObjectStore`) against the S3 object store; reports progress.
 - **`internal/backup/intent.go`** + **`internal/collections/meta.go`** — `BackupIntent` persisted
   via new meta-shard `metaCommand` opcodes (`opBackupBegin/Update/Complete/Delete`); a leader-driven
-  **intent sweep** (lease-expiry + retention), mirroring the budget/TTL sweep.
+  **intent sweep** (lease-expiry + retention). NOTE (review): this is a genuine **mirror, not reuse**
+  of the budget/TTL sweep — that machinery (`Manager.sweepOnce`, `scanBudDue`, `sweepBudget`) is
+  bound to **data shards** (`sweepOnce` filters `r.isData`; meta is `isData=false`) and its helpers
+  are methods on `*shardSM`. Phase 3 must add net-new **meta-side** code: a due-index, a `Lookup`
+  query, an `Update` apply case in `metaSM`, AND extend `sweepOnce`'s data-only filter (or run a
+  separate meta sweep). The meta propose path (`proposeRaw` for `MetaShardID`) and leader-gating
+  already work. ALSO: the existing `metaCommand` codec is fixed-field (`{Op,Start,End,ShardID}`,
+  hand-rolled positional) — a rich `BackupIntent` (frontierT, perNodeState, leaseDeadlineMs,
+  retainUntilMs, …) does NOT fit; carry the intent as a **serialized blob value** under a new meta
+  key sub-space (or extend the codec). The plan must budget for both.
 - **`internal/backup/restore_bootstrap.go`** + `cmd/wavespan-node/main.go` — startup restore.
 - **`internal/backup/gc.go`** — chain-aware retention + S3 orphan reconciliation.
 - **`internal/grpcsrv/backup.go`** — `BackupService` gRPC handler bridging to the coordinator/agent.
@@ -66,9 +75,15 @@ coordinator failure. Phases (master spec §2):
 2. **Assign** — ownership from holder-directory + placement + live roster: each KV/graph/vector
    range → one live owner; each collection shard → its raft leader; **no live owner → all-export
    fallback**. Physical plane: every live node owns its own SSTables.
-3. **Prepare** — fan out `PrepareBackup` to assigned nodes (reuse `Fanout`/gossip). Each node seals
-   `T` (advance HLC past `T`, drain in-flight `≤T`, pin `LocalStore.Snapshot()` for logical / a
-   wavesdb snapshot for physical), ACKs its `GlobalSeq` + held-range summary.
+3. **Prepare** — send `PrepareBackup` to each assigned node. NOTE (review): `Fanout` is a target-N
+   replica-fill worker (sends `StoreReplica` RPCs), NOT a generic coordination fan-out — the
+   coordinator iterates `Roster.Live()` and calls each node via the `BackupService` client (the
+   same live-member iteration pattern as `Fanout.fillEverywhere`, not the worker itself); progress
+   comes back via gossip piggyback. Each node seals `T` (advance HLC past `T` via `Clock.Update`,
+   drain in-flight `≤T`, pin `LocalStore.Snapshot()` for logical / a wavesdb snapshot for physical),
+   ACKs its `GlobalSeq` + held-range summary. **`T` must be within the HLC skew cap** — `Clock.Update`
+   returns a `*SkewError` and refuses to advance past `wall + maxSkewMs`, so the frontier lease must
+   be chosen inside the cap; the coordinator handles the seal-rejection path (retry with a nearer `T`).
 4. **Export** — each node streams assigned data to `s3://…/backups/<backupID>/…` (Phase 2
    `ExportLogical(selector, ownedRanges)` + Phase 1 `CheckpointToObjectStore(parent)`), writes its
    per-node sub-manifest, reports progress; coordinator renews the intent lease as progress arrives.
@@ -100,10 +115,14 @@ file-ids. `cluster.manifest` records `parent`; a chain is `full → inc → inc 
 
 At node startup, if configured (`WAVESPAN_RESTORE_FROM=s3://…/<backupID>`, target intent/shape), the
 node restores **before serving**:
-- **Physical same-shape DR** — read `cluster.manifest` topology, map source `storageUUID` → this
-  node by ordinal, `RestoreFromObjectStore` my checkpoint chain (base+incrementals) into the data
-  dir, open, raft groups recover. (Intent = restore-same-cluster; carries node identity, correct
-  for DR.)
+- **Physical same-shape DR** — read `cluster.manifest` topology and map each source node's checkpoint
+  to a target node by **stable identity**, then `RestoreFromObjectStore` that checkpoint chain
+  (base+incrementals) into the data dir, open, raft groups recover. NOTE (review): there is **no
+  numeric StatefulSet ordinal field** in code — stable identity is the `MemberID` / advertised DNS
+  host (per-ordinal DNS like `wavespan-core-0…`) plus durable `StorageUUID` (`membership/identity.go`).
+  The manifest records each source node's `MemberID`/DNS + `StorageUUID`; a target node matches its
+  own `MemberID`/DNS to pull the right checkpoint. (Intent = restore-same-cluster; carries node
+  identity, correct for DR. Exact matching rule is open question #5.)
 - **Logical clone / re-shard** — bootstrap empty, import the logical record stream, re-routing
   collections via Phase 2b `RerouteSuffix` under *this* cluster's N; node-local identity excluded
   (Phase 2a); partial selection honored. (Intent = clone; new cluster identity.)
@@ -173,6 +192,8 @@ multipart part size, max concurrency, bandwidth rate-limit. Restore config:
 - Frontier-`T` lease duration + `Prepare` drain timeout defaults.
 - Intent lease-deadline + default `retainUntilMs` / retention policy values (operator overrides them
   in Phase 4).
-- Bootstrap-restore: exactly how a node learns the source ordinal→`storageUUID` topology mapping for
-  the physical path (from `cluster.manifest`) and how it's matched to its own ordinal.
+- Bootstrap-restore physical mapping: exact rule for matching a target node to a source node's
+  checkpoint via **stable identity** (`MemberID` / advertised DNS host like `wavespan-core-0…` +
+  durable `StorageUUID`, recorded per source node in `cluster.manifest`) — there is no numeric
+  ordinal field; the match is by `MemberID`/DNS.
 - S3 credential sourcing on OVH stag (IAM-role-equivalent vs sealed-secret).

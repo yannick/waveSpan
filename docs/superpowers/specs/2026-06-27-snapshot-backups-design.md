@@ -259,7 +259,7 @@ must use the logical path — see §7.)
     redirected to S3.
 - **Physical.** A node calls `CheckpointToObjectStore` → hard-link checkpoint at the pinned
   `GlobalSeq`, upload only SSTable file-ids absent from `parent`'s manifest. The node records
-  its source `storageUUID` + ordinal for same-shape mapping on restore. The physical plane is
+  its stable identity (`MemberID`/DNS host + `StorageUUID`) for same-shape mapping on restore. The physical plane is
   **klog-format-agnostic** — it byte-copies whole SSTable files, so wavesdb's flat vs B+tree
   hybrid klog (`UseBTree`) is transparent to backup.
 
@@ -276,8 +276,9 @@ source topology, then picks a path per the **target shape and the restore intent
 (`restore` = DR of the same cluster vs `clone` = new cluster identity) comes from the CLI/API
 invocation — it is *not* a field in the backup:
 
-- **DR of the same cluster, same shape, physical present → physical fast path.** Map source
-  `storageUUID` → target node by ordinal, drop SSTables into each data dir, `Open{ReadOnly}` +
+- **DR of the same cluster, same shape, physical present → physical fast path.** Match each source
+  node's checkpoint to a target node by **stable identity** (`MemberID` / advertised DNS host +
+  durable `StorageUUID` — there is no numeric ordinal field), drop SSTables into each data dir, `Open{ReadOnly}` +
   `PromoteToPrimary()`. No re-replication (each node already holds its shard). **This path is
   gated on intent = DR, not just shape**: it intentionally carries node identity (storage UUID,
   member metadata) from `CFSys`, which is correct only when restoring *the same logical
