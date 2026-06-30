@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"os"
 	"sort"
 	"time"
 
 	"connectrpc.com/connect"
 
+	"github.com/yannick/wavespan/internal/config"
 	"github.com/yannick/wavespan/internal/storage"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"wavesdb"
@@ -31,6 +33,10 @@ type ExportRequest struct {
 	Planes     []Plane
 	FrontierT  int64
 	ParentCkpt *wavesdb.CheckpointManifest
+	// ObjStore is the backup's resolved destination (Phase 3e). It is an in-process handle: the
+	// coordinator's own node and the test harness honour it; the gRPC client cannot carry a live store, so
+	// remote nodes export to their configured default destination (tracked with the node-RPC proto gaps).
+	ObjStore ObjectStore
 }
 
 // NodeClient is the coordinator's handle to one node's BackupService (prepare/export). The production
@@ -74,6 +80,13 @@ type Config struct {
 	RetainMs     int64        // terminal-intent retention window (0 = default; Phase 3d)
 	IsMetaLeader func() bool  // reports whether this node leads the meta shard (gates the sweep; nil = always)
 	Logger       *slog.Logger // sweep logging (nil = slog.Default())
+
+	// Phase 3e destination resolution. BackupCfg holds the default + named destinations; Getenv resolves
+	// credential env-var refs (nil = os.Getenv); OpenStore turns a resolved destination into an
+	// ObjectStore (nil = reuse ObjStore for the FS default; S3 destinations then require an opener).
+	BackupCfg config.BackupConfig
+	Getenv    func(string) string
+	OpenStore func(ResolvedDestination) (ObjectStore, error)
 }
 
 // Coordinator drives a consistent cluster backup: it records a durable BackupIntent in the meta shard,
@@ -95,6 +108,9 @@ type Coordinator struct {
 	retainMs     int64
 	isMetaLeader func() bool
 	logger       *slog.Logger
+	backupCfg    config.BackupConfig
+	getenv       func(string) string
+	openStore    func(ResolvedDestination) (ObjectStore, error)
 
 	// failAfterPhase, when set (test hook), makes run() persist the named phase's completion and then
 	// return early — simulating coordinator loss for the resumability test.
@@ -128,6 +144,10 @@ func NewCoordinator(cfg Config) *Coordinator {
 	if lg == nil {
 		lg = slog.Default()
 	}
+	getenv := cfg.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
 	return &Coordinator{
 		self:         cfg.Self,
 		meta:         cfg.Meta,
@@ -142,7 +162,31 @@ func NewCoordinator(cfg Config) *Coordinator {
 		retainMs:     retain,
 		isMetaLeader: cfg.IsMetaLeader,
 		logger:       lg,
+		backupCfg:    cfg.BackupCfg,
+		getenv:       getenv,
+		openStore:    cfg.OpenStore,
 	}
+}
+
+// resolveStore resolves a destination spec to its object store + the non-secret descriptor to persist.
+// With no OpenStore configured it reuses the default ObjStore for the FS fallback; S3 destinations then
+// require an opener.
+func (c *Coordinator) resolveStore(spec DestinationSpec) (ObjectStore, Descriptor, error) {
+	rd, desc, err := ResolveDestination(c.backupCfg, spec, c.getenv)
+	if err != nil {
+		return nil, Descriptor{}, err
+	}
+	if c.openStore != nil {
+		store, err := c.openStore(rd)
+		if err != nil {
+			return nil, Descriptor{}, err
+		}
+		return store, desc, nil
+	}
+	if rd.UseFS {
+		return c.objStore, desc, nil
+	}
+	return nil, Descriptor{}, fmt.Errorf("backup: S3 destination %q requires an object-store opener", desc.Bucket)
 }
 
 // BeginBackup records a durable intent, picks a frontier, and drives the phased backup to completion
@@ -151,6 +195,14 @@ func NewCoordinator(cfg Config) *Coordinator {
 func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSpec) (string, error) {
 	now := c.clock.NowMs()
 	id := newBackupID(now)
+
+	// Resolve the destination at Begin: build the object store for this run (transient creds live only
+	// here) and capture the NON-SECRET descriptor to persist in the intent/manifest.
+	store, desc, err := c.resolveStore(destinationSpecFromProto(spec.GetDestination()))
+	if err != nil {
+		return "", connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
 	in := &BackupIntent{
 		SchemaVersion:      intentSchemaVersion,
 		BackupID:           id,
@@ -159,7 +211,7 @@ func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSp
 		Selection:          selectorFromProto(spec.GetSelection()),
 		Planes:             planesFromProto(spec.GetPlanes()),
 		Parent:             spec.GetParent(),
-		Destination:        descriptorFromProto(spec.GetDestination()),
+		Destination:        desc, // descriptor only — never the resolved credentials
 		Status:             StatusRunning,
 		Phase:              PhaseAssign,
 		LeaseDeadlineMs:    now + c.leaseMs,
@@ -169,22 +221,23 @@ func (c *Coordinator) BeginBackup(ctx context.Context, spec *wavespanv1.BackupSp
 		in.Planes = []Plane{PlaneLogical}
 	}
 	if in.Parent != "" {
-		if err := c.validateParent(in.Planes, in.Parent); err != nil {
+		if err := c.validateParent(store, in.Planes, in.Parent); err != nil {
 			return "", err
 		}
 	}
 	if err := c.persist(ctx, in); err != nil {
 		return "", err
 	}
-	if err := c.run(ctx, in); err != nil {
+	if err := c.run(ctx, in, store); err != nil {
 		return id, err
 	}
 	return id, nil
 }
 
 // run advances a backup from its current phase to commit, persisting the intent at every phase boundary
-// so a resuming coordinator can pick up exactly where this one left off.
-func (c *Coordinator) run(ctx context.Context, in *BackupIntent) error {
+// so a resuming coordinator can pick up exactly where this one left off. store is the backup's resolved
+// destination (Phase 3e): export and commit write there.
+func (c *Coordinator) run(ctx context.Context, in *BackupIntent, store ObjectStore) error {
 	if in.Phase == PhaseAssign {
 		assignments, gaps := c.assigner.Assign(c.roster.Live())
 		in.Assignments = assignments
@@ -210,7 +263,7 @@ func (c *Coordinator) run(ctx context.Context, in *BackupIntent) error {
 		}
 	}
 	if in.Phase == PhaseExport {
-		if err := c.exportAll(ctx, in); err != nil {
+		if err := c.exportAll(ctx, in, store); err != nil {
 			return err
 		}
 		in.Phase = PhaseCommit
@@ -222,7 +275,7 @@ func (c *Coordinator) run(ctx context.Context, in *BackupIntent) error {
 		}
 	}
 	if in.Phase == PhaseCommit {
-		return c.commit(ctx, in)
+		return c.commit(ctx, in, store)
 	}
 	return nil
 }
@@ -245,16 +298,17 @@ func (c *Coordinator) prepareAll(ctx context.Context, in *BackupIntent) error {
 }
 
 // exportAll calls ExportBackup on every assigned member (sequentially in 3a) and records each node's
-// export result.
-func (c *Coordinator) exportAll(ctx context.Context, in *BackupIntent) error {
+// export result. store is the backup's resolved destination; it is threaded to each in-process export
+// via ExportRequest.ObjStore so objects land in the chosen bucket.
+func (c *Coordinator) exportAll(ctx context.Context, in *BackupIntent, store ObjectStore) error {
 	for _, mid := range sortedMembers(in.Assignments) {
 		cl, err := c.clientFor(mid)
 		if err != nil {
 			return err
 		}
-		// Incremental: resolve this node's parent checkpoint from the parent backup. A node absent from the
-		// parent (new since then) resolves to nil → a full physical export of its assignment (safe).
-		parentCkpt, err := c.parentCheckpointFor(in.Parent, mid)
+		// Incremental: resolve this node's parent checkpoint from the parent backup (in the same store). A
+		// node absent from the parent (new since then) resolves to nil → a full physical export (safe).
+		parentCkpt, err := c.parentCheckpointFor(store, in.Parent, mid)
 		if err != nil {
 			return err
 		}
@@ -265,6 +319,7 @@ func (c *Coordinator) exportAll(ctx context.Context, in *BackupIntent) error {
 			Planes:     in.Planes,
 			FrontierT:  in.FrontierT,
 			ParentCkpt: parentCkpt,
+			ObjStore:   store,
 		})
 		if err != nil {
 			return err
@@ -287,12 +342,12 @@ func (c *Coordinator) exportAll(ctx context.Context, in *BackupIntent) error {
 // validateParent rejects an incremental whose parent cannot anchor it: incrementals are physical-only
 // (logical is full-only), and the parent backup must itself carry a physical plane. Both are clear,
 // up-front errors rather than a silently-degraded backup.
-func (c *Coordinator) validateParent(planes []Plane, parentID string) error {
+func (c *Coordinator) validateParent(store ObjectStore, planes []Plane, parentID string) error {
 	if !hasPlane(planes, PlanePhysical) {
 		return connect.NewError(connect.CodeInvalidArgument,
 			fmt.Errorf("backup: incremental from parent %q requires the physical plane; logical backups are full-only", parentID))
 	}
-	parent, err := ReadClusterManifest(c.objStore, parentID)
+	parent, err := ReadClusterManifest(store, parentID)
 	if err != nil {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("backup: parent %q not found: %w", parentID, err))
 	}
@@ -304,21 +359,21 @@ func (c *Coordinator) validateParent(planes []Plane, parentID string) error {
 }
 
 // parentCheckpointFor resolves a node's parent checkpoint from the parent backup's per-node physical
-// sub-manifest (matched by member id). It returns nil (→ full physical export) when there is no parent
-// backup, or when the node has no entry in it (a node added since the parent).
-func (c *Coordinator) parentCheckpointFor(parentBackupID, memberID string) (*wavesdb.CheckpointManifest, error) {
+// sub-manifest (matched by member id, read from store). It returns nil (→ full physical export) when
+// there is no parent backup, or when the node has no entry in it (a node added since the parent).
+func (c *Coordinator) parentCheckpointFor(store ObjectStore, parentBackupID, memberID string) (*wavesdb.CheckpointManifest, error) {
 	if parentBackupID == "" {
 		return nil, nil
 	}
 	key := PhysicalManifestKey(parentBackupID, memberID)
-	ok, err := c.objStore.Exists(key)
+	ok, err := store.Exists(key)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, nil // new node since the parent → full physical
 	}
-	pm, err := ReadPhysicalManifest(c.objStore, key)
+	pm, err := ReadPhysicalManifest(store, key)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +396,7 @@ func containsString(ss []string, want string) bool {
 // HeldRanges plumbed via Prepare→NodeRecord is NOT yet compared against the assignments here — that
 // held-range-vs-assignment coverage cross-check (catching real cluster gaps a node failed to cover)
 // lands in 3a.1. HeldRanges is recorded now so that cross-check has its input when it ships.
-func (c *Coordinator) commit(ctx context.Context, in *BackupIntent) error {
+func (c *Coordinator) commit(ctx context.Context, in *BackupIntent, store ObjectStore) error {
 	refs := make([]PerNodeRef, 0, len(in.PerNode))
 	topo := make([]TopologyEntry, 0, len(in.PerNode))
 	for _, n := range in.PerNode {
@@ -371,7 +426,7 @@ func (c *Coordinator) commit(ctx context.Context, in *BackupIntent) error {
 		Status:             statusString(status),
 		Gaps:               in.Gaps,
 	}
-	if err := WriteClusterManifest(c.objStore, cm); err != nil {
+	if err := WriteClusterManifest(store, cm); err != nil {
 		return err
 	}
 	now := c.clock.NowMs()
@@ -384,6 +439,11 @@ func (c *Coordinator) commit(ctx context.Context, in *BackupIntent) error {
 
 // resume loads a persisted intent and continues driving it from its recorded phase (Task 5). It is safe
 // to re-run because object keys are deterministic — a re-export overwrites identical content.
+//
+// NOTE (3e): resume re-resolves the destination to its descriptor when one is recorded; if that descriptor
+// names an explicit/inline-credential destination whose creds were never persisted, re-resolution yields
+// no credentials and the resumed export to that destination fails — resuming such a backup requires the
+// creds re-supplied (or a named/default destination). Default/named destinations re-resolve cleanly.
 func (c *Coordinator) resume(ctx context.Context, backupID string) error {
 	in, found, err := GetIntent(ctx, c.meta, backupID)
 	if err != nil {
@@ -392,7 +452,30 @@ func (c *Coordinator) resume(ctx context.Context, backupID string) error {
 	if !found {
 		return connect.NewError(connect.CodeNotFound, fmt.Errorf("backup: no intent for %q", backupID))
 	}
-	return c.run(ctx, in)
+	store, err := c.storeForDescriptor(in.Destination)
+	if err != nil {
+		return err
+	}
+	return c.run(ctx, in, store)
+}
+
+// storeForDescriptor re-opens the object store for a persisted destination descriptor (resume/3e). A
+// default-FS or empty descriptor uses the default store; a named descriptor re-resolves from config; an
+// explicit descriptor re-resolves using its recorded credential reference (inline-cred destinations
+// cannot be re-resolved — their creds were never persisted).
+func (c *Coordinator) storeForDescriptor(d Descriptor) (ObjectStore, error) {
+	var spec DestinationSpec
+	switch {
+	case d.Name != "" && d.Name != "default-fs":
+		spec = DestinationSpec{Name: d.Name}
+	case d.Bucket != "":
+		spec = DestinationSpec{
+			Bucket: d.Bucket, Prefix: d.Prefix, Region: d.Region, Endpoint: d.Endpoint,
+			UseSSL: d.UseSSL, UsePathStyle: d.UsePathStyle, SecretRef: d.SecretName,
+		}
+	}
+	store, _, err := c.resolveStore(spec)
+	return store, err
 }
 
 func (c *Coordinator) persist(ctx context.Context, in *BackupIntent) error {

@@ -40,7 +40,11 @@ func (n *memberNode) Prepare(ctx context.Context, backupID string, frontierT int
 
 func (n *memberNode) Export(ctx context.Context, req ExportRequest) (ExportResult, error) {
 	n.exports++
-	return n.agent.Export(ctx, n.store, n.objStore, req.BackupID, req.MemberID, req.Assignment, req.Planes, req.FrontierT, req.ParentCkpt)
+	objStore := n.objStore
+	if req.ObjStore != nil { // honour the coordinator's resolved per-backup destination (Phase 3e)
+		objStore = req.ObjStore
+	}
+	return n.agent.Export(ctx, n.store, objStore, req.BackupID, req.MemberID, req.Assignment, req.Planes, req.FrontierT, req.ParentCkpt)
 }
 
 // buildCluster seeds count members, each with one namespace of KV+collections data, sharing objStore.
