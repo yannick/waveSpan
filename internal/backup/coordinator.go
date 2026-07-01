@@ -122,6 +122,10 @@ type Config struct {
 	// cross-check (0 = unknown → the collections check is skipped; see coverage.go).
 	HostedDataShards   func() []uint64
 	ExpectedDataShards uint64
+
+	// MemberTimeout bounds each per-member Prepare/Export RPC (F5) so a dead/hung peer does not stall the
+	// whole backup; on timeout (or any RPC error) a non-self member is skipped → PARTIAL. 0 = default.
+	MemberTimeout time.Duration
 }
 
 // Coordinator drives a consistent cluster backup: it records a durable Intent in the meta shard,
@@ -149,6 +153,7 @@ type Coordinator struct {
 
 	hostedShards       func() []uint64
 	expectedDataShards uint64
+	memberTimeout      time.Duration
 
 	// failAfterPhase, when set (test hook), makes run() persist the named phase's completion and then
 	// return early — simulating coordinator loss for the resumability test.
@@ -163,6 +168,10 @@ const defaultRetainMs = 30 * 24 * 60 * 60 * 1000 // 30 days terminal-intent rete
 // (the cluster-wide HLC sealing is Phase 3a.1); the now+lease value is set here so the contract is right
 // when the cut lands.
 const frontierLeaseMs = 5 * 1000 // 5 seconds
+
+// defaultMemberTimeout bounds each per-member prepare/export RPC (F5). Generous enough for a healthy
+// export yet short enough that a dead/hung peer is skipped promptly rather than stalling every backup.
+const defaultMemberTimeout = 30 * time.Second
 
 // NewCoordinator builds a Coordinator from cfg.
 func NewCoordinator(cfg Config) *Coordinator {
@@ -186,6 +195,10 @@ func NewCoordinator(cfg Config) *Coordinator {
 	if getenv == nil {
 		getenv = os.Getenv
 	}
+	memberTimeout := cfg.MemberTimeout
+	if memberTimeout <= 0 {
+		memberTimeout = defaultMemberTimeout
+	}
 	return &Coordinator{
 		self:         cfg.Self,
 		meta:         cfg.Meta,
@@ -206,6 +219,7 @@ func NewCoordinator(cfg Config) *Coordinator {
 
 		hostedShards:       cfg.HostedDataShards,
 		expectedDataShards: cfg.ExpectedDataShards,
+		memberTimeout:      memberTimeout,
 	}
 }
 
@@ -324,21 +338,37 @@ func (c *Coordinator) run(ctx context.Context, in *Intent, store ObjectStore, pr
 	return nil
 }
 
-// prepareAll calls PrepareBackup on every assigned member (sequentially in 3a) and records the ranges
-// they report holding.
+// prepareAll calls PrepareBackup on every assigned member (sequentially in 3a). A member that is
+// unreachable/errors (a stale-but-alive roster entry on a churned cluster) is SKIPPED, not fatal: it is
+// logged and simply not recorded (so it contributes no coverage → commit() marks it a member gap →
+// PARTIAL). The coordinator's OWN node (self) failing IS fatal — a backup missing self can't be produced.
+// Each call is bounded by memberTimeout so a dead peer can't stall the whole backup (F5).
 func (c *Coordinator) prepareAll(ctx context.Context, in *Intent) error {
 	for _, mid := range sortedMembers(in.Assignments) {
 		cl, err := c.clientFor(mid)
-		if err != nil {
-			return err
+		if err == nil {
+			var pr PrepareResult
+			pr, err = callWithTimeout(ctx, c.memberTimeout, func(cctx context.Context) (PrepareResult, error) {
+				return cl.Prepare(cctx, in.BackupID, in.FrontierT)
+			})
+			if err == nil {
+				upsertNode(in, NodeRecord{MemberID: mid, Phase: PhasePrepare, HeldRanges: pr.HeldRanges})
+				continue
+			}
 		}
-		pr, err := cl.Prepare(ctx, in.BackupID, in.FrontierT)
-		if err != nil {
-			return err
+		if mid == c.self {
+			return fmt.Errorf("backup: preparing self %q: %w", mid, err)
 		}
-		upsertNode(in, NodeRecord{MemberID: mid, Phase: PhasePrepare, HeldRanges: pr.HeldRanges})
+		c.logger.Warn("backup: member unreachable at prepare — skipping (will be a coverage gap)", "member", mid, "err", err)
 	}
 	return nil
+}
+
+// callWithTimeout runs fn under a child context bounded by memberTimeout (F5).
+func callWithTimeout[T any](ctx context.Context, timeout time.Duration, fn func(context.Context) (T, error)) (T, error) {
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return fn(cctx)
 }
 
 // exportAll calls ExportBackup on every assigned member (sequentially in 3a) and records each node's
@@ -346,35 +376,55 @@ func (c *Coordinator) prepareAll(ctx context.Context, in *Intent) error {
 // is the original request destination, forwarded so a gRPC node re-resolves the same target. Each node
 // resolves its own parent checkpoint from ParentBackupID.
 func (c *Coordinator) exportAll(ctx context.Context, in *Intent, store ObjectStore, protoDest *wavespanv1.Destination) error {
+	// Only export members that successfully prepared (proven reachable moments ago); a member skipped at
+	// prepare is not retried here. A member that dies BETWEEN prepare and export is still tolerated below.
+	prepared := map[string]bool{}
+	for _, n := range in.PerNode {
+		prepared[n.MemberID] = true
+	}
+	exported := 0
 	for _, mid := range sortedMembers(in.Assignments) {
+		if !prepared[mid] {
+			continue // skipped at prepare → no coverage (becomes a member gap at commit)
+		}
 		cl, err := c.clientFor(mid)
-		if err != nil {
-			return err
+		if err == nil {
+			var res ExportResult
+			res, err = callWithTimeout(ctx, c.memberTimeout, func(cctx context.Context) (ExportResult, error) {
+				return cl.Export(cctx, ExportRequest{
+					BackupID:       in.BackupID,
+					MemberID:       mid,
+					Assignment:     in.Assignments[mid],
+					Planes:         in.Planes,
+					FrontierT:      in.FrontierT,
+					ParentBackupID: in.Parent,
+					ObjStore:       store,
+					Destination:    protoDest,
+				})
+			})
+			if err == nil {
+				upsertNode(in, NodeRecord{
+					MemberID:            mid,
+					Phase:               PhaseExport,
+					Objects:             res.Objects,
+					Bytes:               res.Bytes,
+					SubManifestKey:      res.SubManifestKey,
+					StorageUUID:         res.StorageUUID,
+					PhysicalManifestKey: res.PhysicalManifestKey,
+					PhysicalGlobalSeq:   res.PhysicalGlobalSeq,
+					Done:                true,
+				})
+				exported++
+				continue
+			}
 		}
-		res, err := cl.Export(ctx, ExportRequest{
-			BackupID:       in.BackupID,
-			MemberID:       mid,
-			Assignment:     in.Assignments[mid],
-			Planes:         in.Planes,
-			FrontierT:      in.FrontierT,
-			ParentBackupID: in.Parent,
-			ObjStore:       store,
-			Destination:    protoDest,
-		})
-		if err != nil {
-			return err
+		if mid == c.self {
+			return fmt.Errorf("backup: exporting self %q: %w", mid, err)
 		}
-		upsertNode(in, NodeRecord{
-			MemberID:            mid,
-			Phase:               PhaseExport,
-			Objects:             res.Objects,
-			Bytes:               res.Bytes,
-			SubManifestKey:      res.SubManifestKey,
-			StorageUUID:         res.StorageUUID,
-			PhysicalManifestKey: res.PhysicalManifestKey,
-			PhysicalGlobalSeq:   res.PhysicalGlobalSeq,
-			Done:                true,
-		})
+		c.logger.Warn("backup: member unreachable at export — skipping (will be a coverage gap)", "member", mid, "err", err)
+	}
+	if exported == 0 {
+		return fmt.Errorf("backup: no member exported successfully (all unreachable) — cannot produce a backup")
 	}
 	return nil
 }
@@ -420,6 +470,9 @@ func (c *Coordinator) commit(ctx context.Context, in *Intent, store ObjectStore)
 	refs := make([]PerNodeRef, 0, len(in.PerNode))
 	topo := make([]TopologyEntry, 0, len(in.PerNode))
 	for _, n := range in.PerNode {
+		if !n.Done {
+			continue // a member skipped at prepare/export (F5) exported nothing — no manifest ref/topology
+		}
 		refs = append(refs, PerNodeRef{
 			MemberID:          n.MemberID,
 			Ref:               n.SubManifestKey,
