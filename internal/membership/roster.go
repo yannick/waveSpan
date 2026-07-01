@@ -107,6 +107,11 @@ func (r *Roster) Upsert(m Member, now time.Time) {
 		r.members[m.MemberID] = &memberState{member: m, state: StateAlive, lastSeenMs: unixMs(now), stateSince: unixMs(now)}
 		return
 	}
+	// NOTE: this refreshes an existing member's address UNCONDITIONALLY (no incarnation check), unlike
+	// ApplyGossip. It is fed from a live gossip contact's From (HandleGossip), so it tracks the sender's
+	// current address; the incarnation-gated propagation to third parties is ApplyGossip's job. A stale
+	// duplicate from an old address could momentarily flap the address here, but the owner's monotonic
+	// self-incarnation (ApplyGossip self branch) re-asserts the truth on the next round.
 	ms.member = m
 }
 
@@ -142,20 +147,29 @@ func (r *Roster) Suspect(id string, now time.Time) {
 }
 
 // ApplyGossip merges a member's state learned from a peer's delta. Higher incarnation always
-// wins; equal incarnation adopts the more severe state. Suspicion about self is refuted.
+// wins; equal incarnation adopts the more severe state. A stale record about self — a non-Alive claim
+// OR a stale address — is refuted by out-incarnating it (see the self branch).
 func (r *Roster) ApplyGossip(u MemberView, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	defer r.rebuildSnapshots()
 
 	if u.Member.MemberID == r.selfID {
-		// refute any non-alive claim about ourselves
-		if u.State != StateAlive {
-			self := r.members[r.selfID]
-			if u.Incarnation >= self.incarnation {
-				self.incarnation = u.Incarnation + 1
-			}
-			r.setState(self, StateAlive, now)
+		self := r.members[r.selfID]
+		// Refute a STALE record about ourselves: a non-Alive claim (classic SWIM suspicion) OR a stale
+		// ADDRESS (a peer still remembering our pre-restart address). Bumping ABOVE the stale incarnation
+		// makes our true {Alive, current Member} record supersede it when we next gossip — so even a
+		// regressed/low boot-millis seed self-heals immediately, with no death window (risk-2 hardening).
+		// The bump requires u.Incarnation >= ours; a strictly-lower stale record is already dominated, so
+		// we never LOWER our incarnation (monotonic guarantee).
+		//
+		// Inflation guard (critical): a record that already MATCHES us — Alive AND our current Member — is
+		// NOT stale, so it triggers no bump. Once peers converge on our {incarnation, addr}, gossip rounds
+		// stop bumping; otherwise self-incarnation would inflate every round.
+		stale := u.State != StateAlive || u.Member != self.member
+		if stale && u.Incarnation >= self.incarnation {
+			self.incarnation = u.Incarnation + 1
+			r.setState(self, StateAlive, now) // re-assert Alive (self.member is already our true identity)
 		}
 		return
 	}
@@ -202,6 +216,15 @@ func (r *Roster) Tick(now time.Time) {
 			// repair has released its holder records (repairDone). On eviction, delete it from the map so
 			// the roster can't grow unbounded — a churned cluster's dead entries are reclaimed rather than
 			// lingering in Members() forever (which staled the roster and forced backups to PARTIAL).
+			//
+			// Trade-off (risk 1, accepted): deleting the entry drops the tombstone that would block a
+			// lagging/partitioned peer's stale ALIVE from re-adding this member at its dead old address.
+			// It is bounded — a peer must be partitioned longer than DeadRetention (default 5m), the
+			// resurrected entry re-dies within ~one liveness window (SUSPECT+UNREACHABLE ≈ 13s), and F5
+			// makes backups tolerant of such a stale member (skipped → PARTIAL, not fatal). If it ever
+			// matters, the hardening is a non-gossiped Forgotten tombstone: keep the entry one extra
+			// retention in a FORGOTTEN state that rebuildSnapshots excludes from OUTGOING gossip, then
+			// delete — blocking resurrection without unbounded growth. Not built now.
 			if nowMs-ms.stateSince >= r.cfg.DeadRetention.Milliseconds() || ms.repairDone {
 				r.setState(ms, StateForgotten, now) // fire the transition observer before removal
 				delete(r.members, id)

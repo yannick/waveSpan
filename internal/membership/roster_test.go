@@ -229,6 +229,53 @@ func TestRestartedMemberAddressPropagatesOnMonotonicIncarnation(t *testing.T) {
 	}
 }
 
+// TestSelfIncarnationNotLoweredByStaleSuspicion locks the monotonic guarantee: a peer's LOWER-incarnation
+// suspicion about self must never lower self's incarnation (else a regressed seed could be dragged down).
+func TestSelfIncarnationNotLoweredByStaleSuspicion(t *testing.T) {
+	base := time.Unix(9_000_000, 0)
+	r := NewRoster(addrMember("self", "10.0.0.1"), testCfg(), 1000) // seeded HIGH
+	r.ApplyGossip(MemberView{Member: addrMember("self", "10.0.0.1"), State: StateSuspect, Incarnation: 5}, base)
+	v, _ := r.Get("self")
+	if v.Incarnation < 1000 {
+		t.Fatalf("self incarnation lowered to %d by a stale lower-incarnation suspicion (must stay >= 1000)", v.Incarnation)
+	}
+	if v.State != StateAlive {
+		t.Fatalf("self must stay ALIVE, got %s", v.State)
+	}
+}
+
+// TestSelfRefutesStaleAddressRecord is the risk-2 (clock-regression) gate: a peer that still remembers
+// self at its OLD address — even at an incarnation >= self's (a regressed boot-millis seed) — is refuted:
+// self bumps ABOVE the stale record and re-asserts its true current address, with no death window.
+func TestSelfRefutesStaleAddressRecord(t *testing.T) {
+	base := time.Unix(9_100_000, 0)
+	r := NewRoster(addrMember("self", "10.0.0.9"), testCfg(), 100) // true current addr .9
+	// stale self-record at the OLD address .1, Alive, at self's incarnation (regressed-seed case).
+	r.ApplyGossip(MemberView{Member: addrMember("self", "10.0.0.1"), State: StateAlive, Incarnation: 100}, base)
+	v, _ := r.Get("self")
+	if v.Incarnation <= 100 {
+		t.Fatalf("self must bump ABOVE a stale self-record's incarnation to supersede it, got %d", v.Incarnation)
+	}
+	if v.Member.DataAddr != "10.0.0.9:7800" || v.Member.GossipAddr != "10.0.0.9:7700" {
+		t.Fatalf("self must re-assert its TRUE current address, got %+v", v.Member)
+	}
+}
+
+// TestSelfNoInflationOnMatchingRecord is the critical inflation guard: a self-record that already MATCHES
+// self (Alive + same address) at equal incarnation triggers NO bump — a converged cluster must not inflate
+// self's incarnation every gossip round.
+func TestSelfNoInflationOnMatchingRecord(t *testing.T) {
+	base := time.Unix(9_200_000, 0)
+	self := addrMember("self", "10.0.0.9")
+	r := NewRoster(self, testCfg(), 100)
+	for i := 0; i < 3; i++ {
+		r.ApplyGossip(MemberView{Member: self, State: StateAlive, Incarnation: 100}, base)
+		if v, _ := r.Get("self"); v.Incarnation != 100 {
+			t.Fatalf("matching self-record must NOT inflate incarnation (round %d): got %d, want 100", i, v.Incarnation)
+		}
+	}
+}
+
 // TestMembersSnapshotCachedAndImmutable verifies Members()/Live() return a cached snapshot that is
 // reused between mutations and never mutated in place (a previously-returned slice stays valid).
 func TestMembersSnapshotCachedAndImmutable(t *testing.T) {
