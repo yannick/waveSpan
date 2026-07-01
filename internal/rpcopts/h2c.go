@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
+	"golang.org/x/net/http2/h2c" //nolint:staticcheck // SA1019: h2c still functions correctly; migrating this server to http.Server.Protocols (unencrypted HTTP/2, Go 1.24+) is a separate transport change tracked as follow-up.
 )
 
 // WaveSpan's internal RPCs (and the dev/plaintext data port) ran over HTTP/1.1, which serializes
@@ -21,7 +21,7 @@ import (
 // multiplexed; legacy HTTP/1.1 clients still work. Use only on plaintext servers (a TLS server gets
 // HTTP/2 from ALPN automatically).
 func H2CHandler(h http.Handler) http.Handler {
-	return h2c.NewHandler(h, &http2.Server{MaxConcurrentStreams: 1024, IdleTimeout: 2 * time.Minute})
+	return h2c.NewHandler(h, &http2.Server{MaxConcurrentStreams: 1024, IdleTimeout: 2 * time.Minute}) //nolint:staticcheck // SA1019: deprecated but functional; see import note — proper migration to http.Server.Protocols is a separate change.
 }
 
 // sharedH2CClient multiplexes all plaintext internal/bench calls over pooled HTTP/2 connections.
