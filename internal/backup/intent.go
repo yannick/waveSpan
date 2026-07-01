@@ -134,6 +134,12 @@ type MetaStore interface {
 	PutBlob(ctx context.Context, key string, blob []byte) error
 	GetBlob(ctx context.Context, key string) ([]byte, bool, error)
 	ListBlobs(ctx context.Context) (map[string][]byte, error)
+	// ListBlobsStale is ListBlobs via a NON-linearizable (local) read. It is used ONLY by the periodic
+	// lifecycle sweep's enumeration scan (best-effort GC): a linearizable list would ReadIndex-wake the
+	// meta shard every tick and prevent it from quiescing. A slightly-stale view is safe — the sweep
+	// re-checks per-object freshly (GetBlob, linearizable) and re-runs next tick. UI/RPC paths use
+	// ListBlobs (linearizable).
+	ListBlobsStale(ctx context.Context) (map[string][]byte, error)
 	DeleteBlob(ctx context.Context, key string) error
 }
 
@@ -159,9 +165,23 @@ func GetIntent(ctx context.Context, store MetaStore, id string) (*Intent, bool, 
 	return in, true, nil
 }
 
-// ListIntents loads every intent from the catalog, ordered by BackupID for a stable listing.
+// ListIntents loads every intent from the catalog (linearizable), ordered by BackupID. Used by the
+// UI/RPC paths (ListBackups, chain checks) that need a fresh view.
 func ListIntents(ctx context.Context, store MetaStore) ([]*Intent, error) {
 	blobs, err := store.ListBlobs(ctx)
+	return decodeIntents(blobs, err)
+}
+
+// ListIntentsStale is ListIntents via a non-linearizable (local) read — used ONLY by the periodic
+// lifecycle sweep's enumeration scan so it doesn't wake the meta shard (see MetaStore.ListBlobsStale).
+func ListIntentsStale(ctx context.Context, store MetaStore) ([]*Intent, error) {
+	blobs, err := store.ListBlobsStale(ctx)
+	return decodeIntents(blobs, err)
+}
+
+// decodeIntents unmarshals a blob map into intents ordered by BackupID (shared by the linearizable and
+// stale list helpers).
+func decodeIntents(blobs map[string][]byte, err error) ([]*Intent, error) {
 	if err != nil {
 		return nil, err
 	}

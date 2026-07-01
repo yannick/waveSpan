@@ -92,6 +92,11 @@ func (f *fakeMetaStore) ListBlobs(_ context.Context) (map[string][]byte, error) 
 	}
 	return out, nil
 }
+
+// ListBlobsStale mirrors ListBlobs for the fake (an in-memory store has no stale/linearizable distinction).
+func (f *fakeMetaStore) ListBlobsStale(ctx context.Context) (map[string][]byte, error) {
+	return f.ListBlobs(ctx)
+}
 func (f *fakeMetaStore) DeleteBlob(_ context.Context, k string) error {
 	delete(f.m, k)
 	return nil

@@ -56,7 +56,9 @@ type StoreForIntent func(in *Intent) (ObjectStore, error)
 // (the catalog holds tens to low-thousands of intents, not the millions of keys the budget/TTL due-index
 // exists for), so a periodic scan is simpler and cheap. Callers gate it on meta-shard leadership.
 func SweepIntents(ctx context.Context, store MetaStore, storeFor StoreForIntent, nowMs, retainMs int64) (SweepStats, error) {
-	intents, err := ListIntents(ctx, store)
+	// Stale enumeration scan (non-waking): the sweep re-reads/transitions each due intent via the normal
+	// proposal path, so a slightly-stale scan is safe and keeps the idle meta shard from waking every tick.
+	intents, err := ListIntentsStale(ctx, store)
 	if err != nil {
 		return SweepStats{}, err
 	}
@@ -212,7 +214,9 @@ func ReconcileOrphans(ctx context.Context, store MetaStore, opt ReconcileOptions
 	if logger == nil {
 		logger = slog.Default()
 	}
-	intents, err := ListIntents(ctx, store)
+	// Stale enumeration scan (non-waking): each candidate orphan is re-checked FRESH below (GetIntent,
+	// linearizable), so the stale live-set scan is safe and lets the idle meta shard quiesce.
+	intents, err := ListIntentsStale(ctx, store)
 	if err != nil {
 		return nil, err
 	}

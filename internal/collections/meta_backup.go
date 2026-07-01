@@ -33,9 +33,20 @@ func (s *MetaBackupStore) GetBlob(ctx context.Context, key string) ([]byte, bool
 	return b, b != nil, nil
 }
 
-// ListBlobs reads every catalog blob keyed by catalog key (linearizable).
+// ListBlobs reads every catalog blob keyed by catalog key (linearizable) — the UI/RPC path.
 func (s *MetaBackupStore) ListBlobs(ctx context.Context) (map[string][]byte, error) {
-	v, err := s.mgr.Read(ctx, MetaShardID, metaBackupListQuery{}, true)
+	return s.list(ctx, true)
+}
+
+// ListBlobsStale reads every catalog blob via a NON-linearizable (local) read — used only by the periodic
+// lifecycle sweep so it does not ReadIndex-wake the meta shard every tick (letting an idle meta shard
+// quiesce). A slightly-stale catalog view is fine for best-effort GC (design/backup §6).
+func (s *MetaBackupStore) ListBlobsStale(ctx context.Context) (map[string][]byte, error) {
+	return s.list(ctx, false)
+}
+
+func (s *MetaBackupStore) list(ctx context.Context, linearizable bool) (map[string][]byte, error) {
+	v, err := s.mgr.Read(ctx, MetaShardID, metaBackupListQuery{}, linearizable)
 	if err != nil {
 		return nil, err
 	}

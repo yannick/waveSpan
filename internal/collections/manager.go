@@ -26,11 +26,12 @@ type Manager struct {
 	mu     sync.Mutex
 	shards map[uint64]shardReg // shardID -> registration
 
-	prop       *proposer // QW2: batching/pipelining write driver for data shards
-	tun        Tunables
-	sweepEvery time.Duration
-	stopCh     chan struct{}
-	doneCh     chan struct{}
+	prop          *proposer // QW2: batching/pipelining write driver for data shards
+	tun           Tunables
+	sweepEvery    time.Duration // base (floor) sweep interval
+	sweepMaxEvery time.Duration // adaptive-backoff cap when idle
+	stopCh        chan struct{}
+	doneCh        chan struct{}
 
 	diskGate DiskGate // disk-pressure admission (design/36); nil = no gating
 	onShed   func()   // optional: called once per write shed for disk pressure (metrics counter)
@@ -71,7 +72,8 @@ type Tunables struct {
 	HeartbeatRTT       uint64        // leader heartbeat = HeartbeatRTT × RTT
 	SnapshotEntries    uint64        // entries between snapshots (smaller = faster catch-up, more I/O)
 	CompactionOverhead uint64        // log entries retained after a snapshot
-	SweepEvery         time.Duration // TTL sweep interval on shard leaders
+	SweepEvery         time.Duration // TTL sweep base interval on shard leaders (the responsive floor)
+	SweepMaxEvery      time.Duration // adaptive-backoff cap: an idle sweep grows toward this (idle-cheap)
 	CoalesceWindow     time.Duration // QW2: window the proposer coalesces concurrent data-shard writes over
 	CoalesceMaxOps     int           // QW2: max single ops coalesced into one Raft entry
 	// Quiesce lets an idle shard enter dragonboat's quiesce mode: after ~ElectionRTT×10 idle ticks it
@@ -90,7 +92,8 @@ func quiesceOn() *bool { b := true; return &b }
 func DefaultTunables() Tunables {
 	return Tunables{
 		RTTMillisecond: 50, ElectionRTT: 10, HeartbeatRTT: 1,
-		SnapshotEntries: 1000, CompactionOverhead: 500, SweepEvery: 500 * time.Millisecond,
+		SnapshotEntries: 1000, CompactionOverhead: 500,
+		SweepEvery: 500 * time.Millisecond, SweepMaxEvery: 4 * time.Second, // idle backoff cap ≈ 8× base
 		CoalesceWindow: defaultCoalesceWindow, CoalesceMaxOps: defaultCoalesceMaxOps,
 		Quiesce: quiesceOn(),
 	}
@@ -115,6 +118,12 @@ func (t Tunables) withDefaults() Tunables {
 	}
 	if t.SweepEvery == 0 {
 		t.SweepEvery = d.SweepEvery
+	}
+	if t.SweepMaxEvery == 0 {
+		t.SweepMaxEvery = d.SweepMaxEvery
+	}
+	if t.SweepMaxEvery < t.SweepEvery {
+		t.SweepMaxEvery = t.SweepEvery // the cap can't be below the base floor
 	}
 	if t.CoalesceWindow == 0 {
 		t.CoalesceWindow = d.CoalesceWindow
@@ -151,9 +160,10 @@ func NewManagerWithOptions(nodeHostDir, raftAddr string, store storage.LocalStor
 	}
 	m := &Manager{
 		nh: nh, store: store, shards: map[uint64]shardReg{},
-		tun:        tun,
-		sweepEvery: tun.SweepEvery,
-		stopCh:     make(chan struct{}), doneCh: make(chan struct{}),
+		tun:           tun,
+		sweepEvery:    tun.SweepEvery,
+		sweepMaxEvery: tun.SweepMaxEvery,
+		stopCh:        make(chan struct{}), doneCh: make(chan struct{}),
 	}
 	m.prop = newProposer(rawProposeShard{m}, tun.CoalesceWindow, tun.CoalesceMaxOps)
 	go m.sweepLoop()
@@ -355,22 +365,45 @@ func (m *Manager) Stop() {
 	m.nh.Close()
 }
 
+// sweepLoop drives sweepOnce on an ADAPTIVE interval: the base cadence (SweepEvery) is the floor, but a
+// pass that finds no due TTL/budget work grows the next interval (×2 up to SweepMaxEvery), and any pass
+// that does work snaps back to the base. So the sweep stays responsive under load yet wakes rarely when
+// idle — fewer timer wakeups (lower idle CPU) and it stops periodically waking shards that could quiesce.
 func (m *Manager) sweepLoop() {
 	defer close(m.doneCh)
-	t := time.NewTicker(m.sweepEvery)
-	defer t.Stop()
+	interval := m.sweepEvery
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 	for {
 		select {
 		case <-m.stopCh:
 			return
-		case <-t.C:
-			m.sweepOnce()
+		case <-timer.C:
+			interval = nextSweepInterval(interval, m.sweepEvery, m.sweepMaxEvery, m.sweepOnce())
+			timer.Reset(interval)
 		}
 	}
 }
 
-// sweepOnce proposes expirations for due elements of every local data shard this node leads.
-func (m *Manager) sweepOnce() {
+// nextSweepInterval computes the next adaptive sweep interval: the base when the last pass did work (stay
+// responsive), else double the current up to max (idle backoff), never below the base floor.
+func nextSweepInterval(current, base, maxInterval time.Duration, didWork bool) time.Duration {
+	if didWork {
+		return base
+	}
+	next := current * 2
+	if next > maxInterval {
+		next = maxInterval
+	}
+	if next < base {
+		next = base
+	}
+	return next
+}
+
+// sweepOnce proposes expirations for due elements of every local data shard this node leads. It reports
+// whether it did any work (proposed at least one expiry/GC) so the adaptive loop can back off when idle.
+func (m *Manager) sweepOnce() bool {
 	m.mu.Lock()
 	local := make(map[uint64]uint64, len(m.shards))
 	for s, r := range m.shards {
@@ -381,6 +414,7 @@ func (m *Manager) sweepOnce() {
 	m.mu.Unlock()
 
 	now := time.Now().UnixMilli()
+	worked := false
 	for shardID, replicaID := range local {
 		if lead, _, ok, err := m.nh.GetLeaderID(shardID); err != nil || !ok || lead != replicaID {
 			continue // only the leader sweeps
@@ -401,11 +435,15 @@ func (m *Manager) sweepOnce() {
 					_, _ = m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
 					cancel()
 				}
+				worked = true
 			}
 		}
 		// Pass 2: leased-budget forced expiry + tombstone GC (Stage 2 §3.5/§6).
-		m.sweepBudget(shardID, now)
+		if m.sweepBudget(shardID, now) {
+			worked = true
+		}
 	}
+	return worked
 }
 
 // sweepBudget runs the Stage-2 leased-budget passes for one shard this node leads (caller already gated on
@@ -413,7 +451,8 @@ func (m *Manager) sweepOnce() {
 // settlement lands in applyBudExpire (§3.5) — and GCs settled tombstones whose dedup retry window has
 // elapsed (§6). sweepNowMs is leader-stamped here, pre-propose, so apply reads no wall clock; the deadline
 // comparison runs against the replicated ReclaimNotBeforeMs, surviving a leader change.
-func (m *Manager) sweepBudget(shardID uint64, sweepNowMs int64) {
+func (m *Manager) sweepBudget(shardID uint64, sweepNowMs int64) bool {
+	worked := false
 	if v, err := m.nh.StaleRead(shardID, budExpiryDueQuery{NowMs: sweepNowMs, Limit: 1024}); err == nil {
 		due, _ := v.([]dueBudLease)
 		for _, d := range due {
@@ -423,6 +462,7 @@ func (m *Manager) sweepBudget(shardID uint64, sweepNowMs int64) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			_, _ = m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
 			cancel()
+			worked = true
 		}
 	}
 	if v, err := m.nh.StaleRead(shardID, budTombGCDueQuery{NowMs: sweepNowMs, Limit: 1024}); err == nil {
@@ -434,6 +474,8 @@ func (m *Manager) sweepBudget(shardID uint64, sweepNowMs int64) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			_, _ = m.nh.SyncPropose(ctx, m.nh.GetNoOPSession(shardID), cmd)
 			cancel()
+			worked = true
 		}
 	}
+	return worked
 }
