@@ -2,14 +2,11 @@ package local
 
 import (
 	"context"
-	"net/http"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/yannick/wavespan/internal/membership"
 	"github.com/yannick/wavespan/internal/recordstore"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // BackfillFetch pulls one page of a peer's records for a namespace (the Backfill RPC). It returns
@@ -112,22 +109,6 @@ func (b *Bootstrapper) hasAlivePeer() bool {
 	return false
 }
 
-// NewConnectBackfill returns a BackfillFetch over the ReplicationService Backfill RPC.
-func NewConnectBackfill(hc connect.HTTPClient) BackfillFetch {
-	if hc == nil {
-		hc = http.DefaultClient
-	}
-	clients := map[string]wavespanv1connect.ReplicationServiceClient{}
-	return func(ctx context.Context, dataAddr, ns string, cursor []byte, limit int) ([]*wavespanv1.StoredRecord, []byte, error) {
-		c, ok := clients[dataAddr]
-		if !ok {
-			c = wavespanv1connect.NewReplicationServiceClient(hc, "http://"+dataAddr)
-			clients[dataAddr] = c
-		}
-		resp, err := c.Backfill(ctx, connect.NewRequest(&wavespanv1.BackfillRequest{Namespace: ns, Cursor: cursor, Limit: uint32(limit)}))
-		if err != nil {
-			return nil, nil, err
-		}
-		return resp.Msg.GetRecords(), resp.Msg.GetNextCursor(), nil
-	}
-}
+// The production BackfillFetch is ConnectReplicator.BackfillFetch (see connect.go), which dials the
+// data port over gRPC — the transport the pure grpc-go data server speaks. An earlier Connect-wire
+// BackfillFetch here failed at the transport layer for the same reason as the intra-AE PeerFetch.

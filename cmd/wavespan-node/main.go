@@ -365,13 +365,13 @@ func run() error {
 	for ns := range everywhere {
 		everywhereList = append(everywhereList, ns)
 	}
-	bootstrapper := local.NewBootstrapper(rstore, self, svc, local.NewConnectBackfill(httpClient), everywhereList)
+	bootstrapper := local.NewBootstrapper(rstore, self, svc, replicator.BackfillFetch(), everywhereList)
 
 	// Intra-cluster anti-entropy: best-effort origin+1 fanout can miss a holder of a concurrently
 	// written key, and target-N repair only restores MISSING holders, not STALE ones. This pull-based
 	// pass adopts the highest version of each local key from alive peers so concurrent same-key
 	// writers converge across all replicas (design/13).
-	intraAE := local.NewIntraAntiEntropy(rstore, self, svc, local.NewConnectPeerFetch(httpClient), intraAENamespaces(cfg))
+	intraAE := local.NewIntraAntiEntropy(rstore, self, svc, replicator.PeerFetch(), intraAENamespaces(cfg))
 
 	// M4 metrics: under-replication estimate (spot-churn alert signal) + repair queue depth.
 	underReplicated := prometheus.NewGauge(prometheus.GaugeOpts{Name: "kv_under_replicated_keys_estimate", Help: "keys below target durable-holder count"})
