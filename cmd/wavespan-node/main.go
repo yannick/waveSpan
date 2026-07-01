@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -54,6 +53,7 @@ import (
 	"github.com/yannick/wavespan/internal/version"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
 	"wavesdb/objstore"
 )
@@ -222,10 +222,10 @@ func run() error {
 		return fmt.Errorf("storage uuid: %w", err)
 	}
 
-	// Transport security (design/15) tuned for cheap mTLS (design/27): one shared, pooled,
-	// keepalive HTTP client is reused for every inter-node RPC so TLS handshakes are amortised to
-	// ~zero; servers run mTLS (TLS 1.3 + session resumption + HTTP/2 ALPN). In insecureDevMode with
-	// no certs this all degrades to the previous plaintext behaviour.
+	// Transport security (design/15) tuned for cheap mTLS (design/27): servers run mTLS (TLS 1.3 +
+	// session resumption + HTTP/2 ALPN) on the data, gossip, and admin ports. In insecureDevMode with
+	// no certs this all degrades to the previous plaintext behaviour. Inter-node clients dial over
+	// gRPC (rpcopts.GRPCConn), which pools connections per peer.
 	tlsCfg := security.TLSConfig{
 		CertFile: cfg.Security.CertFile, KeyFile: cfg.Security.KeyFile, CAFile: cfg.Security.CAFile,
 		InsecureDevMode: cfg.Security.InsecureDevMode,
@@ -242,16 +242,6 @@ func run() error {
 	tlsCfg.HandshakeObserver = func(resumed bool) {
 		tlsHandshakes.WithLabelValues(strconv.FormatBool(resumed)).Inc()
 	}
-	httpClient, err := tlsCfg.NewHTTPClient(transportTuning(cfg))
-	if err != nil {
-		return fmt.Errorf("transport client: %w", err)
-	}
-	// On the plaintext dev/cluster path, multiplex inter-node RPCs over HTTP/2 cleartext (h2c) so
-	// the origin+1 replication + anti-entropy calls don't serialize on HTTP/1.1 connections. With
-	// mTLS, NewHTTPClient already negotiates HTTP/2 via ALPN.
-	if cfg.Security.InsecureDevMode {
-		httpClient = rpcopts.H2CClient()
-	}
 	serverMTLS, err := tlsCfg.ServerTLS() // machine link classes: data + gossip (nil in dev mode)
 	if err != nil {
 		return fmt.Errorf("server mTLS: %w", err)
@@ -263,7 +253,7 @@ func run() error {
 
 	// Membership service (M2).
 	self := membership.MemberFromConfig(cfg, storageUUID)
-	transport := membership.NewConnectTransport(httpClient)
+	transport := membership.NewGRPCTransport()
 	disc := membership.NewDiscovery(cfg, self.GossipAddr)
 	// Seed the SWIM incarnation from boot-time wall-clock millis so a restart (same MemberID, new pod IP)
 	// always out-incarnates the prior generation → its new address propagates instead of being rejected
@@ -323,7 +313,7 @@ func run() error {
 		RequireDistinctNodes: true,
 		Geo:                  placement.PreferLocalGeo, AllowSpilloverForDurability: true, ComplianceGeo: self.Geo,
 	}
-	replicator := local.NewConnectReplicator(httpClient)
+	replicator := local.NewConnectReplicator()
 
 	// Layer 1 of the Global Data Browser: resolve a single key's holders across this cluster's
 	// alive members (point FetchReplica fan-out), owning the serving node's own holder.
@@ -390,8 +380,8 @@ func run() error {
 	coord.SetOnStored(onStored) // advertise + notify on keys we originate
 	cacheStore := cache.NewStore(rstore, nowMs)
 	evictor := cache.NewEvictor(cacheStore, 10*time.Minute, nowMs)
-	fetcher := cache.NewFetcher(self, cacheDir, svc, svc.Graph(), httpClient)
-	subscriber := cache.NewSubscriber(self, cacheStore, fetcher, httpClient)
+	fetcher := cache.NewFetcher(self, cacheDir, svc, svc.Graph())
+	subscriber := cache.NewSubscriber(self, cacheStore, fetcher)
 	reader := kv.NewReader(rstore, self).WithCache(fetcher, cacheStore).WithSubscriber(subscriber)
 	// Range scans (M6): routed-eventual via ScanLocal on holders; cache-complete gated by certs.
 	scanner := kv.NewScanner(rstore, self, svc, replicator, cache.NewCertStore(nil))
@@ -519,7 +509,7 @@ func run() error {
 	// sample, trains k-means centroids, and writes a versioned artifact; every node reads + installs
 	// it so the whole cluster agrees on buckets. Until then collections use the zero-training LSH.
 	go runCentroidSync(ctx, reader, quantSet, bucketDir, vstore, metas, vmetrics, logger, 15*time.Second)
-	go runIVFTrainer(ctx, self, svc, coord, httpClient, quantSet, vstore, metas, logger, 20*time.Second)
+	go runIVFTrainer(ctx, self, svc, coord, quantSet, vstore, metas, logger, 20*time.Second)
 	newGraphVersion := func() *wavespanv1.Version { return rstore.NextVersion().ToProto() }
 	// Concentrate each bucket onto its ring (reclaim off-ring origin copies, migrate after a retrain).
 	go runRebucketer(ctx, self, svc, coord, quantSet, indexSet, vstore, metas, cfg.Replication.Target()+1, newGraphVersion, logger, 20*time.Second)
@@ -599,7 +589,7 @@ func run() error {
 		}
 		return peers
 	}
-	vectorScatter := cypher.NewVectorScatter(cfg.MemberID, vectorPeers, httpClient)
+	vectorScatter := cypher.NewVectorScatter(cfg.MemberID, vectorPeers)
 
 	// VectorService: SearchLocal fragment + the vector-as-key API (Put/Get/Delete/Search, design/29).
 	// The builder closures are hoisted into vars so BOTH the Connect service (admin/UI port) and the
@@ -617,7 +607,7 @@ func run() error {
 		return err
 	}
 	vecScatter := func(ctx context.Context, collection, idx string, q []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
-		return routedVectorScatter(ctx, self, svc, httpClient, quantSet, bucketDir, vmetrics, cfg.Replication.Target()+1, collection, idx, q, k, ef, nprobe, rerank)
+		return routedVectorScatter(ctx, self, svc, quantSet, bucketDir, vmetrics, cfg.Replication.Target()+1, collection, idx, q, k, ef, nprobe, rerank)
 	}
 	vecKVGet := func(ctx context.Context, ns string, key []byte) ([]byte, bool, error) {
 		res, err := reader.Get(ctx, ns, key, true)
@@ -843,10 +833,19 @@ func run() error {
 		wavespanv1.RegisterBackupNodeServiceServer(grpcDataSrv, grpcsrv.NewBackupNode(collectionsSvc))
 	}
 
-	// Gossip server on the gossip port.
-	gossipMux := http.NewServeMux()
-	gossipMux.Handle(svc.GossipHandler())
-	gossipSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Gossip), Handler: maybeH2C(gossipMux, serverMTLS), ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS, ConnState: connStateGauge(openConns.WithLabelValues("gossip"))}
+	// Gossip server on the gossip port: a dedicated plain gRPC server (NOT grpcsrv.New — its
+	// admission limiter could shed gossip probes and cause false failure detection). Metrics-only
+	// interceptor, no identity enforcement, mTLS only in prod.
+	gossipAddr := fmt.Sprintf(":%d", cfg.Ports.Gossip)
+	gossipOpts := []grpc.ServerOption{
+		grpc.MaxConcurrentStreams(grpcsrv.DefaultMaxConcurrentStreams),
+		grpc.ChainUnaryInterceptor(rpcopts.GRPCMetricsUnaryInterceptor()),
+	}
+	if serverMTLS != nil {
+		gossipOpts = append(gossipOpts, grpc.Creds(credentials.NewTLS(serverMTLS)))
+	}
+	gossipGRPCSrv := grpc.NewServer(gossipOpts...)
+	svc.RegisterGRPC(gossipGRPCSrv)
 
 	// Admin server: health/metrics + membership/latency introspection.
 	adminMux := observability.AdminMux(metrics, ready)
@@ -932,7 +931,7 @@ func run() error {
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: adminTLS, ConnState: connStateGauge(openConns.WithLabelValues("admin"))}
 
 	// Byte/connection-counting listeners (bandwidth + new connections per listener).
-	gossipLn, err := netMetrics.Listen(gossipSrv.Addr, "gossip")
+	gossipLn, err := netMetrics.Listen(gossipAddr, "gossip")
 	if err != nil {
 		return fmt.Errorf("gossip listen: %w", err)
 	}
@@ -948,8 +947,8 @@ func run() error {
 
 	errCh := make(chan error, 3)
 	go func() {
-		logger.Info("gossip server listening", "addr", gossipSrv.Addr, "tls", gossipSrv.TLSConfig != nil)
-		if err := serve(gossipSrv, gossipLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Info("gossip grpc server listening", "addr", gossipAddr, "tls", serverMTLS != nil)
+		if err := gossipGRPCSrv.Serve(gossipLn); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			errCh <- fmt.Errorf("gossip server: %w", err)
 		}
 	}()
@@ -1038,7 +1037,7 @@ func run() error {
 		logger.Info("shutdown signal received, draining")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = gossipSrv.Shutdown(shutdownCtx)
+		gossipGRPCSrv.GracefulStop()
 		grpcDataSrv.GracefulStop()
 		_ = adminSrv.Shutdown(shutdownCtx)
 		if collectionsMgr != nil {
@@ -1071,35 +1070,6 @@ func serve(srv *http.Server, ln net.Listener) error {
 		return srv.ServeTLS(ln, "", "")
 	}
 	return srv.Serve(ln)
-}
-
-// transportTuning resolves the connection-pool tuning: start from the cheap-mTLS defaults and apply
-// any explicit overrides from security.transport (design/27).
-func transportTuning(cfg *config.Config) security.TransportTuning {
-	t := security.DefaultTransportTuning()
-	o := cfg.Security.Transport
-	if o.MaxIdleConns != nil {
-		t.MaxIdleConns = *o.MaxIdleConns
-	}
-	if o.MaxIdleConnsPerHost != nil {
-		t.MaxIdleConnsPerHost = *o.MaxIdleConnsPerHost
-	}
-	if o.IdleConnTimeoutSeconds != nil {
-		t.IdleConnTimeout = time.Duration(*o.IdleConnTimeoutSeconds) * time.Second
-	}
-	if o.TCPKeepAliveSeconds != nil {
-		t.TCPKeepAlive = time.Duration(*o.TCPKeepAliveSeconds) * time.Second
-	}
-	if o.DialTimeoutSeconds != nil {
-		t.DialTimeout = time.Duration(*o.DialTimeoutSeconds) * time.Second
-	}
-	if o.H2ReadIdleTimeoutSecond != nil {
-		t.H2ReadIdleTimeout = time.Duration(*o.H2ReadIdleTimeoutSecond) * time.Second
-	}
-	if o.H2PingTimeoutSeconds != nil {
-		t.H2PingTimeout = time.Duration(*o.H2PingTimeoutSeconds) * time.Second
-	}
-	return t
 }
 
 func membershipHandler(svc *membership.Service) http.HandlerFunc {
@@ -1151,15 +1121,6 @@ func latencyHandler(svc *membership.Service) http.HandlerFunc {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-// maybeH2C enables HTTP/2 cleartext (multiplexed) on a plaintext server; a TLS server already gets
-// HTTP/2 via ALPN, so it is returned unwrapped.
-func maybeH2C(h http.Handler, tlsConfig *tls.Config) http.Handler {
-	if tlsConfig != nil {
-		return h
-	}
-	return rpcopts.H2CHandler(h)
 }
 
 // intraAENamespaces is the set of namespaces reconciled by intra-cluster anti-entropy (default +
@@ -1431,7 +1392,7 @@ func runRebucketer(ctx context.Context, self membership.Member, svc *membership.
 
 // runIVFTrainer, on the lowest-member-id alive node, periodically gathers a cross-node vector sample,
 // trains k-means centroids, and writes a versioned artifact for runCentroidSync to distribute.
-func runIVFTrainer(ctx context.Context, self membership.Member, svc *membership.Service, coord *kv.Coordinator, hc *http.Client, qs *vector.QuantSet, vstore *vector.Store, metas []*vector.IndexMeta, logger *slog.Logger, interval time.Duration) {
+func runIVFTrainer(ctx context.Context, self membership.Member, svc *membership.Service, coord *kv.Coordinator, qs *vector.QuantSet, vstore *vector.Store, metas []*vector.IndexMeta, logger *slog.Logger, interval time.Duration) {
 	const (
 		samplePerNode     = 4000
 		minSampleForTrain = 64
@@ -1453,7 +1414,7 @@ func runIVFTrainer(ctx context.Context, self membership.Member, svc *membership.
 			if t, ok := lastTrained[coll]; ok && time.Since(t) < retrainInterval {
 				continue
 			}
-			samples := gatherSamples(ctx, self, svc, hc, vstore, coll, samplePerNode)
+			samples := gatherSamples(ctx, self, svc, vstore, coll, samplePerNode)
 			if len(samples) < minSampleForTrain {
 				continue
 			}
@@ -1506,7 +1467,7 @@ func isLowestAlive(svc *membership.Service, self string) bool {
 }
 
 // gatherSamples collects a reservoir sample from this node plus every alive peer (SampleVectors RPC).
-func gatherSamples(ctx context.Context, self membership.Member, svc *membership.Service, _ *http.Client, vstore *vector.Store, collection string, limit int) [][]float32 {
+func gatherSamples(ctx context.Context, self membership.Member, svc *membership.Service, vstore *vector.Store, collection string, limit int) [][]float32 {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	all := vector.ReservoirSample(vstore, collection, limit, rng)
 	for _, mv := range svc.Members() {
@@ -1532,7 +1493,7 @@ func gatherSamples(ctx context.Context, self membership.Member, svc *membership.
 // routedVectorScatter queries peer holders for a kNN fragment. With nprobe>0 and routing info
 // available it scatters only to the advertised holders of the query's probed buckets; otherwise it
 // falls back to every alive peer. Self is excluded — the coordinator adds its own local fragment.
-func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, _ *http.Client, qs *vector.QuantSet, dir *vector.BucketDir, vm *vectorMetrics, ringSize int, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
+func routedVectorScatter(ctx context.Context, self membership.Member, svc *membership.Service, qs *vector.QuantSet, dir *vector.BucketDir, vm *vectorMetrics, ringSize int, collection, idx string, query []float32, k, ef, nprobe int, rerank bool) ([][]vector.Hit, int) {
 	var allow map[string]bool
 	if nprobe > 0 {
 		if qz, ok := qs.For(collection); ok {

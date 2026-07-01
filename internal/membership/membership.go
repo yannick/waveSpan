@@ -3,10 +3,12 @@ package membership
 import (
 	"context"
 	"hash/fnv"
-	"net/http"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/yannick/wavespan/internal/latencygraph"
+	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 )
 
 // ServiceConfig tunes the membership service.
@@ -38,27 +40,30 @@ func DefaultServiceConfig() ServiceConfig {
 }
 
 // Service is the public membership facade: it owns the roster, latency graph, gossip driver,
-// and the Connect gossip handler, and runs the periodic gossip loop.
+// and the gRPC gossip handler, and runs the periodic gossip loop.
 type Service struct {
 	roster    *Roster
 	graph     *latencygraph.Graph
 	gossip    *Gossip
-	server    *GossipConnectServer
-	transport *ConnectTransport
+	server    *GossipGRPCServer
+	transport *GRPCTransport
 	cfg       ServiceConfig
 }
 
 // NewService wires a membership service for the local member over the given transport.
-func NewService(self Member, disc Discovery, transport *ConnectTransport, cfg ServiceConfig) *Service {
+func NewService(self Member, disc Discovery, transport *GRPCTransport, cfg ServiceConfig) *Service {
 	roster := NewRoster(self, cfg.Liveness, cfg.SelfIncarnation)
 	graph := latencygraph.New(cfg.Graph)
 	gossip := NewGossip(roster, graph, transport, disc, cfg.Gossip, time.Now, seedFor(self.MemberID))
-	server := NewGossipConnectServer(gossip, transport)
+	server := NewGossipGRPCServer(gossip, transport)
 	return &Service{roster: roster, graph: graph, gossip: gossip, server: server, transport: transport, cfg: cfg}
 }
 
-// GossipHandler returns the mountable Connect handler (path, handler) for the gossip port.
-func (s *Service) GossipHandler() (string, http.Handler) { return s.server.Handler() }
+// RegisterGRPC registers the gossip service on the given gRPC server registrar (the dedicated
+// gossip-port gRPC server).
+func (s *Service) RegisterGRPC(reg grpc.ServiceRegistrar) {
+	wavespanv1.RegisterGossipServiceServer(reg, s.server)
+}
 
 // SetStateObserver installs a liveness-transition observer (for the observability gossip tap, M13).
 func (s *Service) SetStateObserver(fn func(memberID string, newState State)) {

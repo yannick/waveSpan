@@ -18,7 +18,6 @@ import (
 
 	"github.com/yannick/wavespan/internal/grpcsrv"
 	"github.com/yannick/wavespan/internal/replication/local"
-	"github.com/yannick/wavespan/internal/rpcopts"
 	"github.com/yannick/wavespan/internal/storage"
 	"github.com/yannick/wavespan/internal/version"
 	"github.com/yannick/wavespan/internal/recordstore"
@@ -57,7 +56,7 @@ func TestPeerFetchOverRealGRPC(t *testing.T) {
 	const hlc = 743014
 	addr := serveReplication(t, "default", "reg", "winner", hlc)
 
-	replicator := local.NewConnectReplicator(rpcopts.H2CClient())
+	replicator := local.NewConnectReplicator()
 	fetch := replicator.PeerFetch()
 
 	rec, found := fetch(context.Background(), addr, "default", []byte("reg"))

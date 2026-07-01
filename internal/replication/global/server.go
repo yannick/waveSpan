@@ -2,12 +2,9 @@ package global
 
 import (
 	"context"
-	"net/http"
 
 	"connectrpc.com/connect"
-	"github.com/yannick/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // Server is the GlobalReplication Connect handler: it applies inbound mutations idempotently and
@@ -20,11 +17,6 @@ type Server struct {
 // NewServer builds the GlobalReplication server over an applier.
 func NewServer(applier *Applier, ae *AntiEntropy) *Server {
 	return &Server{applier: applier, ae: ae}
-}
-
-// Handler returns the mountable Connect handler (path, handler) for the data port.
-func (s *Server) Handler() (string, http.Handler) {
-	return wavespanv1connect.NewGlobalReplicationHandler(s, rpcopts.Handler()...)
 }
 
 // PushGlobal applies a batch of inbound mutations from a peer cluster.

@@ -2,13 +2,11 @@ package observability
 
 import (
 	"context"
-	"net/http"
 
 	"connectrpc.com/connect"
 	"github.com/yannick/wavespan/internal/membership"
 	"github.com/yannick/wavespan/internal/tunables"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // NodeConfigProto snapshots the live tunables registry into the wire NodeConfig (effective value +
@@ -35,44 +33,6 @@ func NodeConfigProto(reg *tunables.Registry, overrides *tunables.Overrides, clus
 		nc.Tunables = append(nc.Tunables, ts)
 	}
 	return nc
-}
-
-// ConfigServer implements the peer-reachable ConfigService (mounted on the data port) so any node
-// can read another node's effective config and accept a node-local tunable pin.
-type ConfigServer struct {
-	reg       *tunables.Registry
-	overrides *tunables.Overrides
-	clusterID string
-	memberID  string
-}
-
-// NewConfigServer builds the data-port config server over the live registry + override manager.
-func NewConfigServer(reg *tunables.Registry, overrides *tunables.Overrides, clusterID, memberID string) *ConfigServer {
-	return &ConfigServer{reg: reg, overrides: overrides, clusterID: clusterID, memberID: memberID}
-}
-
-// GetConfig returns this node's effective tunable set.
-func (s *ConfigServer) GetConfig(_ context.Context, _ *connect.Request[wavespanv1.GetConfigRequest]) (*connect.Response[wavespanv1.NodeConfig], error) {
-	return connect.NewResponse(NodeConfigProto(s.reg, s.overrides, s.clusterID, s.memberID)), nil
-}
-
-// SetTunable pins a node-local override on this node (no gossip). Used when the admin set targets a
-// specific (non-self) member with cluster_wide=false.
-func (s *ConfigServer) SetTunable(_ context.Context, req *connect.Request[wavespanv1.SetTunableRequest]) (*connect.Response[wavespanv1.SetTunableResponse], error) {
-	if s.overrides == nil {
-		return connect.NewResponse(&wavespanv1.SetTunableResponse{Error: "runtime config not enabled on this node"}), nil
-	}
-	m := req.Msg
-	version, requiresRestart, err := s.overrides.Set(m.GetKey(), m.GetValue(), true)
-	if err != nil {
-		return connect.NewResponse(&wavespanv1.SetTunableResponse{Error: err.Error()}), nil
-	}
-	return connect.NewResponse(&wavespanv1.SetTunableResponse{Ok: true, Version: version, RequiresRestart: requiresRestart}), nil
-}
-
-// Handler returns the Connect path + handler for mounting on the data-port mux.
-func (s *ConfigServer) Handler() (string, http.Handler) {
-	return wavespanv1connect.NewConfigServiceHandler(s)
 }
 
 // --- admin (UI-facing) handlers on ObservabilityService -----------------------------------------
