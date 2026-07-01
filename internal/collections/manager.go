@@ -74,7 +74,17 @@ type Tunables struct {
 	SweepEvery         time.Duration // TTL sweep interval on shard leaders
 	CoalesceWindow     time.Duration // QW2: window the proposer coalesces concurrent data-shard writes over
 	CoalesceMaxOps     int           // QW2: max single ops coalesced into one Raft entry
+	// Quiesce lets an idle shard enter dragonboat's quiesce mode: after ~ElectionRTT×10 idle ticks it
+	// stops exchanging heartbeats (near-zero idle CPU) and wakes on the next real message/proposal.
+	// *bool so the non-false default (ON) survives the zero-value merge: nil = default (ON). While
+	// quiesced dragonboat runs QuiescedTick (not leaderTick/nonLeaderTick), so BOTH the CheckQuorum
+	// step-down timer and the election timers are frozen — quiescence and CheckQuorum coexist without a
+	// re-election storm; a wake resets the election timer (becomeFollower) so no election fires on exit.
+	Quiesce *bool
 }
+
+// quiesceOn is the built-in default: quiescence enabled (idle-cheap by default).
+func quiesceOn() *bool { b := true; return &b }
 
 // DefaultTunables returns the built-in consensus defaults.
 func DefaultTunables() Tunables {
@@ -82,6 +92,7 @@ func DefaultTunables() Tunables {
 		RTTMillisecond: 50, ElectionRTT: 10, HeartbeatRTT: 1,
 		SnapshotEntries: 1000, CompactionOverhead: 500, SweepEvery: 500 * time.Millisecond,
 		CoalesceWindow: defaultCoalesceWindow, CoalesceMaxOps: defaultCoalesceMaxOps,
+		Quiesce: quiesceOn(),
 	}
 }
 
@@ -110,6 +121,9 @@ func (t Tunables) withDefaults() Tunables {
 	}
 	if t.CoalesceMaxOps == 0 {
 		t.CoalesceMaxOps = d.CoalesceMaxOps
+	}
+	if t.Quiesce == nil {
+		t.Quiesce = d.Quiesce // nil = unset → default (ON)
 	}
 	return t
 }
@@ -190,6 +204,7 @@ func (m *Manager) shardConfig(shardID, replicaID uint64) config.Config {
 		ElectionRTT:        m.tun.ElectionRTT,
 		HeartbeatRTT:       m.tun.HeartbeatRTT,
 		CheckQuorum:        true,
+		Quiesce:            *m.tun.Quiesce, // non-nil: withDefaults() fills the default before we store m.tun
 		SnapshotEntries:    m.tun.SnapshotEntries,
 		CompactionOverhead: m.tun.CompactionOverhead,
 	}
