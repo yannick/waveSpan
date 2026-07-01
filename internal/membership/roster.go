@@ -50,10 +50,20 @@ func (r *Roster) SetStateObserver(fn func(memberID string, newState State)) {
 	r.mu.Unlock()
 }
 
-// NewRoster creates a roster seeded with the local member as ALIVE.
-func NewRoster(self Member, cfg LivenessConfig) *Roster {
+// NewRoster creates a roster seeded with the local member as ALIVE at selfIncarnation.
+//
+// selfIncarnation MUST be monotonic across restarts of the same MemberID (production seeds it from
+// boot-time unix-millis; see NewService). SWIM propagates an address change only on a STRICTLY HIGHER
+// incarnation (ApplyGossip), so a restarted pod that re-announces at incarnation 0 (a fresh counter) is
+// rejected by peers still holding the old (higher) incarnation — they keep probing its dead old address.
+// A monotonic seed guarantees the restart out-incarnates the prior generation, so the new address is
+// accepted and epidemically propagated. Boot-time millis (not a persisted counter) is used deliberately:
+// on a spot node the storage volume — and any counter persisted beside the storage UUID — is fresh on
+// reschedule, which would reset the counter on exactly the restart that needs a higher incarnation; the
+// wall clock is not. Tests pass 0 to preserve their controlled incarnation assumptions.
+func NewRoster(self Member, cfg LivenessConfig, selfIncarnation uint64) *Roster {
 	r := &Roster{selfID: self.MemberID, members: map[string]*memberState{}, cfg: cfg}
-	r.members[self.MemberID] = &memberState{member: self, state: StateAlive}
+	r.members[self.MemberID] = &memberState{member: self, state: StateAlive, incarnation: selfIncarnation}
 	r.rebuildSnapshots()
 	return r
 }

@@ -103,7 +103,7 @@ func TestGossipThreeNodeFormUpThenKill(t *testing.T) {
 
 	for i, id := range ids {
 		self := Member{ClusterID: "dev", MemberID: id, NodeName: id, GossipAddr: id + ":7700"}
-		r := NewRoster(self, fastLiveness())
+		r := NewRoster(self, fastLiveness(), 0)
 		g := latencygraph.New(latencygraph.DefaultConfig())
 		seeds := staticSeeds{"node1:7700"}
 		if id == "node1" {
@@ -155,6 +155,75 @@ func TestGossipThreeNodeFormUpThenKill(t *testing.T) {
 		}
 		if v.State < StateSuspect {
 			t.Fatalf("%s should mark node3 SUSPECT/UNREACHABLE after kill, got %s", id, v.State)
+		}
+	}
+}
+
+// TestGossipRestartedMemberNewAddressConverges is the Bug A end-to-end scenario: a 3-node cluster
+// converges, then node1 "restarts" on a NEW gossip address with a monotonic-higher incarnation (its old
+// address is killed). Peers must converge on node1's NEW address (and stop treating the old one as node1),
+// exactly what the SWIM incarnation seed enables — with the old seed-0 behavior a peer that learned the
+// new address only indirectly would reject it and keep probing the dead old address.
+func TestGossipRestartedMemberNewAddressConverges(t *testing.T) {
+	net := newMemNetwork()
+	clock := &fakeClock{t: time.Unix(2_000_000, 0)}
+	build := func(id, gossipAddr string, seed uint64, seeds staticSeeds) *Gossip {
+		self := Member{ClusterID: "dev", MemberID: id, NodeName: id, GossipAddr: gossipAddr, DataAddr: gossipAddr}
+		r := NewRoster(self, fastLiveness(), seed)
+		g := latencygraph.New(latencygraph.DefaultConfig())
+		tr := &memTransport{net: net, selfAddr: gossipAddr}
+		gs := NewGossip(r, g, tr, seeds, DefaultGossipConfig(), clock.now, int64(len(gossipAddr)))
+		net.register(gossipAddr, gs)
+		return gs
+	}
+
+	ids := []string{"node1", "node2", "node3"}
+	nodes := map[string]*Gossip{}
+	for _, id := range ids {
+		seeds := staticSeeds{"node1:7700"}
+		if id == "node1" {
+			seeds = staticSeeds{"node2:7700"}
+		}
+		nodes[id] = build(id, id+":7700", 0, seeds)
+	}
+	ctx := context.Background()
+	for _, g := range nodes {
+		g.Join(ctx)
+	}
+	for round := 0; round < 30; round++ {
+		clock.advance(200 * time.Millisecond)
+		for _, id := range ids {
+			nodes[id].Tick(ctx)
+		}
+	}
+	for _, id := range ids {
+		if len(nodes[id].roster.Live()) != 3 {
+			t.Fatalf("%s did not converge to 3 live before restart", id)
+		}
+	}
+
+	// Restart node1 on a new address with a monotonic-higher incarnation; the old address goes dark.
+	net.kill("node1:7700")
+	restart := build("node1", "node1b:7700", uint64(clock.now().UnixMilli()), staticSeeds{"node2:7700"})
+	nodes["node1"] = restart
+	restart.Join(ctx)
+	for round := 0; round < 40; round++ {
+		clock.advance(300 * time.Millisecond)
+		for _, id := range ids {
+			nodes[id].Tick(ctx)
+		}
+	}
+
+	for _, id := range []string{"node2", "node3"} {
+		v, ok := nodes[id].roster.Get("node1")
+		if !ok {
+			t.Fatalf("%s lost node1 entirely", id)
+		}
+		if v.Member.GossipAddr != "node1b:7700" {
+			t.Fatalf("%s did not converge on node1's NEW address: got %s", id, v.Member.GossipAddr)
+		}
+		if v.State != StateAlive {
+			t.Fatalf("%s sees restarted node1 as %s, want ALIVE", id, v.State)
 		}
 	}
 }

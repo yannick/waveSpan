@@ -28,7 +28,7 @@ func stateOf(t *testing.T, r *Roster, id string) State {
 
 func TestLivenessSuspectToUnreachableToDead(t *testing.T) {
 	base := time.Unix(1_000_000, 0)
-	r := NewRoster(mem("self"), testCfg())
+	r := NewRoster(mem("self"), testCfg(), 0)
 	r.Upsert(mem("p1"), base)
 
 	if got := stateOf(t, r, "p1"); got != StateAlive {
@@ -62,7 +62,7 @@ func TestLivenessSuspectToUnreachableToDead(t *testing.T) {
 
 func TestDeadRetainedUntilRepairAndRetention(t *testing.T) {
 	base := time.Unix(2_000_000, 0)
-	r := NewRoster(mem("self"), testCfg())
+	r := NewRoster(mem("self"), testCfg(), 0)
 	r.Upsert(mem("p1"), base)
 	r.Suspect("p1", base)
 	r.Tick(at(base, 4*time.Second))  // -> UNREACHABLE
@@ -93,7 +93,7 @@ func TestDeadRetainedUntilRepairAndRetention(t *testing.T) {
 
 func TestObserveAckRevivesSuspect(t *testing.T) {
 	base := time.Unix(3_000_000, 0)
-	r := NewRoster(mem("self"), testCfg())
+	r := NewRoster(mem("self"), testCfg(), 0)
 	r.Upsert(mem("p1"), base)
 	r.Suspect("p1", base)
 	before, _ := r.Get("p1")
@@ -109,7 +109,7 @@ func TestObserveAckRevivesSuspect(t *testing.T) {
 
 func TestApplyGossipIncarnationRules(t *testing.T) {
 	base := time.Unix(4_000_000, 0)
-	r := NewRoster(mem("self"), testCfg())
+	r := NewRoster(mem("self"), testCfg(), 0)
 	r.Upsert(mem("p1"), base)
 
 	// equal incarnation, more severe state is adopted
@@ -131,7 +131,7 @@ func TestApplyGossipIncarnationRules(t *testing.T) {
 
 func TestApplyGossipSelfRefutation(t *testing.T) {
 	base := time.Unix(5_000_000, 0)
-	r := NewRoster(mem("self"), testCfg())
+	r := NewRoster(mem("self"), testCfg(), 0)
 	selfBefore, _ := r.Get("self")
 	// a peer claims we are suspect
 	r.ApplyGossip(MemberView{Member: mem("self"), State: StateSuspect, Incarnation: selfBefore.Incarnation + 5}, base)
@@ -144,11 +144,71 @@ func TestApplyGossipSelfRefutation(t *testing.T) {
 	}
 }
 
+func addrMember(id, host string) Member {
+	return Member{ClusterID: "dev", MemberID: id, NodeName: "node-" + id, GossipAddr: host + ":7700", DataAddr: host + ":7800"}
+}
+
+// TestNewRosterSeedsSelfIncarnation: the injected seed becomes self's starting incarnation (Bug A: a
+// monotonic seed lets a restart out-incarnate its prior generation).
+func TestNewRosterSeedsSelfIncarnation(t *testing.T) {
+	r := NewRoster(mem("self"), testCfg(), 12345)
+	v, _ := r.Get("self")
+	if v.Incarnation != 12345 {
+		t.Fatalf("self incarnation = %d, want the seed 12345", v.Incarnation)
+	}
+}
+
+// TestApplyGossipChangesAddressOnlyOnHigherIncarnation documents WHY the monotonic seed is needed: an
+// equal-incarnation gossip does NOT adopt a changed address (so a restart re-announcing at the same/lower
+// incarnation is ignored); a strictly higher incarnation does.
+func TestApplyGossipChangesAddressOnlyOnHigherIncarnation(t *testing.T) {
+	base := time.Unix(6_000_000, 0)
+	r := NewRoster(mem("self"), testCfg(), 0)
+	r.ApplyGossip(MemberView{Member: addrMember("p1", "10.0.0.1"), State: StateAlive, Incarnation: 5}, base)
+
+	// same incarnation, different address → NOT adopted (the bug's trigger).
+	r.ApplyGossip(MemberView{Member: addrMember("p1", "10.0.0.2"), State: StateAlive, Incarnation: 5}, base)
+	if got, _ := r.Get("p1"); got.Member.DataAddr != "10.0.0.1:7800" {
+		t.Fatalf("equal-incarnation must NOT change address, got %s", got.Member.DataAddr)
+	}
+	// higher incarnation → adopted.
+	r.ApplyGossip(MemberView{Member: addrMember("p1", "10.0.0.2"), State: StateAlive, Incarnation: 6}, base)
+	if got, _ := r.Get("p1"); got.Member.DataAddr != "10.0.0.2:7800" {
+		t.Fatalf("higher-incarnation must adopt the new address, got %s", got.Member.DataAddr)
+	}
+}
+
+// TestRestartedMemberAddressPropagatesOnMonotonicIncarnation is the Bug A gate: a peer knows node1 at its
+// old address/incarnation; node1 restarts on a new IP with a MONOTONIC-higher seed; when its restarted
+// self-view reaches the peer via gossip, the peer adopts the NEW address. With the old behavior (seed
+// ignored → incarnation 0 ≤ old) the peer would keep probing the dead old address.
+func TestRestartedMemberAddressPropagatesOnMonotonicIncarnation(t *testing.T) {
+	base := time.Unix(7_000_000, 0)
+	peer := NewRoster(mem("peer"), testCfg(), 0)
+	// The peer already knows node1 at its old address with incarnation 100 (from prior gossip).
+	peer.ApplyGossip(MemberView{Member: addrMember("node1", "10.0.0.1"), State: StateAlive, Incarnation: 100}, base)
+
+	// node1 restarts on a fresh volume with a new IP; its roster is seeded with a monotonic-higher
+	// incarnation (boot-time millis in production; 200 here).
+	restarted := NewRoster(addrMember("node1", "10.0.0.9"), testCfg(), 200)
+	selfView, _ := restarted.Get("node1")
+
+	peer.ApplyGossip(selfView, base) // the peer receives node1's restarted announcement
+
+	got, _ := peer.Get("node1")
+	if got.Member.DataAddr != "10.0.0.9:7800" || got.Member.GossipAddr != "10.0.0.9:7700" {
+		t.Fatalf("peer must adopt the restarted member's NEW address, got %+v", got.Member)
+	}
+	if got.State != StateAlive {
+		t.Fatalf("restarted member must be ALIVE at the peer, got %s", got.State)
+	}
+}
+
 // TestMembersSnapshotCachedAndImmutable verifies Members()/Live() return a cached snapshot that is
 // reused between mutations and never mutated in place (a previously-returned slice stays valid).
 func TestMembersSnapshotCachedAndImmutable(t *testing.T) {
 	now := time.Now()
-	r := NewRoster(mem("self"), testCfg())
+	r := NewRoster(mem("self"), testCfg(), 0)
 	r.Upsert(mem("a"), now)
 
 	s1 := r.Members()
