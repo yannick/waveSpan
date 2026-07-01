@@ -161,8 +161,22 @@ objects), so resume/retry is safe.
 > ceiling; correctness is the per-node consistent snapshot + the `≤T` filter + the all-export union.
 > `frontierT ≤ 0` disables the cut (back-compat). **Graph/vector** stay snapshot-current (single-slot,
 > not sealed to `T`, to avoid losing the only copy of a `>T` overwrite); **collections** stay raft/
-> applied-index consistent. The commit-time held-range coverage cross-check (real `PARTIAL`) remains a
-> follow-up (Task 5, optional); `PARTIAL` today is driven by the assigner's gap list.
+> applied-index consistent.
+>
+> **Real `PARTIAL` via held-range coverage (F1, DONE).** `commit()` no longer relies solely on the
+> assigner's gap list — it unions it with real coverage gaps computed from the nodes' reported
+> `HeldRanges` (each node reports its hosted collection data shards as `"shard:<id>"` tokens via
+> `PrepareBackup`, from its live collections `Manager` — carried over gRPC in
+> `PrepareBackupResult.held_ranges`, so remote nodes report their own shards). Two tier-specific checks
+> (`internal/backup/coverage.go`): **(1) Collections** — the data shards `[FirstDataShard, +N)` are a
+> deterministic partition; a shard hosted by no exporting node → gap `collections-shard:<id>` (skipped
+> when the expected data-shard count `N` is unknown, to avoid false PARTIALs). **(2) Member completeness
+> (KV/AP)** — KV has NO deterministic per-node ownership (replicated by placement/holder directory, not
+> partitioned), so per-key coverage is not computable; the honest cluster-wide bar is "every expected
+> member exported." An expected (`Roster.Members()`, non-forgotten) member that did not export → gap
+> `member:<id>`. **PARTIAL for KV therefore means "a member didn't export," NOT a per-key coverage
+> proof.** Any gap (assigner, collections-shard, or member) → `PARTIAL` with the specific gaps in
+> `cluster.manifest`.
 
 ## 4. Physical incrementals (3b)
 

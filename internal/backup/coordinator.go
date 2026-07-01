@@ -18,9 +18,12 @@ import (
 	"wavesdb"
 )
 
-// Roster reports the currently live cluster members (by member id).
+// Roster reports cluster membership by member id. Live is the set the coordinator fans prepare/export
+// out to; Members is the full expected set (non-forgotten) used for the F1 member-completeness coverage
+// check — an expected member that did not export makes the backup PARTIAL (see coverage.go).
 type Roster interface {
 	Live() []string
+	Members() []string
 }
 
 // ExportRequest is the coordinator's instruction to one node to export its assignment. Each node resolves
@@ -112,6 +115,13 @@ type Config struct {
 	BackupCfg config.BackupConfig
 	Getenv    func(string) string
 	OpenStore func(ResolvedDestination) (ObjectStore, error)
+
+	// F1 held-range coverage. HostedDataShards reports the collection data-shard ids this node hosts
+	// (nil = none; wired from the live collections Manager); PrepareLocal echoes them as HeldRanges.
+	// ExpectedDataShards is the cluster's configured data-shard count for the commit-time coverage
+	// cross-check (0 = unknown → the collections check is skipped; see coverage.go).
+	HostedDataShards   func() []uint64
+	ExpectedDataShards uint64
 }
 
 // Coordinator drives a consistent cluster backup: it records a durable Intent in the meta shard,
@@ -136,6 +146,9 @@ type Coordinator struct {
 	backupCfg    config.BackupConfig
 	getenv       func(string) string
 	openStore    func(ResolvedDestination) (ObjectStore, error)
+
+	hostedShards       func() []uint64
+	expectedDataShards uint64
 
 	// failAfterPhase, when set (test hook), makes run() persist the named phase's completion and then
 	// return early — simulating coordinator loss for the resumability test.
@@ -190,6 +203,9 @@ func NewCoordinator(cfg Config) *Coordinator {
 		backupCfg:    cfg.BackupCfg,
 		getenv:       getenv,
 		openStore:    cfg.OpenStore,
+
+		hostedShards:       cfg.HostedDataShards,
+		expectedDataShards: cfg.ExpectedDataShards,
 	}
 }
 
@@ -394,10 +410,12 @@ func containsString(ss []string, want string) bool {
 // commit writes the cluster.manifest and finalizes the intent status. A backup with enumerated gaps is
 // committed PARTIAL — never silently COMPLETE.
 //
-// 3a: PARTIAL is driven solely by the assigner's gap list (ranges it found with no live holder). The
-// HeldRanges plumbed via Prepare→NodeRecord is NOT yet compared against the assignments here — that
-// held-range-vs-assignment coverage cross-check (catching real cluster gaps a node failed to cover)
-// lands in 3a.1. HeldRanges is recorded now so that cross-check has its input when it ships.
+// F1: gaps are the UNION of two sources — (1) the assigner's gap list (ranges it found with no live
+// holder) and (2) real coverage gaps computed from the nodes' reported HeldRanges vs the expected
+// coverage: a collection data shard hosted by no exporting node ("collections-shard:<id>") and an
+// expected member that did not export ("member:<id>"). See coverage.go for why the tiers are checked
+// differently (collections is deterministically partitioned; KV/AP has no per-node ownership, so member
+// completeness is the honest proxy).
 func (c *Coordinator) commit(ctx context.Context, in *Intent, store ObjectStore) error {
 	refs := make([]PerNodeRef, 0, len(in.PerNode))
 	topo := make([]TopologyEntry, 0, len(in.PerNode))
@@ -412,8 +430,16 @@ func (c *Coordinator) commit(ctx context.Context, in *Intent, store ObjectStore)
 		})
 		topo = append(topo, TopologyEntry{MemberID: n.MemberID, StorageUUID: n.StorageUUID})
 	}
+	// Union the assigner-reported gaps with the real held-range coverage gaps.
+	var expectedMembers []string
+	if c.roster != nil {
+		expectedMembers = c.roster.Members()
+	}
+	gaps := append([]string(nil), in.Gaps...)
+	gaps = append(gaps, coverageGaps(in.PerNode, c.expectedDataShards, expectedMembers)...)
+	in.Gaps = gaps
 	status := StatusComplete
-	if len(in.Gaps) > 0 {
+	if len(gaps) > 0 {
 		status = StatusPartial
 	}
 	cm := &ClusterManifest{
@@ -614,12 +640,20 @@ func (c *Coordinator) RunSweep(ctx context.Context, every time.Duration) {
 	}
 }
 
-// PrepareLocal serves the node-internal PrepareBackup RPC against this node's store.
+// PrepareLocal serves the node-internal PrepareBackup RPC against this node's store. It derives this
+// node's REAL held ranges from its HostedDataShards closure (the collection data shards it hosts, as
+// "shard:<id>" tokens) so commit() can cross-check cluster coverage (F1). These held ranges travel back
+// to the coordinator in PrepareBackupResult.held_ranges — the same field over the gRPC path — so a remote
+// node reports its own hosted shards from its own live Manager.
 func (c *Coordinator) PrepareLocal(ctx context.Context, req *wavespanv1.PrepareBackupRequest) (*wavespanv1.PrepareBackupResult, error) {
 	if c.localStore == nil {
 		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("backup: node holds no local store"))
 	}
-	pr, err := c.agent.Prepare(ctx, c.localStore, req.GetBackupId(), req.GetFrontierT(), nil)
+	var held []string
+	if c.hostedShards != nil {
+		held = formatHeldShards(c.hostedShards())
+	}
+	pr, err := c.agent.Prepare(ctx, c.localStore, req.GetBackupId(), req.GetFrontierT(), held)
 	if err != nil {
 		return nil, err
 	}
