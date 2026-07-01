@@ -2,15 +2,12 @@ package local
 
 import (
 	"context"
-	"net/http"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/yannick/wavespan/internal/membership"
 	"github.com/yannick/wavespan/internal/recordstore"
 	"github.com/yannick/wavespan/internal/version"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // PeerFetch fetches a peer's record for a key (FetchReplica). found is false when the peer has no
@@ -115,19 +112,7 @@ func (a *IntraAntiEntropy) alivePeerAddrs() []string {
 	return out
 }
 
-// NewConnectPeerFetch returns a PeerFetch over the ReplicationService FetchReplica RPC.
-func NewConnectPeerFetch(hc *http.Client) PeerFetch {
-	clients := map[string]wavespanv1connect.ReplicationServiceClient{}
-	return func(ctx context.Context, dataAddr, ns string, key []byte) (*wavespanv1.StoredRecord, bool) {
-		c, ok := clients[dataAddr]
-		if !ok {
-			c = wavespanv1connect.NewReplicationServiceClient(hc, "http://"+dataAddr)
-			clients[dataAddr] = c
-		}
-		resp, err := c.FetchReplica(ctx, connect.NewRequest(&wavespanv1.FetchReplicaRequest{Namespace: ns, Key: key}))
-		if err != nil {
-			return nil, false
-		}
-		return resp.Msg.GetRecord(), resp.Msg.GetFound()
-	}
-}
+// The production PeerFetch is ConnectReplicator.PeerFetch (see connect.go), which dials the data
+// port over gRPC. An earlier Connect-wire PeerFetch here was a silent no-op: the data port is a pure
+// grpc-go server that does not route the Connect wire, so every FetchReplica failed at the transport
+// layer and anti-entropy never converged divergent replicas.

@@ -61,6 +61,40 @@ func (r *ConnectReplicator) FetchReplica(ctx context.Context, target membership.
 	return c.FetchReplica(ctx, &wavespanv1.FetchReplicaRequest{Namespace: namespace, Key: key})
 }
 
+// PeerFetch returns a PeerFetch closure backed by this replicator's pooled gRPC clients, for the
+// intra-cluster anti-entropy pull path. It dials the data port over gRPC (the transport the pure
+// grpc-go data server actually speaks) rather than the Connect wire, and returns (nil,false) on any
+// transport or RPC error to match the PeerFetch contract.
+func (r *ConnectReplicator) PeerFetch() PeerFetch {
+	return func(ctx context.Context, dataAddr, namespace string, key []byte) (*wavespanv1.StoredRecord, bool) {
+		c, err := r.client(dataAddr)
+		if err != nil {
+			return nil, false
+		}
+		resp, err := c.FetchReplica(ctx, &wavespanv1.FetchReplicaRequest{Namespace: namespace, Key: key})
+		if err != nil {
+			return nil, false
+		}
+		return resp.GetRecord(), resp.GetFound()
+	}
+}
+
+// BackfillFetch returns a BackfillFetch closure backed by this replicator's pooled gRPC clients, for
+// the everywhere-namespace bootstrap path. Like PeerFetch it dials the data port over gRPC.
+func (r *ConnectReplicator) BackfillFetch() BackfillFetch {
+	return func(ctx context.Context, dataAddr, namespace string, cursor []byte, limit int) ([]*wavespanv1.StoredRecord, []byte, error) {
+		c, err := r.client(dataAddr)
+		if err != nil {
+			return nil, nil, err
+		}
+		resp, err := c.Backfill(ctx, &wavespanv1.BackfillRequest{Namespace: namespace, Cursor: cursor, Limit: uint32(limit)})
+		if err != nil {
+			return nil, nil, err
+		}
+		return resp.GetRecords(), resp.GetNextCursor(), nil
+	}
+}
+
 // ScanLocal asks a holder to scan its local store over a subrange (routed-eventual scan, M6).
 func (r *ConnectReplicator) ScanLocal(ctx context.Context, target membership.Member, namespace string, start, end []byte, limit int) ([]*wavespanv1.ScanLocalRow, error) {
 	c, err := r.client(target.DataAddr)
