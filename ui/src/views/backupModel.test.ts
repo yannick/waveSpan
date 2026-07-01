@@ -18,6 +18,8 @@ import {
   splitCsv,
   destinationLabel,
   summaryRow,
+  backupHelp,
+  type HelpKey,
 } from "./backupModel";
 
 describe("backupModel status helpers", () => {
@@ -212,6 +214,21 @@ describe("summaryRow", () => {
     expect(row.gapsLabel).toBe("");
     expect(row.destination).toBe("default");
     expect(row.retainUntil).toBe("—");
+  });
+});
+
+describe("backupHelp", () => {
+  it("provides help for each of the four trigger-form option groups", () => {
+    const keys: HelpKey[] = ["selection", "planes", "destination", "type"];
+    for (const k of keys) {
+      const topic = backupHelp[k];
+      expect(topic, `help for ${k}`).toBeDefined();
+      expect(topic.title.length).toBeGreaterThan(0);
+      expect(topic.paragraphs.length).toBeGreaterThan(0);
+      for (const p of topic.paragraphs) {
+        expect(p.trim().length).toBeGreaterThan(0);
+      }
+    }
   });
 });
 
