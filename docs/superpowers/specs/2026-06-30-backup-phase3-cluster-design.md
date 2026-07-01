@@ -261,16 +261,16 @@ Implemented and reviewed, with these honest consequences to operate around:
 - **Physical node match is by `MemberID`** (the manifest also carries `StorageUUID`, currently
   unused for matching) — correct while member ids are stable (ordinal DNS); id reassignment would
   need the `StorageUUID` fallback.
-- **A `≤T` cut loses concurrent-sibling metadata ONLY for a key whose latest write was after `T`.**
+- **A `≤T` cut loses conflict metadata ONLY for concurrent versions genuinely written after `T`.**
   CFKVMeta is exported verbatim, so every latest pointer (with its `SiblingVersions` / `SIBLINGS_PRESENT`
   conflict flag) is preserved as-is. On restore, `RepairCutMeta` touches only pointers left dangling by
-  the cut: a pointer whose winner version is `> T` (its CFKVData record was dropped) is repointed via
-  `RebuildLatestPointer` to the surviving `≤T` winner, which recovers only winner / tombstone / expiry —
-  so *that one key's* siblings/conflict flag are dropped (the winner value is correct; sibling *values*
-  survive as distinct CFKVData versions). Because `T = now + lease` is in the future, the cut normally
-  excludes nothing → no pointer dangles → siblings are preserved verbatim for **every** key. Only a
-  genuinely-after-`T` write loses its conflict metadata. Reconstructing siblings on a repoint needs
-  causality/conflict-policy info the LWW selector lacks — a tracked follow-up, not blocking 3a.1.
+  the cut: a pointer whose winner version is `> T` (its CFKVData record was dropped) is repointed to the
+  max surviving `≤T` version, and its `≤T` concurrent siblings are **PRESERVED** (F4) — `RepairCutMeta`
+  refilters the verbatim pointer's `SiblingVersions` to the members still present (`≤T`) and not the new
+  winner; a `>T` sibling was cut and is correctly dropped. So a conflicted key keeps its `≤T` conflict
+  set, and only a conflict member (winner or sibling) that was itself after `T` is lost. Because
+  `T = now + lease` is in the future, the cut normally excludes nothing → no pointer dangles → CFKVMeta
+  (including all siblings) is preserved verbatim for **every** key.
 
 ## 6. Durable-artifact lifecycle & GC (the "no trash" requirement)
 

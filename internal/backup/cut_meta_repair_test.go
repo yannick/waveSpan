@@ -95,7 +95,8 @@ func TestCutRepointsDanglingWinner(t *testing.T) {
 	if out, err := rs2.Get("app", []byte("kept")); err != nil || !out.Found || string(out.Value) != "b" || out.ConflictNone {
 		t.Fatalf("kept must be verbatim (winner 'b', siblings intact): found=%v val=%q conflictNone=%v err=%v", out.Found, out.Value, out.ConflictNone, err)
 	}
-	// repointed: winner ms=5000 was cut → repoint to ms=100 survivor, siblings dropped, TTL carried.
+	// repointed: winner ms=5000 was cut → repoint to the ms=100 survivor, TTL carried. Its only concurrent
+	// sibling WAS the ms=100 survivor, which becomes the new winner → no sibling remains (ConflictNone).
 	out, err := rs2.Get("app", []byte("repointed"))
 	if err != nil {
 		t.Fatalf("Get(repointed): %v", err)
@@ -104,7 +105,7 @@ func TestCutRepointsDanglingWinner(t *testing.T) {
 		t.Fatalf("repointed must resolve to the ≤T survivor 'x'@100: found=%v val=%q ver=%d", out.Found, out.Value, out.Version.HLCPhysicalMs)
 	}
 	if !out.ConflictNone {
-		t.Fatal("a repointed key (winner cut) must drop its sibling/conflict state")
+		t.Fatal("with a single ≤T survivor (which becomes the winner), no sibling should remain")
 	}
 	if out.ExpiresAtMs == nil {
 		t.Fatal("the surviving version's TTL must be carried onto the repointed pointer")
@@ -118,6 +119,32 @@ func TestCutRepointsDanglingWinner(t *testing.T) {
 	_ = it.Close()
 	if !present {
 		t.Fatal("repointed survivor's TTL bucket entry not reconstructed")
+	}
+}
+
+// TestCutRepointPreservesLEQSibling (F4): a key whose winner is after T but which has TWO ≤T concurrent
+// siblings → after restore the repointed pointer KEEPS a ≤T sibling (ConflictNone stays false) and resolves
+// to the max ≤T value. Only the genuinely-after-T conflict version is lost.
+func TestCutRepointPreservesLEQSibling(t *testing.T) {
+	rs, mem := newKVStore(t)
+	a := rs.BuildRecord("app", []byte("k"), []byte("a"), ver(100, 1), false, nil)
+	b := rs.BuildRecord("app", []byte("k"), []byte("b"), ver(200, 2), false, nil)
+	big := rs.BuildRecord("app", []byte("k"), []byte("big"), ver(6000, 3), false, nil) // > T → winner, cut
+	if err := rs.ApplySiblings("app", []byte("k"), []*wavespanv1.StoredRecord{a, b, big}); err != nil {
+		t.Fatal(err)
+	}
+
+	rs2, _ := roundTrip(t, mem, 1000) // cut at T=1000: drops only the ms=6000 winner; ms=100 & ms=200 survive
+
+	out, err := rs2.Get("app", []byte("k"))
+	if err != nil {
+		t.Fatalf("Get(k): %v", err)
+	}
+	if !out.Found || string(out.Value) != "b" || out.Version.HLCPhysicalMs != 200 {
+		t.Fatalf("repoint must resolve to the max ≤T sibling 'b'@200: found=%v val=%q ver=%d", out.Found, out.Value, out.Version.HLCPhysicalMs)
+	}
+	if out.ConflictNone {
+		t.Fatal("F4: a repointed key with a surviving ≤T sibling must KEEP its conflict state (ConflictNone=false)")
 	}
 }
 

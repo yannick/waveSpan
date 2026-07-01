@@ -23,12 +23,13 @@ import (
 //     nothing, which is the norm since T = now + lease is ~5s in the future).
 //   - Winner absent (it was >T, cut) → repoint to the max surviving ≤T version of the key via
 //     RebuildLatestPointer (carrying its tombstone/expiry, rebuilding its TTL bucket entry, and dropping
-//     the stale one). Concurrent SiblingVersions are dropped for this repointed key — the LWW selector
-//     cannot reconstruct conflict state once the winner is gone (documented cut-only limitation,
-//     design/backup §5.2). If NO ≤T version survives, the key did not exist at/below T → drop the pointer.
+//     the stale one). Concurrent siblings are PRESERVED (F4): the verbatim pointer's SiblingVersions
+//     already record the conflict set, so it is filtered to the members that survived (≤T, present) and
+//     are not the new winner — a >T sibling was cut and is correctly dropped. If NO ≤T version survives,
+//     the key did not exist at/below T → drop the pointer.
 //
-// This bounds sibling/conflict loss to keys whose latest write was genuinely after the cut, instead of
-// collapsing every conflicted key on every restore.
+// So loss is bounded to versions genuinely written after the cut: a conflicted key keeps its ≤T siblings,
+// and only a conflict member that was itself after T is lost — never a blanket collapse.
 func RepairCutMeta(store storage.LocalStore) error {
 	// Read pass: collect every latest pointer. The scan ends (exclusive) at the 0xff TTL sentinel, so the
 	// TTL bucket entries are excluded — latest-pointer keys begin with a uvarint namespace length < 0x80
@@ -115,6 +116,12 @@ func RepairCutMeta(store storage.LocalStore) error {
 				// No ≤T version survived → the key did not exist at/below T. Drop the dangling pointer.
 				ops = append(ops, storage.StoreOp{CF: storage.CFKVMeta, Key: latestKey(ns, uk), Delete: true})
 			} else {
+				// F4: preserve the key's ≤T concurrent siblings. The verbatim pointer's SiblingVersions
+				// already record the conflict set, so filter it to the versions that survived the cut (≤T,
+				// present in CFKVData) and are not the new winner — a >T sibling was cut and is correctly
+				// dropped. Only genuinely-after-T conflict versions are lost, not the whole conflict.
+				newWinner := version.FromProto(nlp.GetWinner())
+				nlp.SiblingVersions = survivingSiblings(lp.GetSiblingVersions(), survivorSet(survivors), newWinner)
 				b, err := storage.EncodeLatestPointer(nlp)
 				if err != nil {
 					return err
@@ -165,6 +172,31 @@ func presentSiblings(store storage.LocalStore, ns string, userKey []byte, sibs [
 		}
 	}
 	return kept, changed, nil
+}
+
+// survivorSet indexes the surviving records by their version (version.Version is comparable) for
+// membership tests when filtering a pointer's sibling list on repoint.
+func survivorSet(recs []*wavespanv1.StoredRecord) map[version.Version]bool {
+	m := make(map[version.Version]bool, len(recs))
+	for _, r := range recs {
+		m[version.FromProto(r.GetVersion())] = true
+	}
+	return m
+}
+
+// survivingSiblings filters a verbatim pointer's SiblingVersions to those that survived the ≤T cut
+// (present in CFKVData) and are not the new (repointed) winner, preserving input order. A >T sibling was
+// cut → absent from present → dropped.
+func survivingSiblings(sibs []*wavespanv1.Version, present map[version.Version]bool, winner version.Version) []*wavespanv1.Version {
+	var out []*wavespanv1.Version
+	for _, s := range sibs {
+		sv := version.FromProto(s)
+		if sv == winner || !present[sv] {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // scanKeyRecords returns all surviving CFKVData records for one user key (all already ≤T). An undecodable

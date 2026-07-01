@@ -121,12 +121,11 @@ func encodeVersion(v *wavespanv1.Version) []byte {
 // tracking (keep-siblings policy) is added with global active-active in M7; under the LWW
 // default the winner stands alone.
 //
-// Cut-restore note: recordstore.RepairCutMeta calls this ONLY to repoint a latest pointer whose winner
-// was dropped by a ≤T cut (the winner was written after T). On that repoint a key with concurrent
-// siblings is collapsed to its surviving LWW winner — SiblingVersions / SIBLINGS_PRESENT are NOT
-// reconstructed (winner value stays correct; sibling values survive as distinct records). Keys whose
-// winner survived keep their verbatim-restored CFKVMeta (siblings intact), so this collapse is limited
-// to keys whose latest write was after the cut.
+// Cut-restore note: recordstore.RepairCutMeta calls this ONLY to pick the new (surviving) winner when a
+// latest pointer's winner was dropped by a ≤T cut (written after T). The repaired pointer then RETAINS the
+// key's ≤T concurrent siblings (RepairCutMeta re-adds SiblingVersions filtered to the survivors), so
+// conflict state is preserved except for versions genuinely written after the cut. Keys whose winner
+// survived keep their verbatim-restored CFKVMeta untouched.
 func RebuildLatestPointer(records []*wavespanv1.StoredRecord) *wavespanv1.LatestPointer {
 	if len(records) == 0 {
 		return nil
