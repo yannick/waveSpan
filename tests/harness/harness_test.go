@@ -93,6 +93,7 @@ func TestPRGateRegisterUnderPartition(t *testing.T) {
 		t.Logf("keys did not converge within the window: %v (recording the divergent state for the checker)", pending)
 	}
 	workloads.PostHealReadAll(bg, cl, members, "default", []string{"reg"})
+	assertAckedWrites(t, h)
 	runChecks(t, h)
 }
 
@@ -119,6 +120,10 @@ func TestPRGateSetUnderKill(t *testing.T) {
 		t.Logf("keys did not converge within the window: %v", pending)
 	}
 	workloads.PostHealReadAll(bg, cl, members, "default", acked)
+	if len(acked) == 0 {
+		t.Fatal("no set adds acked — the run is vacuous")
+	}
+	assertAckedWrites(t, h)
 	runChecks(t, h)
 }
 
@@ -140,6 +145,7 @@ func TestPRGateIdempotencyUnderPause(t *testing.T) {
 	workloads.Idempotency(ctx, cl, members[0], "retry-req-1", 8)
 	cancel()
 	c.WaitConverged(15 * time.Second)
+	assertAckedWrites(t, h)
 	runChecks(t, h)
 }
 
@@ -190,4 +196,21 @@ func waitUntil(t *testing.T, timeout time.Duration, cond func() bool, what strin
 		time.Sleep(time.Second)
 	}
 	t.Fatalf("timeout waiting for: %s", what)
+}
+
+// assertAckedWrites fails the test if the history recorded NO acked writes. The model checkers validate
+// only ACKED operations, so a run where nothing acked (e.g. a broken client transport, or the cluster
+// never became writable) would pass VACUOUSLY. This guard makes each PRGate test prove it actually
+// exercised the system.
+func assertAckedWrites(t *testing.T, h *runner.History) {
+	t.Helper()
+	n := 0
+	for _, op := range h.Ops {
+		if op.Ack && (op.Kind == runner.OpPut || op.Kind == runner.OpDelete) {
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatal("no writes acked — the run is vacuous (client transport/readiness broken?)")
+	}
 }
