@@ -161,8 +161,22 @@ objects), so resume/retry is safe.
 > ceiling; correctness is the per-node consistent snapshot + the `≤T` filter + the all-export union.
 > `frontierT ≤ 0` disables the cut (back-compat). **Graph/vector** stay snapshot-current (single-slot,
 > not sealed to `T`, to avoid losing the only copy of a `>T` overwrite); **collections** stay raft/
-> applied-index consistent. The commit-time held-range coverage cross-check (real `PARTIAL`) remains a
-> follow-up (Task 5, optional); `PARTIAL` today is driven by the assigner's gap list.
+> applied-index consistent.
+>
+> **Real `PARTIAL` via held-range coverage (F1, DONE).** `commit()` no longer relies solely on the
+> assigner's gap list — it unions it with real coverage gaps computed from the nodes' reported
+> `HeldRanges` (each node reports its hosted collection data shards as `"shard:<id>"` tokens via
+> `PrepareBackup`, from its live collections `Manager` — carried over gRPC in
+> `PrepareBackupResult.held_ranges`, so remote nodes report their own shards). Two tier-specific checks
+> (`internal/backup/coverage.go`): **(1) Collections** — the data shards `[FirstDataShard, +N)` are a
+> deterministic partition; a shard hosted by no exporting node → gap `collections-shard:<id>` (skipped
+> when the expected data-shard count `N` is unknown, to avoid false PARTIALs). **(2) Member completeness
+> (KV/AP)** — KV has NO deterministic per-node ownership (replicated by placement/holder directory, not
+> partitioned), so per-key coverage is not computable; the honest cluster-wide bar is "every expected
+> member exported." An expected (`Roster.Members()`, non-forgotten) member that did not export → gap
+> `member:<id>`. **PARTIAL for KV therefore means "a member didn't export," NOT a per-key coverage
+> proof.** Any gap (assigner, collections-shard, or member) → `PARTIAL` with the specific gaps in
+> `cluster.manifest`.
 
 ## 4. Physical incrementals (3b)
 
@@ -247,16 +261,16 @@ Implemented and reviewed, with these honest consequences to operate around:
 - **Physical node match is by `MemberID`** (the manifest also carries `StorageUUID`, currently
   unused for matching) — correct while member ids are stable (ordinal DNS); id reassignment would
   need the `StorageUUID` fallback.
-- **A `≤T` cut loses concurrent-sibling metadata ONLY for a key whose latest write was after `T`.**
+- **A `≤T` cut loses conflict metadata ONLY for concurrent versions genuinely written after `T`.**
   CFKVMeta is exported verbatim, so every latest pointer (with its `SiblingVersions` / `SIBLINGS_PRESENT`
   conflict flag) is preserved as-is. On restore, `RepairCutMeta` touches only pointers left dangling by
-  the cut: a pointer whose winner version is `> T` (its CFKVData record was dropped) is repointed via
-  `RebuildLatestPointer` to the surviving `≤T` winner, which recovers only winner / tombstone / expiry —
-  so *that one key's* siblings/conflict flag are dropped (the winner value is correct; sibling *values*
-  survive as distinct CFKVData versions). Because `T = now + lease` is in the future, the cut normally
-  excludes nothing → no pointer dangles → siblings are preserved verbatim for **every** key. Only a
-  genuinely-after-`T` write loses its conflict metadata. Reconstructing siblings on a repoint needs
-  causality/conflict-policy info the LWW selector lacks — a tracked follow-up, not blocking 3a.1.
+  the cut: a pointer whose winner version is `> T` (its CFKVData record was dropped) is repointed to the
+  max surviving `≤T` version, and its `≤T` concurrent siblings are **PRESERVED** (F4) — `RepairCutMeta`
+  refilters the verbatim pointer's `SiblingVersions` to the members still present (`≤T`) and not the new
+  winner; a `>T` sibling was cut and is correctly dropped. So a conflicted key keeps its `≤T` conflict
+  set, and only a conflict member (winner or sibling) that was itself after `T` is lost. Because
+  `T = now + lease` is in the future, the cut normally excludes nothing → no pointer dangles → CFKVMeta
+  (including all siblings) is preserved verbatim for **every** key.
 
 ## 6. Durable-artifact lifecycle & GC (the "no trash" requirement)
 

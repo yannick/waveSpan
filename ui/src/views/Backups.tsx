@@ -6,13 +6,12 @@ import {
   buildBeginRequest,
   emptyForm,
   fmtBytes,
-  fmtTime,
   isTerminal,
-  kindLabel,
   phaseLabel,
   pctLabel,
   statusLabel,
   statusTone,
+  summaryRow,
   type BackupForm,
 } from "./backupModel";
 
@@ -113,31 +112,49 @@ export function Backups() {
                 <th>backup</th>
                 <th>status</th>
                 <th>kind</th>
+                <th>planes</th>
+                <th>size</th>
+                <th>destination</th>
+                <th>retain until</th>
                 <th>started</th>
                 <th>finished</th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {list.map((b) => (
-                <tr key={b.backupId}>
-                  <td>{b.backupId}</td>
-                  <td>
-                    <Badge tone={statusTone(b.status)} dot>
-                      {statusLabel(b.status)}
-                    </Badge>
-                  </td>
-                  <td>{kindLabel(b.parent)}</td>
-                  <td>{fmtTime(b.startedMs)}</td>
-                  <td>{fmtTime(b.finishedMs)}</td>
-                  <td style={{ display: "flex", gap: 6 }}>
-                    <Button onClick={() => setWatch(b.backupId)}>Watch</Button>
-                    <Button variant="danger" onClick={() => del(b.backupId)} disabled={busy}>
-                      Delete
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {list.map((b) => {
+                const row = summaryRow(b);
+                return (
+                  <tr key={row.id}>
+                    <td>{row.id}</td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <Badge tone={row.statusTone} dot>
+                          {row.statusLabel}
+                        </Badge>
+                        {row.partial && (
+                          <span title={row.gaps.join("\n")} style={{ color: "var(--tone-warning, #b45309)", fontSize: 12 }}>
+                            {row.gapsLabel}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td>{row.kind}</td>
+                    <td>{row.planes}</td>
+                    <td>{row.size}</td>
+                    <td>{row.destination}</td>
+                    <td>{row.retainUntil}</td>
+                    <td>{row.started}</td>
+                    <td>{row.finished}</td>
+                    <td style={{ display: "flex", gap: 6 }}>
+                      <Button onClick={() => setWatch(row.id)}>Watch</Button>
+                      <Button variant="danger" onClick={() => del(row.id)} disabled={busy}>
+                        Delete
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </Table>
         )}

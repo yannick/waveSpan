@@ -71,11 +71,22 @@ func (r backupRoster) Live() []string {
 	return out
 }
 
+// Members returns the full expected (non-forgotten) member set — the F1 member-completeness bar: an
+// expected member that did not export makes the backup PARTIAL.
+func (r backupRoster) Members() []string {
+	views := r.svc.Members()
+	out := make([]string, 0, len(views))
+	for _, mv := range views {
+		out = append(out, mv.Member.MemberID)
+	}
+	return out
+}
+
 // newBackupCoordinator builds the cluster backup coordinator for this node: a meta-shard intent catalog,
 // a node-default FS object store under the storage path (per-request S3/destination override is Phase
 // 3e), a membership-backed roster, and a gRPC BackupService client factory keyed by member id. The
 // full-backup all-export assignment policy is used (Phase 3a).
-func newBackupCoordinator(mgr *collections.Manager, store storage.LocalStore, self membership.Member, svc *membership.Service, storagePath string, bcfg config.BackupConfig, logger *slog.Logger) (*backup.Coordinator, error) {
+func newBackupCoordinator(mgr *collections.Manager, store storage.LocalStore, self membership.Member, svc *membership.Service, storagePath string, bcfg config.BackupConfig, dataShards uint64, logger *slog.Logger) (*backup.Coordinator, error) {
 	// openStore turns a resolved destination into an object store: the local FS fallback under the storage
 	// path for the FS default (dev), or an S3 backend (incl. OVH) for a configured/named/explicit target.
 	fsDir := filepath.Join(storagePath, "backups")
@@ -115,6 +126,18 @@ func newBackupCoordinator(mgr *collections.Manager, store storage.LocalStore, se
 		BackupCfg:    bcfg,
 		Getenv:       os.Getenv,
 		OpenStore:    openStore,
+		// F1 coverage: report the data shards this node hosts (from the live Manager) and the cluster's
+		// expected data-shard count, so commit() flags a shard hosted by no live node as PARTIAL.
+		HostedDataShards: func() []uint64 {
+			var ids []uint64
+			for _, s := range mgr.ShardStatuses() {
+				if s.IsData {
+					ids = append(ids, s.ShardID)
+				}
+			}
+			return ids
+		},
+		ExpectedDataShards: dataShards,
 	}), nil
 }
 
@@ -743,7 +766,7 @@ func run() error {
 				WithForwarder(collections.NewRPCForwarder(peersFn)). // spot nodes never lead; forward all writes
 				WithDiskGate(diskMon, diskMetrics.IncShedWrites)     // shed at entry before forwarding (design/36)
 			collectionsSvc = collections.NewService(cols, self).WithTierStatus(mgr, raftAddr, spotRID, false)
-			if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path, cfg.Backup, logger); berr != nil {
+			if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path, cfg.Backup, dataShards, logger); berr != nil {
 				logger.Error("backup: coordinator init failed; BackupService disabled", "err", berr)
 			} else {
 				collectionsSvc = collectionsSvc.WithBackup(bc)
@@ -780,7 +803,7 @@ func run() error {
 				cols.WithDiskGate(diskMon, diskMetrics.IncShedWrites)    // shed at entry before forwarding (design/36)
 				collectionsSvc = collections.NewService(cols, self).WithLearnerAdmit(mgr).
 					WithTierStatus(mgr, raftAddr, selfReplicaID, true)
-				if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path, cfg.Backup, logger); berr != nil {
+				if bc, berr := newBackupCoordinator(mgr, store, self, svc, cfg.Storage.Path, cfg.Backup, dataShards, logger); berr != nil {
 					logger.Error("backup: coordinator init failed; BackupService disabled", "err", berr)
 				} else {
 					collectionsSvc = collectionsSvc.WithBackup(bc)

@@ -120,13 +120,21 @@ message BackupState {
   ResponseMeta meta = 11;
 }
 
-// BackupSummary is a compact catalog entry for ListBackups.
+// BackupSummary is a compact catalog entry for ListBackups. The destination carries the non-secret
+// descriptor only (bucket/prefix/region/endpoint + optional credential *reference* name) — never raw
+// access/secret keys, which are never persisted.
 message BackupSummary {
   string backup_id = 1;
   BackupStatus status = 2;
   int64 started_ms = 3;
   int64 finished_ms = 4;
-  string parent = 5;
+  string parent = 5; // set → this is an incremental (base backup id); empty → full
+  repeated BackupPlane planes = 6;
+  int64 size_bytes = 7; // aggregate exported bytes across all nodes
+  Destination destination = 8; // descriptor only — no raw credentials
+  int64 retain_until_ms = 9;
+  bool partial = 10; // true when status == PARTIAL (coverage gaps present)
+  repeated string gaps = 11;
 }
 
 message BeginBackupRequest {

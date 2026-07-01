@@ -682,14 +682,22 @@ func (x *BackupState) GetMeta() *ResponseMeta {
 	return nil
 }
 
-// BackupSummary is a compact catalog entry for ListBackups.
+// BackupSummary is a compact catalog entry for ListBackups. The destination carries the non-secret
+// descriptor only (bucket/prefix/region/endpoint + optional credential *reference* name) — never raw
+// access/secret keys, which are never persisted.
 type BackupSummary struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BackupId      string                 `protobuf:"bytes,1,opt,name=backup_id,json=backupId,proto3" json:"backup_id,omitempty"`
 	Status        BackupStatus           `protobuf:"varint,2,opt,name=status,proto3,enum=wavespan.v1.BackupStatus" json:"status,omitempty"`
 	StartedMs     int64                  `protobuf:"varint,3,opt,name=started_ms,json=startedMs,proto3" json:"started_ms,omitempty"`
 	FinishedMs    int64                  `protobuf:"varint,4,opt,name=finished_ms,json=finishedMs,proto3" json:"finished_ms,omitempty"`
-	Parent        string                 `protobuf:"bytes,5,opt,name=parent,proto3" json:"parent,omitempty"`
+	Parent        string                 `protobuf:"bytes,5,opt,name=parent,proto3" json:"parent,omitempty"` // set → this is an incremental (base backup id); empty → full
+	Planes        []BackupPlane          `protobuf:"varint,6,rep,packed,name=planes,proto3,enum=wavespan.v1.BackupPlane" json:"planes,omitempty"`
+	SizeBytes     int64                  `protobuf:"varint,7,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"` // aggregate exported bytes across all nodes
+	Destination   *Destination           `protobuf:"bytes,8,opt,name=destination,proto3" json:"destination,omitempty"`               // descriptor only — no raw credentials
+	RetainUntilMs int64                  `protobuf:"varint,9,opt,name=retain_until_ms,json=retainUntilMs,proto3" json:"retain_until_ms,omitempty"`
+	Partial       bool                   `protobuf:"varint,10,opt,name=partial,proto3" json:"partial,omitempty"` // true when status == PARTIAL (coverage gaps present)
+	Gaps          []string               `protobuf:"bytes,11,rep,name=gaps,proto3" json:"gaps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -757,6 +765,48 @@ func (x *BackupSummary) GetParent() string {
 		return x.Parent
 	}
 	return ""
+}
+
+func (x *BackupSummary) GetPlanes() []BackupPlane {
+	if x != nil {
+		return x.Planes
+	}
+	return nil
+}
+
+func (x *BackupSummary) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *BackupSummary) GetDestination() *Destination {
+	if x != nil {
+		return x.Destination
+	}
+	return nil
+}
+
+func (x *BackupSummary) GetRetainUntilMs() int64 {
+	if x != nil {
+		return x.RetainUntilMs
+	}
+	return 0
+}
+
+func (x *BackupSummary) GetPartial() bool {
+	if x != nil {
+		return x.Partial
+	}
+	return false
+}
+
+func (x *BackupSummary) GetGaps() []string {
+	if x != nil {
+		return x.Gaps
+	}
+	return nil
 }
 
 type BeginBackupRequest struct {
@@ -1434,7 +1484,7 @@ const file_wavespan_v1_backup_proto_rawDesc = "" +
 	"\x06parent\x18\t \x01(\tR\x06parent\x12:\n" +
 	"\vdestination\x18\n" +
 	" \x01(\v2\x18.wavespan.v1.DestinationR\vdestination\x12-\n" +
-	"\x04meta\x18\v \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"\xb7\x01\n" +
+	"\x04meta\x18\v \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"\x9a\x03\n" +
 	"\rBackupSummary\x12\x1b\n" +
 	"\tbackup_id\x18\x01 \x01(\tR\bbackupId\x121\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x19.wavespan.v1.BackupStatusR\x06status\x12\x1d\n" +
@@ -1442,7 +1492,15 @@ const file_wavespan_v1_backup_proto_rawDesc = "" +
 	"started_ms\x18\x03 \x01(\x03R\tstartedMs\x12\x1f\n" +
 	"\vfinished_ms\x18\x04 \x01(\x03R\n" +
 	"finishedMs\x12\x16\n" +
-	"\x06parent\x18\x05 \x01(\tR\x06parent\"A\n" +
+	"\x06parent\x18\x05 \x01(\tR\x06parent\x120\n" +
+	"\x06planes\x18\x06 \x03(\x0e2\x18.wavespan.v1.BackupPlaneR\x06planes\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\a \x01(\x03R\tsizeBytes\x12:\n" +
+	"\vdestination\x18\b \x01(\v2\x18.wavespan.v1.DestinationR\vdestination\x12&\n" +
+	"\x0fretain_until_ms\x18\t \x01(\x03R\rretainUntilMs\x12\x18\n" +
+	"\apartial\x18\n" +
+	" \x01(\bR\apartial\x12\x12\n" +
+	"\x04gaps\x18\v \x03(\tR\x04gaps\"A\n" +
 	"\x12BeginBackupRequest\x12+\n" +
 	"\x04spec\x18\x01 \x01(\v2\x17.wavespan.v1.BackupSpecR\x04spec\"_\n" +
 	"\x11BeginBackupResult\x12\x1b\n" +
@@ -1564,33 +1622,35 @@ var file_wavespan_v1_backup_proto_depIdxs = []int32{
 	4,  // 8: wavespan.v1.BackupState.destination:type_name -> wavespan.v1.Destination
 	21, // 9: wavespan.v1.BackupState.meta:type_name -> wavespan.v1.ResponseMeta
 	0,  // 10: wavespan.v1.BackupSummary.status:type_name -> wavespan.v1.BackupStatus
-	6,  // 11: wavespan.v1.BeginBackupRequest.spec:type_name -> wavespan.v1.BackupSpec
-	21, // 12: wavespan.v1.BeginBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
-	9,  // 13: wavespan.v1.ListBackupsResult.backups:type_name -> wavespan.v1.BackupSummary
-	21, // 14: wavespan.v1.ListBackupsResult.meta:type_name -> wavespan.v1.ResponseMeta
-	21, // 15: wavespan.v1.DeleteBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
-	21, // 16: wavespan.v1.PrepareBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
-	5,  // 17: wavespan.v1.ExportBackupRequest.assignment:type_name -> wavespan.v1.Selection
-	2,  // 18: wavespan.v1.ExportBackupRequest.planes:type_name -> wavespan.v1.BackupPlane
-	4,  // 19: wavespan.v1.ExportBackupRequest.destination:type_name -> wavespan.v1.Destination
-	21, // 20: wavespan.v1.ExportBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
-	10, // 21: wavespan.v1.BackupService.BeginBackup:input_type -> wavespan.v1.BeginBackupRequest
-	12, // 22: wavespan.v1.BackupService.BackupStatus:input_type -> wavespan.v1.BackupStatusRequest
-	13, // 23: wavespan.v1.BackupService.ListBackups:input_type -> wavespan.v1.ListBackupsRequest
-	15, // 24: wavespan.v1.BackupService.DeleteBackup:input_type -> wavespan.v1.DeleteBackupRequest
-	17, // 25: wavespan.v1.BackupNodeService.PrepareBackup:input_type -> wavespan.v1.PrepareBackupRequest
-	19, // 26: wavespan.v1.BackupNodeService.ExportBackup:input_type -> wavespan.v1.ExportBackupRequest
-	11, // 27: wavespan.v1.BackupService.BeginBackup:output_type -> wavespan.v1.BeginBackupResult
-	8,  // 28: wavespan.v1.BackupService.BackupStatus:output_type -> wavespan.v1.BackupState
-	14, // 29: wavespan.v1.BackupService.ListBackups:output_type -> wavespan.v1.ListBackupsResult
-	16, // 30: wavespan.v1.BackupService.DeleteBackup:output_type -> wavespan.v1.DeleteBackupResult
-	18, // 31: wavespan.v1.BackupNodeService.PrepareBackup:output_type -> wavespan.v1.PrepareBackupResult
-	20, // 32: wavespan.v1.BackupNodeService.ExportBackup:output_type -> wavespan.v1.ExportBackupResult
-	27, // [27:33] is the sub-list for method output_type
-	21, // [21:27] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	2,  // 11: wavespan.v1.BackupSummary.planes:type_name -> wavespan.v1.BackupPlane
+	4,  // 12: wavespan.v1.BackupSummary.destination:type_name -> wavespan.v1.Destination
+	6,  // 13: wavespan.v1.BeginBackupRequest.spec:type_name -> wavespan.v1.BackupSpec
+	21, // 14: wavespan.v1.BeginBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
+	9,  // 15: wavespan.v1.ListBackupsResult.backups:type_name -> wavespan.v1.BackupSummary
+	21, // 16: wavespan.v1.ListBackupsResult.meta:type_name -> wavespan.v1.ResponseMeta
+	21, // 17: wavespan.v1.DeleteBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
+	21, // 18: wavespan.v1.PrepareBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
+	5,  // 19: wavespan.v1.ExportBackupRequest.assignment:type_name -> wavespan.v1.Selection
+	2,  // 20: wavespan.v1.ExportBackupRequest.planes:type_name -> wavespan.v1.BackupPlane
+	4,  // 21: wavespan.v1.ExportBackupRequest.destination:type_name -> wavespan.v1.Destination
+	21, // 22: wavespan.v1.ExportBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
+	10, // 23: wavespan.v1.BackupService.BeginBackup:input_type -> wavespan.v1.BeginBackupRequest
+	12, // 24: wavespan.v1.BackupService.BackupStatus:input_type -> wavespan.v1.BackupStatusRequest
+	13, // 25: wavespan.v1.BackupService.ListBackups:input_type -> wavespan.v1.ListBackupsRequest
+	15, // 26: wavespan.v1.BackupService.DeleteBackup:input_type -> wavespan.v1.DeleteBackupRequest
+	17, // 27: wavespan.v1.BackupNodeService.PrepareBackup:input_type -> wavespan.v1.PrepareBackupRequest
+	19, // 28: wavespan.v1.BackupNodeService.ExportBackup:input_type -> wavespan.v1.ExportBackupRequest
+	11, // 29: wavespan.v1.BackupService.BeginBackup:output_type -> wavespan.v1.BeginBackupResult
+	8,  // 30: wavespan.v1.BackupService.BackupStatus:output_type -> wavespan.v1.BackupState
+	14, // 31: wavespan.v1.BackupService.ListBackups:output_type -> wavespan.v1.ListBackupsResult
+	16, // 32: wavespan.v1.BackupService.DeleteBackup:output_type -> wavespan.v1.DeleteBackupResult
+	18, // 33: wavespan.v1.BackupNodeService.PrepareBackup:output_type -> wavespan.v1.PrepareBackupResult
+	20, // 34: wavespan.v1.BackupNodeService.ExportBackup:output_type -> wavespan.v1.ExportBackupResult
+	29, // [29:35] is the sub-list for method output_type
+	23, // [23:29] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_backup_proto_init() }

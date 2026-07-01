@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { BackupStatus, BackupPhase, BackupPlane } from "../gen/wavespan/v1/backup_pb";
+import { create } from "@bufbuild/protobuf";
+import { BackupStatus, BackupPhase, BackupPlane, BackupSummarySchema } from "../gen/wavespan/v1/backup_pb";
 import {
   statusLabel,
   statusTone,
@@ -15,6 +16,8 @@ import {
   emptyForm,
   planesFromMode,
   splitCsv,
+  destinationLabel,
+  summaryRow,
 } from "./backupModel";
 
 describe("backupModel status helpers", () => {
@@ -147,6 +150,68 @@ describe("buildBeginRequest", () => {
     expect(req.spec?.destination?.credential?.accessKey).toBe("AK");
     expect(req.spec?.destination?.credential?.secretKey).toBe("SK");
     expect(req.spec?.destination?.credential?.secretName ?? "").toBe("");
+  });
+});
+
+describe("destinationLabel", () => {
+  it("shows bucket (+prefix), name, or default — never credentials", () => {
+    expect(destinationLabel(undefined)).toBe("default");
+    expect(destinationLabel(create(BackupSummarySchema, {}).destination)).toBe("default");
+    expect(destinationLabel({ bucket: "b", prefix: "p" } as never)).toBe("b/p");
+    expect(destinationLabel({ bucket: "b" } as never)).toBe("b");
+    expect(destinationLabel({ name: "cold" } as never)).toBe("cold");
+  });
+});
+
+describe("summaryRow", () => {
+  it("maps a PARTIAL incremental summary to display fields with NO credentials", () => {
+    const s = create(BackupSummarySchema, {
+      backupId: "bk-1",
+      status: BackupStatus.BACKUP_PARTIAL,
+      startedMs: 1000n,
+      finishedMs: 2000n,
+      parent: "bk-0",
+      planes: [BackupPlane.LOGICAL, BackupPlane.PHYSICAL],
+      sizeBytes: 2048n,
+      retainUntilMs: 3000n,
+      partial: true,
+      gaps: ["collections-shard:5", "member:m3"],
+      destination: {
+        bucket: "my-bucket",
+        prefix: "pfx",
+        credential: { secretName: "s3-secret", accessKey: "LEAK-AK", secretKey: "LEAK-SK" },
+      },
+    });
+    const row = summaryRow(s);
+    expect(row.id).toBe("bk-1");
+    expect(row.statusLabel).toBe("PARTIAL");
+    expect(row.statusTone).toBe("warning");
+    expect(row.kind).toBe("incremental ← bk-0");
+    expect(row.planes).toBe("logical+physical");
+    expect(row.size).toBe("2.0 KiB");
+    expect(row.destination).toBe("my-bucket/pfx");
+    expect(row.retainUntil).not.toBe("—");
+    expect(row.partial).toBe(true);
+    expect(row.gaps).toEqual(["collections-shard:5", "member:m3"]);
+    expect(row.gapsLabel).toBe("2 gaps");
+    // Defence-in-depth: the row is display-only strings — no raw credentials must appear anywhere in it.
+    expect(JSON.stringify(row)).not.toContain("LEAK-AK");
+    expect(JSON.stringify(row)).not.toContain("LEAK-SK");
+  });
+
+  it("a full COMPLETE backup: kind=full, not partial, no gaps label", () => {
+    const s = create(BackupSummarySchema, {
+      backupId: "bk-9",
+      status: BackupStatus.BACKUP_COMPLETE,
+      planes: [BackupPlane.LOGICAL],
+      sizeBytes: 0n,
+    });
+    const row = summaryRow(s);
+    expect(row.kind).toBe("full");
+    expect(row.partial).toBe(false);
+    expect(row.gapsLabel).toBe("");
+    expect(row.destination).toBe("default");
+    expect(row.retainUntil).toBe("—");
   });
 });
 

@@ -73,6 +73,29 @@ func TestResolveDestinationNamed(t *testing.T) {
 	}
 }
 
+// TestResolveDestinationNamedInNamedOnlyMode pins the two properties F3's stag deploy relies on: a named
+// destination resolves its creds from its env refs even with inline creds DISABLED (named-only mode — the
+// inline gate applies only to ad-hoc explicit destinations, never to pre-registered named ones), and its
+// persisted descriptor carries Name (so the GC path re-resolves the alt bucket via storeForDescriptor's
+// `d.Name != ""` branch) plus only the credential env-ref, never a raw key.
+func TestResolveDestinationNamedInNamedOnlyMode(t *testing.T) {
+	bc := testBackupConfig()
+	bc.AllowInlineDestinationCreds = false // named-only mode
+	env := map[string]string{"COLD_AK": "cold-access", "COLD_SK": "cold-secret"}
+
+	rd, desc, err := ResolveDestination(bc, DestinationSpec{Name: "cold"}, func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatalf("named resolution must work in named-only mode: %v", err)
+	}
+	if rd.S3.Bucket != "cold-bucket" || rd.S3.AccessKey != "cold-access" || rd.S3.SecretKey != "cold-secret" {
+		t.Fatalf("named resolved = %+v, want cold-bucket with env-resolved creds", rd)
+	}
+	if desc.Name != "cold" {
+		t.Fatalf("descriptor Name = %q, want \"cold\" (drives GC re-resolution via storeForDescriptor)", desc.Name)
+	}
+	assertNoSecret(t, desc, "cold-access", "cold-secret")
+}
+
 func TestResolveDestinationExplicitInline(t *testing.T) {
 	bc := testBackupConfig()
 	spec := DestinationSpec{

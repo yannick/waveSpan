@@ -9,9 +9,19 @@ import (
 	"wavesdb/objstore"
 )
 
-type fakeRoster struct{ live []string }
+type fakeRoster struct {
+	live    []string
+	members []string // expected (non-forgotten) members; defaults to live when nil
+}
 
 func (r fakeRoster) Live() []string { return r.live }
+
+func (r fakeRoster) Members() []string {
+	if r.members == nil {
+		return r.live
+	}
+	return r.members
+}
 
 type fakeAssigner struct {
 	assignments map[string]Selector
@@ -25,17 +35,19 @@ func (a fakeAssigner) Assign(_ []string) (map[string]Selector, []string) {
 // memberNode is an in-process NodeClient backed by a real Agent over the member's own store, writing to
 // the shared object store — so the coordinator's prepare/export fan-out produces real objects.
 type memberNode struct {
-	id       string
-	store    storage.LocalStore
-	objStore ObjectStore
-	agent    *Agent
-	prepares int
-	exports  int
+	id         string
+	store      storage.LocalStore
+	objStore   ObjectStore
+	agent      *Agent
+	heldShards []uint64 // data shards this node hosts (F1 coverage); nil = report none
+	prepares   int
+	exports    int
 }
 
 func (n *memberNode) Prepare(ctx context.Context, backupID string, frontierT int64) (PrepareResult, error) {
 	n.prepares++
-	return n.agent.Prepare(ctx, n.store, backupID, frontierT, []string{n.id})
+	// Mirror the production PrepareLocal: a node reports its hosted data shards as "shard:<id>" tokens.
+	return n.agent.Prepare(ctx, n.store, backupID, frontierT, formatHeldShards(n.heldShards))
 }
 
 func (n *memberNode) Export(ctx context.Context, req ExportRequest) (ExportResult, error) {
