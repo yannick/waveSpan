@@ -2,13 +2,13 @@ package membership
 
 import (
 	"context"
-	"net/http"
 	"sync"
 
-	"connectrpc.com/connect"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/yannick/wavespan/internal/rpcopts"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
-	"github.com/yannick/wavespan/proto/wavespan/v1/wavespanv1connect"
 )
 
 // --- proto conversions ---
@@ -177,87 +177,90 @@ func respToMsg(r *wavespanv1.GossipExchangeResponse) *GossipMessage {
 	return m
 }
 
-// --- Connect transport (real gossip wire) ---
+// --- gRPC transport (real gossip wire) ---
 
-// ConnectTransport carries gossip over the Connect protocol (HTTP/1.1-compatible). Clients are
-// cached per gossip address.
-type ConnectTransport struct {
-	httpClient connect.HTTPClient
-	mu         sync.Mutex
-	clients    map[string]wavespanv1connect.GossipServiceClient
+// GRPCTransport carries gossip over gRPC (the same optimized HTTP/2 stack as the data port). Clients
+// are cached per gossip address over the shared pooled gRPC connections (rpcopts.GRPCConn).
+type GRPCTransport struct {
+	mu      sync.Mutex
+	clients map[string]wavespanv1.GossipServiceClient
 }
 
-// NewConnectTransport builds a transport over the given HTTP client (nil uses http.DefaultClient).
-func NewConnectTransport(hc *http.Client) *ConnectTransport {
-	var c connect.HTTPClient = rpcopts.H2CClient()
-	if hc != nil {
-		c = hc
-	}
-	return &ConnectTransport{httpClient: c, clients: map[string]wavespanv1connect.GossipServiceClient{}}
+// NewGRPCTransport builds a gossip transport backed by pooled gRPC client connections.
+func NewGRPCTransport() *GRPCTransport {
+	return &GRPCTransport{clients: map[string]wavespanv1.GossipServiceClient{}}
 }
 
-func (t *ConnectTransport) client(addr string) wavespanv1connect.GossipServiceClient {
+func (t *GRPCTransport) client(addr string) (wavespanv1.GossipServiceClient, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if c, ok := t.clients[addr]; ok {
-		return c
+		return c, nil
 	}
-	c := wavespanv1connect.NewGossipServiceClient(t.httpClient, "http://"+addr)
+	conn, err := rpcopts.GRPCConn(addr)
+	if err != nil {
+		return nil, err
+	}
+	c := wavespanv1.NewGossipServiceClient(conn)
 	t.clients[addr] = c
-	return c
+	return c, nil
 }
 
 // Ping sends a direct gossip exchange (implements Transport).
-func (t *ConnectTransport) Ping(ctx context.Context, addr string, msg *GossipMessage) (*GossipMessage, error) {
-	resp, err := t.client(addr).Exchange(ctx, connect.NewRequest(msgToReq(msg)))
+func (t *GRPCTransport) Ping(ctx context.Context, addr string, msg *GossipMessage) (*GossipMessage, error) {
+	c, err := t.client(addr)
 	if err != nil {
 		return nil, err
 	}
-	return respToMsg(resp.Msg), nil
+	resp, err := c.Exchange(ctx, msgToReq(msg))
+	if err != nil {
+		return nil, err
+	}
+	return respToMsg(resp), nil
 }
 
 // IndirectPing asks relayAddr to relay an exchange to targetAddr (implements Transport).
-func (t *ConnectTransport) IndirectPing(ctx context.Context, relayAddr, targetAddr string, msg *GossipMessage) (*GossipMessage, error) {
-	resp, err := t.client(relayAddr).IndirectExchange(ctx, connect.NewRequest(&wavespanv1.IndirectExchangeRequest{
-		TargetGossipAddr: targetAddr,
-		Payload:          msgToReq(msg),
-	}))
+func (t *GRPCTransport) IndirectPing(ctx context.Context, relayAddr, targetAddr string, msg *GossipMessage) (*GossipMessage, error) {
+	c, err := t.client(relayAddr)
 	if err != nil {
 		return nil, err
 	}
-	return respToMsg(resp.Msg), nil
+	resp, err := c.IndirectExchange(ctx, &wavespanv1.IndirectExchangeRequest{
+		TargetGossipAddr: targetAddr,
+		Payload:          msgToReq(msg),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return respToMsg(resp), nil
 }
 
-// --- Connect server (gossip handler) ---
+// --- gRPC server (gossip handler) ---
 
-// GossipConnectServer adapts a Gossip driver to the GossipService Connect handler. IndirectExchange
-// relays a direct exchange to the requested target.
-type GossipConnectServer struct {
+// GossipGRPCServer adapts a Gossip driver to the GossipService gRPC handler. IndirectExchange relays
+// a direct exchange to the requested target.
+type GossipGRPCServer struct {
+	wavespanv1.UnimplementedGossipServiceServer
 	g         *Gossip
-	transport *ConnectTransport
+	transport *GRPCTransport
 }
 
-// NewGossipConnectServer builds the handler; transport is used to relay indirect probes.
-func NewGossipConnectServer(g *Gossip, transport *ConnectTransport) *GossipConnectServer {
-	return &GossipConnectServer{g: g, transport: transport}
-}
-
-// Handler returns the mountable Connect handler path and http.Handler.
-func (s *GossipConnectServer) Handler() (string, http.Handler) {
-	return wavespanv1connect.NewGossipServiceHandler(s, rpcopts.Handler()...)
+// NewGossipGRPCServer builds the handler; transport is used to relay indirect probes.
+func NewGossipGRPCServer(g *Gossip, transport *GRPCTransport) *GossipGRPCServer {
+	return &GossipGRPCServer{g: g, transport: transport}
 }
 
 // Exchange handles a direct gossip exchange.
-func (s *GossipConnectServer) Exchange(_ context.Context, req *connect.Request[wavespanv1.GossipExchangeRequest]) (*connect.Response[wavespanv1.GossipExchangeResponse], error) {
-	reply := s.g.HandleGossip(reqToMsg(req.Msg))
-	return connect.NewResponse(msgToResp(reply)), nil
+func (s *GossipGRPCServer) Exchange(_ context.Context, req *wavespanv1.GossipExchangeRequest) (*wavespanv1.GossipExchangeResponse, error) {
+	reply := s.g.HandleGossip(reqToMsg(req))
+	return msgToResp(reply), nil
 }
 
 // IndirectExchange relays a gossip exchange to the requested target on the caller's behalf.
-func (s *GossipConnectServer) IndirectExchange(ctx context.Context, req *connect.Request[wavespanv1.IndirectExchangeRequest]) (*connect.Response[wavespanv1.GossipExchangeResponse], error) {
-	reply, err := s.transport.Ping(ctx, req.Msg.GetTargetGossipAddr(), reqToMsg(req.Msg.GetPayload()))
+func (s *GossipGRPCServer) IndirectExchange(ctx context.Context, req *wavespanv1.IndirectExchangeRequest) (*wavespanv1.GossipExchangeResponse, error) {
+	reply, err := s.transport.Ping(ctx, req.GetTargetGossipAddr(), reqToMsg(req.GetPayload()))
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, err)
+		return nil, status.Error(codes.Unavailable, err.Error())
 	}
-	return connect.NewResponse(msgToResp(reply)), nil
+	return msgToResp(reply), nil
 }

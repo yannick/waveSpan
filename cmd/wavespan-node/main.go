@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -54,6 +53,7 @@ import (
 	"github.com/yannick/wavespan/internal/version"
 	wavespanv1 "github.com/yannick/wavespan/proto/wavespan/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
 	"wavesdb/objstore"
 )
@@ -263,7 +263,7 @@ func run() error {
 
 	// Membership service (M2).
 	self := membership.MemberFromConfig(cfg, storageUUID)
-	transport := membership.NewConnectTransport(httpClient)
+	transport := membership.NewGRPCTransport()
 	disc := membership.NewDiscovery(cfg, self.GossipAddr)
 	// Seed the SWIM incarnation from boot-time wall-clock millis so a restart (same MemberID, new pod IP)
 	// always out-incarnates the prior generation → its new address propagates instead of being rejected
@@ -843,10 +843,19 @@ func run() error {
 		wavespanv1.RegisterBackupNodeServiceServer(grpcDataSrv, grpcsrv.NewBackupNode(collectionsSvc))
 	}
 
-	// Gossip server on the gossip port.
-	gossipMux := http.NewServeMux()
-	gossipMux.Handle(svc.GossipHandler())
-	gossipSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Ports.Gossip), Handler: maybeH2C(gossipMux, serverMTLS), ReadHeaderTimeout: 5 * time.Second, TLSConfig: serverMTLS, ConnState: connStateGauge(openConns.WithLabelValues("gossip"))}
+	// Gossip server on the gossip port: a dedicated plain gRPC server (NOT grpcsrv.New — its
+	// admission limiter could shed gossip probes and cause false failure detection). Metrics-only
+	// interceptor, no identity enforcement, mTLS only in prod.
+	gossipAddr := fmt.Sprintf(":%d", cfg.Ports.Gossip)
+	gossipOpts := []grpc.ServerOption{
+		grpc.MaxConcurrentStreams(grpcsrv.DefaultMaxConcurrentStreams),
+		grpc.ChainUnaryInterceptor(rpcopts.GRPCMetricsUnaryInterceptor()),
+	}
+	if serverMTLS != nil {
+		gossipOpts = append(gossipOpts, grpc.Creds(credentials.NewTLS(serverMTLS)))
+	}
+	gossipGRPCSrv := grpc.NewServer(gossipOpts...)
+	svc.RegisterGRPC(gossipGRPCSrv)
 
 	// Admin server: health/metrics + membership/latency introspection.
 	adminMux := observability.AdminMux(metrics, ready)
@@ -932,7 +941,7 @@ func run() error {
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second, TLSConfig: adminTLS, ConnState: connStateGauge(openConns.WithLabelValues("admin"))}
 
 	// Byte/connection-counting listeners (bandwidth + new connections per listener).
-	gossipLn, err := netMetrics.Listen(gossipSrv.Addr, "gossip")
+	gossipLn, err := netMetrics.Listen(gossipAddr, "gossip")
 	if err != nil {
 		return fmt.Errorf("gossip listen: %w", err)
 	}
@@ -948,8 +957,8 @@ func run() error {
 
 	errCh := make(chan error, 3)
 	go func() {
-		logger.Info("gossip server listening", "addr", gossipSrv.Addr, "tls", gossipSrv.TLSConfig != nil)
-		if err := serve(gossipSrv, gossipLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Info("gossip grpc server listening", "addr", gossipAddr, "tls", serverMTLS != nil)
+		if err := gossipGRPCSrv.Serve(gossipLn); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			errCh <- fmt.Errorf("gossip server: %w", err)
 		}
 	}()
@@ -1038,7 +1047,7 @@ func run() error {
 		logger.Info("shutdown signal received, draining")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = gossipSrv.Shutdown(shutdownCtx)
+		gossipGRPCSrv.GracefulStop()
 		grpcDataSrv.GracefulStop()
 		_ = adminSrv.Shutdown(shutdownCtx)
 		if collectionsMgr != nil {
@@ -1151,15 +1160,6 @@ func latencyHandler(svc *membership.Service) http.HandlerFunc {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-// maybeH2C enables HTTP/2 cleartext (multiplexed) on a plaintext server; a TLS server already gets
-// HTTP/2 via ALPN, so it is returned unwrapped.
-func maybeH2C(h http.Handler, tlsConfig *tls.Config) http.Handler {
-	if tlsConfig != nil {
-		return h
-	}
-	return rpcopts.H2CHandler(h)
 }
 
 // intraAENamespaces is the set of namespaces reconciled by intra-cluster anti-entropy (default +
