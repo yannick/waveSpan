@@ -726,6 +726,12 @@ func run() error {
 		if ms := envU64("WAVESPAN_COLLECTIONS_SWEEP_MS"); ms > 0 {
 			tun.SweepEvery = time.Duration(ms) * time.Millisecond
 		}
+		// Per-shard raft quiescence: idle shards stop exchanging heartbeats (near-zero idle CPU). Default
+		// ON; set WAVESPAN_COLLECTIONS_QUIESCE=0/false to disable (leaving nil → the ON default).
+		if v, ok := os.LookupEnv("WAVESPAN_COLLECTIONS_QUIESCE"); ok {
+			q := v == "1" || v == "true"
+			tun.Quiesce = &q
+		}
 		// Bind address for the raft listener, separate from the advertised RaftAddress. In k8s a
 		// StatefulSet core pod advertises its stable per-ordinal DNS (in the voter list) but binds
 		// 0.0.0.0:port, since binding the DNS is racy until the record resolves. Empty => bind the
