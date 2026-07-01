@@ -4,7 +4,7 @@
 
 GO            ?= go
 BIN_DIR       ?= $(CURDIR)/bin
-CMDS          := wavespan-node wavespan-gateway wavespanctl wavespan-bench wavespan-profile wavespan-benchui
+CMDS          := wavespan-node wavespan-gateway wavespanctl wavespan-snapshot wavespan-bench wavespan-profile wavespan-benchui
 PLATFORMS     ?= linux/$(shell go env GOARCH)
 IMAGE         ?= wavespan-node:dev
 CGO_ENABLED   ?= 0

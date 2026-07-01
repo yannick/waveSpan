@@ -11,8 +11,8 @@ require (
 	github.com/lni/dragonboat/v4 v4.0.0-20250723143628-076c7f6497dc
 	github.com/prometheus/client_golang v1.23.2
 	github.com/zeebo/blake3 v0.2.4
-	golang.org/x/net v0.53.0
-	golang.org/x/sys v0.44.0
+	golang.org/x/net v0.56.0
+	golang.org/x/sys v0.46.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
@@ -72,14 +72,17 @@ require (
 	github.com/tinylib/msgp v1.6.1 // indirect
 	github.com/valyala/fastrand v1.1.0 // indirect
 	github.com/valyala/histogram v1.2.0 // indirect
+	github.com/yannick/wavespan/sdk/go v0.0.0
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20200513190911-00229845015e // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260622175928-b703f567277d // indirect
 	gopkg.in/ini.v1 v1.67.2 // indirect
 )
 
 replace wavesdb v0.0.1 => ../wavesdb
+
+replace github.com/yannick/wavespan/sdk/go => ./sdk/go
