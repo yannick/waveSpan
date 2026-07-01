@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { backup } from "../transport";
-import { Badge, Button, Checkbox, FieldLabel, InlineMessage, Input, Panel, Select, Spinner, Table } from "../components";
+import { Badge, Button, Checkbox, FieldLabel, InlineMessage, Input, Modal, Panel, Select, Spinner, Table } from "../components";
 import type { BackupState, BackupSummary } from "../gen/wavespan/v1/backup_pb";
 import {
+  backupHelp,
   buildBeginRequest,
   emptyForm,
   fmtBytes,
@@ -13,7 +14,38 @@ import {
   statusTone,
   summaryRow,
   type BackupForm,
+  type HelpKey,
 } from "./backupModel";
+
+// HelpButton is a small "?" affordance that opens the option-help modal. type="button" + preventDefault so
+// it never activates the surrounding <label>'s control.
+function HelpButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        onClick();
+      }}
+      title="Help"
+      aria-label="Help"
+      style={{
+        width: 18,
+        height: 18,
+        padding: 0,
+        lineHeight: "16px",
+        fontSize: 11,
+        borderRadius: "50%",
+        border: "1px solid var(--ws-border, #ccc)",
+        background: "transparent",
+        color: "inherit",
+        cursor: "pointer",
+      }}
+    >
+      ?
+    </button>
+  );
+}
 
 // Backups is the admin console for cluster backups (design/backup §11): trigger a backup (full or
 // incremental, any plane, to the default / a named / an explicit destination), watch a RUNNING backup's
@@ -179,11 +211,30 @@ function TriggerForm({
   busy: boolean;
   onSubmit: () => void;
 }) {
+  const [help, setHelp] = useState<HelpKey | null>(null);
+  // labelHelp renders a field label with a "?" affordance opening that option's help modal.
+  const labelHelp = (text: string, topic: HelpKey) => (
+    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <FieldLabel>{text}</FieldLabel>
+      <HelpButton onClick={() => setHelp(topic)} />
+    </span>
+  );
   return (
     <Panel title="New backup" actions={<Button variant="primary" onClick={onSubmit} disabled={busy}>Start backup</Button>}>
+      {help && (
+        <Modal open title={backupHelp[help].title} onClose={() => setHelp(null)}>
+          <div style={{ display: "grid", gap: 8, maxWidth: 520 }}>
+            {backupHelp[help].paragraphs.map((p, i) => (
+              <p key={i} style={{ margin: 0 }}>
+                {p}
+              </p>
+            ))}
+          </div>
+        </Modal>
+      )}
       <div style={{ display: "grid", gap: 10, maxWidth: 640 }}>
         <label>
-          <FieldLabel>Selection</FieldLabel>
+          {labelHelp("Selection", "selection")}
           <Select value={form.selectionMode} onChange={(e) => set("selectionMode", e.target.value as BackupForm["selectionMode"])}>
             <option value="full">Full (everything)</option>
             <option value="subset">Subset (namespaces / graphs / vector collections)</option>
@@ -197,7 +248,7 @@ function TriggerForm({
           </>
         )}
         <label>
-          <FieldLabel>Planes</FieldLabel>
+          {labelHelp("Planes", "planes")}
           <Select value={form.planesMode} onChange={(e) => set("planesMode", e.target.value as BackupForm["planesMode"])}>
             <option value="logical">Logical</option>
             <option value="physical">Physical</option>
@@ -205,7 +256,7 @@ function TriggerForm({
           </Select>
         </label>
         <label>
-          <FieldLabel>Type</FieldLabel>
+          {labelHelp("Type", "type")}
           <Select value={form.parent} onChange={(e) => set("parent", e.target.value)}>
             <option value="">Full</option>
             {backups.map((b) => (
@@ -216,7 +267,7 @@ function TriggerForm({
           </Select>
         </label>
         <label>
-          <FieldLabel>Destination</FieldLabel>
+          {labelHelp("Destination", "destination")}
           <Select value={form.destMode} onChange={(e) => setDestMode(e.target.value as BackupForm["destMode"])}>
             <option value="default">Default (node config)</option>
             <option value="named">Named</option>

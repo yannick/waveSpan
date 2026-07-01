@@ -7,6 +7,51 @@ import type { BackupSummary, Destination } from "../gen/wavespan/v1/backup_pb";
 
 export type Tone = "neutral" | "success" | "warning" | "danger" | "info";
 
+// In-UI help for the four trigger-form option groups (mirrors the Backup & Restore docs page). Kept as
+// pure data so it is unit-testable and the JSX stays a thin Modal shell. Each topic is a title plus a few
+// short paragraphs (rendered as text).
+export type HelpKey = "selection" | "planes" | "destination" | "type";
+
+export interface HelpTopic {
+  title: string;
+  paragraphs: string[];
+}
+
+export const backupHelp: Record<HelpKey, HelpTopic> = {
+  selection: {
+    title: "Selection — what to back up",
+    paragraphs: [
+      "Full (the default) captures everything.",
+      "Subset narrows to any combination of namespaces (KV), graphs, and vector collections — use it to extract just part of the cluster.",
+      "Cluster/system configuration is always included regardless of selection.",
+    ],
+  },
+  planes: {
+    title: "Planes — how it is captured",
+    paragraphs: [
+      "Logical: record-level (key/value/version) streams. Portable and re-shardable (restore into a different shard count), full-only, and carries the cluster-wide consistency cut.",
+      "Physical: per-node SSTable checkpoints. Same-shape (restore to the same topology) and support incrementals.",
+      "Pick logical, physical, or both — both gives a portable snapshot plus a fast physical restore from one run.",
+    ],
+  },
+  destination: {
+    title: "Destination — where it is written",
+    paragraphs: [
+      "Default: the node's configured store (WAVESPAN_BACKUP_* env + credentials from a Secret).",
+      "Named: an operator-pre-registered alternate selected by name (backup.namedDestinations), with its own credentials — works in named-only mode.",
+      "Explicit: an ad-hoc bucket/prefix/region/endpoint with a credential reference or transient inline keys (inline requires allowInlineDestinationCreds).",
+      "Credentials are never persisted or logged — the catalog stores only a non-secret descriptor plus a credential reference.",
+    ],
+  },
+  type: {
+    title: "Type — full vs incremental",
+    paragraphs: [
+      "Full: standalone; restores on its own. Logical backups are always full.",
+      "Incremental: physical-only. Pick a parent backup id; only SSTables new since the parent are uploaded. Backups chain full → incremental → incremental, and a restore replays the chain.",
+    ],
+  },
+};
+
 // statusLabel maps the backup status enum to its short display label.
 export function statusLabel(s: BackupStatus): string {
   switch (s) {
