@@ -596,6 +596,37 @@ func (c *Coordinator) ListBackups(ctx context.Context) ([]*wavespanv1.BackupSumm
 	return out, nil
 }
 
+// ListDestinations reports this node's configured backup destinations for the admin UI: the default
+// destination (default_is_fs when it has no bucket → local FS fallback), the named alternates, and
+// whether inline credentials are allowed. It maps ONLY non-secret descriptor fields — the credential
+// env-var references (AccessKeyEnv/SecretKeyEnv) and any key are never included (DestinationInfo has no
+// credential field at all).
+func (c *Coordinator) ListDestinations(_ context.Context) (*wavespanv1.ListDestinationsResult, error) {
+	bc := c.backupCfg
+	res := &wavespanv1.ListDestinationsResult{
+		DefaultDestination: destInfo(bc.DefaultDestination),
+		DefaultIsFs:        bc.DefaultDestination.Bucket == "",
+		AllowInlineCreds:   bc.AllowInlineDestinationCreds,
+	}
+	for _, nd := range bc.NamedDestinations {
+		res.Named = append(res.Named, destInfo(nd))
+	}
+	return res, nil
+}
+
+// destInfo maps a configured destination to its non-secret wire descriptor (no credentials).
+func destInfo(d config.BackupDestination) *wavespanv1.DestinationInfo {
+	return &wavespanv1.DestinationInfo{
+		Name:         d.Name,
+		Bucket:       d.Bucket,
+		Prefix:       d.Prefix,
+		Region:       d.Region,
+		Endpoint:     d.Endpoint,
+		UseSsl:       d.UseSSL,
+		UsePathStyle: d.UsePathStyle,
+	}
+}
+
 // DeleteBackup removes a backup's catalog intent AND its object-store objects, chain-aware (Phase 3d):
 // it refuses to delete a backup that a live incremental child still depends on unless force cascades the
 // children. It reports deleted=false for an unknown id rather than silently claiming success. The object

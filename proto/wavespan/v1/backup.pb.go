@@ -1141,6 +1141,212 @@ func (x *DeleteBackupResult) GetMeta() *ResponseMeta {
 	return nil
 }
 
+// DestinationInfo is a configured backup destination's NON-SECRET descriptor for the admin UI. It has NO
+// credential field by design — it is structurally impossible to leak a key through this message.
+type DestinationInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // set for a named destination; empty for the default
+	Bucket        string                 `protobuf:"bytes,2,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	Prefix        string                 `protobuf:"bytes,3,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	Region        string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
+	Endpoint      string                 `protobuf:"bytes,5,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	UseSsl        bool                   `protobuf:"varint,6,opt,name=use_ssl,json=useSsl,proto3" json:"use_ssl,omitempty"`
+	UsePathStyle  bool                   `protobuf:"varint,7,opt,name=use_path_style,json=usePathStyle,proto3" json:"use_path_style,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DestinationInfo) Reset() {
+	*x = DestinationInfo{}
+	mi := &file_wavespan_v1_backup_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DestinationInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DestinationInfo) ProtoMessage() {}
+
+func (x *DestinationInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_backup_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DestinationInfo.ProtoReflect.Descriptor instead.
+func (*DestinationInfo) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *DestinationInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DestinationInfo) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *DestinationInfo) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
+func (x *DestinationInfo) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *DestinationInfo) GetEndpoint() string {
+	if x != nil {
+		return x.Endpoint
+	}
+	return ""
+}
+
+func (x *DestinationInfo) GetUseSsl() bool {
+	if x != nil {
+		return x.UseSsl
+	}
+	return false
+}
+
+func (x *DestinationInfo) GetUsePathStyle() bool {
+	if x != nil {
+		return x.UsePathStyle
+	}
+	return false
+}
+
+type ListDestinationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDestinationsRequest) Reset() {
+	*x = ListDestinationsRequest{}
+	mi := &file_wavespan_v1_backup_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDestinationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDestinationsRequest) ProtoMessage() {}
+
+func (x *ListDestinationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_backup_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDestinationsRequest.ProtoReflect.Descriptor instead.
+func (*ListDestinationsRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{15}
+}
+
+type ListDestinationsResult struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	DefaultDestination *DestinationInfo       `protobuf:"bytes,1,opt,name=default_destination,json=defaultDestination,proto3" json:"default_destination,omitempty"`
+	DefaultIsFs        bool                   `protobuf:"varint,2,opt,name=default_is_fs,json=defaultIsFs,proto3" json:"default_is_fs,omitempty"` // the default has no bucket → local filesystem fallback (dev)
+	Named              []*DestinationInfo     `protobuf:"bytes,3,rep,name=named,proto3" json:"named,omitempty"`
+	AllowInlineCreds   bool                   `protobuf:"varint,4,opt,name=allow_inline_creds,json=allowInlineCreds,proto3" json:"allow_inline_creds,omitempty"` // whether ad-hoc explicit destinations may carry inline credentials
+	Meta               *ResponseMeta          `protobuf:"bytes,5,opt,name=meta,proto3" json:"meta,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListDestinationsResult) Reset() {
+	*x = ListDestinationsResult{}
+	mi := &file_wavespan_v1_backup_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDestinationsResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDestinationsResult) ProtoMessage() {}
+
+func (x *ListDestinationsResult) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_backup_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDestinationsResult.ProtoReflect.Descriptor instead.
+func (*ListDestinationsResult) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListDestinationsResult) GetDefaultDestination() *DestinationInfo {
+	if x != nil {
+		return x.DefaultDestination
+	}
+	return nil
+}
+
+func (x *ListDestinationsResult) GetDefaultIsFs() bool {
+	if x != nil {
+		return x.DefaultIsFs
+	}
+	return false
+}
+
+func (x *ListDestinationsResult) GetNamed() []*DestinationInfo {
+	if x != nil {
+		return x.Named
+	}
+	return nil
+}
+
+func (x *ListDestinationsResult) GetAllowInlineCreds() bool {
+	if x != nil {
+		return x.AllowInlineCreds
+	}
+	return false
+}
+
+func (x *ListDestinationsResult) GetMeta() *ResponseMeta {
+	if x != nil {
+		return x.Meta
+	}
+	return nil
+}
+
 // PrepareBackupRequest asks a node to seal its view at frontier_t.
 type PrepareBackupRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1152,7 +1358,7 @@ type PrepareBackupRequest struct {
 
 func (x *PrepareBackupRequest) Reset() {
 	*x = PrepareBackupRequest{}
-	mi := &file_wavespan_v1_backup_proto_msgTypes[14]
+	mi := &file_wavespan_v1_backup_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1164,7 +1370,7 @@ func (x *PrepareBackupRequest) String() string {
 func (*PrepareBackupRequest) ProtoMessage() {}
 
 func (x *PrepareBackupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_backup_proto_msgTypes[14]
+	mi := &file_wavespan_v1_backup_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1177,7 +1383,7 @@ func (x *PrepareBackupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareBackupRequest.ProtoReflect.Descriptor instead.
 func (*PrepareBackupRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{14}
+	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PrepareBackupRequest) GetBackupId() string {
@@ -1205,7 +1411,7 @@ type PrepareBackupResult struct {
 
 func (x *PrepareBackupResult) Reset() {
 	*x = PrepareBackupResult{}
-	mi := &file_wavespan_v1_backup_proto_msgTypes[15]
+	mi := &file_wavespan_v1_backup_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1217,7 +1423,7 @@ func (x *PrepareBackupResult) String() string {
 func (*PrepareBackupResult) ProtoMessage() {}
 
 func (x *PrepareBackupResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_backup_proto_msgTypes[15]
+	mi := &file_wavespan_v1_backup_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1230,7 +1436,7 @@ func (x *PrepareBackupResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareBackupResult.ProtoReflect.Descriptor instead.
 func (*PrepareBackupResult) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{15}
+	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PrepareBackupResult) GetGlobalSeq() uint64 {
@@ -1275,7 +1481,7 @@ type ExportBackupRequest struct {
 
 func (x *ExportBackupRequest) Reset() {
 	*x = ExportBackupRequest{}
-	mi := &file_wavespan_v1_backup_proto_msgTypes[16]
+	mi := &file_wavespan_v1_backup_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1287,7 +1493,7 @@ func (x *ExportBackupRequest) String() string {
 func (*ExportBackupRequest) ProtoMessage() {}
 
 func (x *ExportBackupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_backup_proto_msgTypes[16]
+	mi := &file_wavespan_v1_backup_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1300,7 +1506,7 @@ func (x *ExportBackupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportBackupRequest.ProtoReflect.Descriptor instead.
 func (*ExportBackupRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{16}
+	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ExportBackupRequest) GetBackupId() string {
@@ -1365,7 +1571,7 @@ type ExportBackupResult struct {
 
 func (x *ExportBackupResult) Reset() {
 	*x = ExportBackupResult{}
-	mi := &file_wavespan_v1_backup_proto_msgTypes[17]
+	mi := &file_wavespan_v1_backup_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1377,7 +1583,7 @@ func (x *ExportBackupResult) String() string {
 func (*ExportBackupResult) ProtoMessage() {}
 
 func (x *ExportBackupResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_backup_proto_msgTypes[17]
+	mi := &file_wavespan_v1_backup_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1390,7 +1596,7 @@ func (x *ExportBackupResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportBackupResult.ProtoReflect.Descriptor instead.
 func (*ExportBackupResult) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{17}
+	return file_wavespan_v1_backup_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ExportBackupResult) GetObjects() int64 {
@@ -1517,7 +1723,22 @@ const file_wavespan_v1_backup_proto_rawDesc = "" +
 	"\x05force\x18\x02 \x01(\bR\x05force\"]\n" +
 	"\x12DeleteBackupResult\x12\x18\n" +
 	"\adeleted\x18\x01 \x01(\bR\adeleted\x12-\n" +
-	"\x04meta\x18\x02 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"R\n" +
+	"\x04meta\x18\x02 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"\xc8\x01\n" +
+	"\x0fDestinationInfo\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06bucket\x18\x02 \x01(\tR\x06bucket\x12\x16\n" +
+	"\x06prefix\x18\x03 \x01(\tR\x06prefix\x12\x16\n" +
+	"\x06region\x18\x04 \x01(\tR\x06region\x12\x1a\n" +
+	"\bendpoint\x18\x05 \x01(\tR\bendpoint\x12\x17\n" +
+	"\ause_ssl\x18\x06 \x01(\bR\x06useSsl\x12$\n" +
+	"\x0euse_path_style\x18\a \x01(\bR\fusePathStyle\"\x19\n" +
+	"\x17ListDestinationsRequest\"\x9c\x02\n" +
+	"\x16ListDestinationsResult\x12M\n" +
+	"\x13default_destination\x18\x01 \x01(\v2\x1c.wavespan.v1.DestinationInfoR\x12defaultDestination\x12\"\n" +
+	"\rdefault_is_fs\x18\x02 \x01(\bR\vdefaultIsFs\x122\n" +
+	"\x05named\x18\x03 \x03(\v2\x1c.wavespan.v1.DestinationInfoR\x05named\x12,\n" +
+	"\x12allow_inline_creds\x18\x04 \x01(\bR\x10allowInlineCreds\x12-\n" +
+	"\x04meta\x18\x05 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\"R\n" +
 	"\x14PrepareBackupRequest\x12\x1b\n" +
 	"\tbackup_id\x18\x01 \x01(\tR\bbackupId\x12\x1d\n" +
 	"\n" +
@@ -1561,12 +1782,13 @@ const file_wavespan_v1_backup_proto_rawDesc = "" +
 	"\vBackupPlane\x12\x1c\n" +
 	"\x18BACKUP_PLANE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14BACKUP_PLANE_LOGICAL\x10\x01\x12\x19\n" +
-	"\x15BACKUP_PLANE_PHYSICAL\x10\x022\xce\x02\n" +
+	"\x15BACKUP_PLANE_PHYSICAL\x10\x022\xad\x03\n" +
 	"\rBackupService\x12N\n" +
 	"\vBeginBackup\x12\x1f.wavespan.v1.BeginBackupRequest\x1a\x1e.wavespan.v1.BeginBackupResult\x12J\n" +
 	"\fBackupStatus\x12 .wavespan.v1.BackupStatusRequest\x1a\x18.wavespan.v1.BackupState\x12N\n" +
 	"\vListBackups\x12\x1f.wavespan.v1.ListBackupsRequest\x1a\x1e.wavespan.v1.ListBackupsResult\x12Q\n" +
-	"\fDeleteBackup\x12 .wavespan.v1.DeleteBackupRequest\x1a\x1f.wavespan.v1.DeleteBackupResult2\xbc\x01\n" +
+	"\fDeleteBackup\x12 .wavespan.v1.DeleteBackupRequest\x1a\x1f.wavespan.v1.DeleteBackupResult\x12]\n" +
+	"\x10ListDestinations\x12$.wavespan.v1.ListDestinationsRequest\x1a#.wavespan.v1.ListDestinationsResult2\xbc\x01\n" +
 	"\x11BackupNodeService\x12T\n" +
 	"\rPrepareBackup\x12!.wavespan.v1.PrepareBackupRequest\x1a .wavespan.v1.PrepareBackupResult\x12Q\n" +
 	"\fExportBackup\x12 .wavespan.v1.ExportBackupRequest\x1a\x1f.wavespan.v1.ExportBackupResultB\xa5\x01\n" +
@@ -1585,30 +1807,33 @@ func file_wavespan_v1_backup_proto_rawDescGZIP() []byte {
 }
 
 var file_wavespan_v1_backup_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_wavespan_v1_backup_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_wavespan_v1_backup_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_wavespan_v1_backup_proto_goTypes = []any{
-	(BackupStatus)(0),            // 0: wavespan.v1.BackupStatus
-	(BackupPhase)(0),             // 1: wavespan.v1.BackupPhase
-	(BackupPlane)(0),             // 2: wavespan.v1.BackupPlane
-	(*CredentialRef)(nil),        // 3: wavespan.v1.CredentialRef
-	(*Destination)(nil),          // 4: wavespan.v1.Destination
-	(*Selection)(nil),            // 5: wavespan.v1.Selection
-	(*BackupSpec)(nil),           // 6: wavespan.v1.BackupSpec
-	(*NodeProgress)(nil),         // 7: wavespan.v1.NodeProgress
-	(*BackupState)(nil),          // 8: wavespan.v1.BackupState
-	(*BackupSummary)(nil),        // 9: wavespan.v1.BackupSummary
-	(*BeginBackupRequest)(nil),   // 10: wavespan.v1.BeginBackupRequest
-	(*BeginBackupResult)(nil),    // 11: wavespan.v1.BeginBackupResult
-	(*BackupStatusRequest)(nil),  // 12: wavespan.v1.BackupStatusRequest
-	(*ListBackupsRequest)(nil),   // 13: wavespan.v1.ListBackupsRequest
-	(*ListBackupsResult)(nil),    // 14: wavespan.v1.ListBackupsResult
-	(*DeleteBackupRequest)(nil),  // 15: wavespan.v1.DeleteBackupRequest
-	(*DeleteBackupResult)(nil),   // 16: wavespan.v1.DeleteBackupResult
-	(*PrepareBackupRequest)(nil), // 17: wavespan.v1.PrepareBackupRequest
-	(*PrepareBackupResult)(nil),  // 18: wavespan.v1.PrepareBackupResult
-	(*ExportBackupRequest)(nil),  // 19: wavespan.v1.ExportBackupRequest
-	(*ExportBackupResult)(nil),   // 20: wavespan.v1.ExportBackupResult
-	(*ResponseMeta)(nil),         // 21: wavespan.v1.ResponseMeta
+	(BackupStatus)(0),               // 0: wavespan.v1.BackupStatus
+	(BackupPhase)(0),                // 1: wavespan.v1.BackupPhase
+	(BackupPlane)(0),                // 2: wavespan.v1.BackupPlane
+	(*CredentialRef)(nil),           // 3: wavespan.v1.CredentialRef
+	(*Destination)(nil),             // 4: wavespan.v1.Destination
+	(*Selection)(nil),               // 5: wavespan.v1.Selection
+	(*BackupSpec)(nil),              // 6: wavespan.v1.BackupSpec
+	(*NodeProgress)(nil),            // 7: wavespan.v1.NodeProgress
+	(*BackupState)(nil),             // 8: wavespan.v1.BackupState
+	(*BackupSummary)(nil),           // 9: wavespan.v1.BackupSummary
+	(*BeginBackupRequest)(nil),      // 10: wavespan.v1.BeginBackupRequest
+	(*BeginBackupResult)(nil),       // 11: wavespan.v1.BeginBackupResult
+	(*BackupStatusRequest)(nil),     // 12: wavespan.v1.BackupStatusRequest
+	(*ListBackupsRequest)(nil),      // 13: wavespan.v1.ListBackupsRequest
+	(*ListBackupsResult)(nil),       // 14: wavespan.v1.ListBackupsResult
+	(*DeleteBackupRequest)(nil),     // 15: wavespan.v1.DeleteBackupRequest
+	(*DeleteBackupResult)(nil),      // 16: wavespan.v1.DeleteBackupResult
+	(*DestinationInfo)(nil),         // 17: wavespan.v1.DestinationInfo
+	(*ListDestinationsRequest)(nil), // 18: wavespan.v1.ListDestinationsRequest
+	(*ListDestinationsResult)(nil),  // 19: wavespan.v1.ListDestinationsResult
+	(*PrepareBackupRequest)(nil),    // 20: wavespan.v1.PrepareBackupRequest
+	(*PrepareBackupResult)(nil),     // 21: wavespan.v1.PrepareBackupResult
+	(*ExportBackupRequest)(nil),     // 22: wavespan.v1.ExportBackupRequest
+	(*ExportBackupResult)(nil),      // 23: wavespan.v1.ExportBackupResult
+	(*ResponseMeta)(nil),            // 24: wavespan.v1.ResponseMeta
 }
 var file_wavespan_v1_backup_proto_depIdxs = []int32{
 	3,  // 0: wavespan.v1.Destination.credential:type_name -> wavespan.v1.CredentialRef
@@ -1620,37 +1845,42 @@ var file_wavespan_v1_backup_proto_depIdxs = []int32{
 	1,  // 6: wavespan.v1.BackupState.phase:type_name -> wavespan.v1.BackupPhase
 	7,  // 7: wavespan.v1.BackupState.per_node:type_name -> wavespan.v1.NodeProgress
 	4,  // 8: wavespan.v1.BackupState.destination:type_name -> wavespan.v1.Destination
-	21, // 9: wavespan.v1.BackupState.meta:type_name -> wavespan.v1.ResponseMeta
+	24, // 9: wavespan.v1.BackupState.meta:type_name -> wavespan.v1.ResponseMeta
 	0,  // 10: wavespan.v1.BackupSummary.status:type_name -> wavespan.v1.BackupStatus
 	2,  // 11: wavespan.v1.BackupSummary.planes:type_name -> wavespan.v1.BackupPlane
 	4,  // 12: wavespan.v1.BackupSummary.destination:type_name -> wavespan.v1.Destination
 	6,  // 13: wavespan.v1.BeginBackupRequest.spec:type_name -> wavespan.v1.BackupSpec
-	21, // 14: wavespan.v1.BeginBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
+	24, // 14: wavespan.v1.BeginBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
 	9,  // 15: wavespan.v1.ListBackupsResult.backups:type_name -> wavespan.v1.BackupSummary
-	21, // 16: wavespan.v1.ListBackupsResult.meta:type_name -> wavespan.v1.ResponseMeta
-	21, // 17: wavespan.v1.DeleteBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
-	21, // 18: wavespan.v1.PrepareBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
-	5,  // 19: wavespan.v1.ExportBackupRequest.assignment:type_name -> wavespan.v1.Selection
-	2,  // 20: wavespan.v1.ExportBackupRequest.planes:type_name -> wavespan.v1.BackupPlane
-	4,  // 21: wavespan.v1.ExportBackupRequest.destination:type_name -> wavespan.v1.Destination
-	21, // 22: wavespan.v1.ExportBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
-	10, // 23: wavespan.v1.BackupService.BeginBackup:input_type -> wavespan.v1.BeginBackupRequest
-	12, // 24: wavespan.v1.BackupService.BackupStatus:input_type -> wavespan.v1.BackupStatusRequest
-	13, // 25: wavespan.v1.BackupService.ListBackups:input_type -> wavespan.v1.ListBackupsRequest
-	15, // 26: wavespan.v1.BackupService.DeleteBackup:input_type -> wavespan.v1.DeleteBackupRequest
-	17, // 27: wavespan.v1.BackupNodeService.PrepareBackup:input_type -> wavespan.v1.PrepareBackupRequest
-	19, // 28: wavespan.v1.BackupNodeService.ExportBackup:input_type -> wavespan.v1.ExportBackupRequest
-	11, // 29: wavespan.v1.BackupService.BeginBackup:output_type -> wavespan.v1.BeginBackupResult
-	8,  // 30: wavespan.v1.BackupService.BackupStatus:output_type -> wavespan.v1.BackupState
-	14, // 31: wavespan.v1.BackupService.ListBackups:output_type -> wavespan.v1.ListBackupsResult
-	16, // 32: wavespan.v1.BackupService.DeleteBackup:output_type -> wavespan.v1.DeleteBackupResult
-	18, // 33: wavespan.v1.BackupNodeService.PrepareBackup:output_type -> wavespan.v1.PrepareBackupResult
-	20, // 34: wavespan.v1.BackupNodeService.ExportBackup:output_type -> wavespan.v1.ExportBackupResult
-	29, // [29:35] is the sub-list for method output_type
-	23, // [23:29] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	24, // 16: wavespan.v1.ListBackupsResult.meta:type_name -> wavespan.v1.ResponseMeta
+	24, // 17: wavespan.v1.DeleteBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
+	17, // 18: wavespan.v1.ListDestinationsResult.default_destination:type_name -> wavespan.v1.DestinationInfo
+	17, // 19: wavespan.v1.ListDestinationsResult.named:type_name -> wavespan.v1.DestinationInfo
+	24, // 20: wavespan.v1.ListDestinationsResult.meta:type_name -> wavespan.v1.ResponseMeta
+	24, // 21: wavespan.v1.PrepareBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
+	5,  // 22: wavespan.v1.ExportBackupRequest.assignment:type_name -> wavespan.v1.Selection
+	2,  // 23: wavespan.v1.ExportBackupRequest.planes:type_name -> wavespan.v1.BackupPlane
+	4,  // 24: wavespan.v1.ExportBackupRequest.destination:type_name -> wavespan.v1.Destination
+	24, // 25: wavespan.v1.ExportBackupResult.meta:type_name -> wavespan.v1.ResponseMeta
+	10, // 26: wavespan.v1.BackupService.BeginBackup:input_type -> wavespan.v1.BeginBackupRequest
+	12, // 27: wavespan.v1.BackupService.BackupStatus:input_type -> wavespan.v1.BackupStatusRequest
+	13, // 28: wavespan.v1.BackupService.ListBackups:input_type -> wavespan.v1.ListBackupsRequest
+	15, // 29: wavespan.v1.BackupService.DeleteBackup:input_type -> wavespan.v1.DeleteBackupRequest
+	18, // 30: wavespan.v1.BackupService.ListDestinations:input_type -> wavespan.v1.ListDestinationsRequest
+	20, // 31: wavespan.v1.BackupNodeService.PrepareBackup:input_type -> wavespan.v1.PrepareBackupRequest
+	22, // 32: wavespan.v1.BackupNodeService.ExportBackup:input_type -> wavespan.v1.ExportBackupRequest
+	11, // 33: wavespan.v1.BackupService.BeginBackup:output_type -> wavespan.v1.BeginBackupResult
+	8,  // 34: wavespan.v1.BackupService.BackupStatus:output_type -> wavespan.v1.BackupState
+	14, // 35: wavespan.v1.BackupService.ListBackups:output_type -> wavespan.v1.ListBackupsResult
+	16, // 36: wavespan.v1.BackupService.DeleteBackup:output_type -> wavespan.v1.DeleteBackupResult
+	19, // 37: wavespan.v1.BackupService.ListDestinations:output_type -> wavespan.v1.ListDestinationsResult
+	21, // 38: wavespan.v1.BackupNodeService.PrepareBackup:output_type -> wavespan.v1.PrepareBackupResult
+	23, // 39: wavespan.v1.BackupNodeService.ExportBackup:output_type -> wavespan.v1.ExportBackupResult
+	33, // [33:40] is the sub-list for method output_type
+	26, // [26:33] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_backup_proto_init() }
@@ -1665,7 +1895,7 @@ func file_wavespan_v1_backup_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_backup_proto_rawDesc), len(file_wavespan_v1_backup_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   18,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

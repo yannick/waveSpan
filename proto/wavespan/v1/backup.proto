@@ -19,6 +19,9 @@ service BackupService {
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResult);
   // DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
   rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResult);
+  // ListDestinations reports the node's configured backup destinations (default + named) for the admin
+  // UI. It returns only non-secret descriptor fields — never any credential.
+  rpc ListDestinations(ListDestinationsRequest) returns (ListDestinationsResult);
 }
 
 // BackupNodeService carries the node-internal backup RPCs. It is registered on the gRPC DATA port only
@@ -162,6 +165,27 @@ message DeleteBackupRequest {
 message DeleteBackupResult {
   bool deleted = 1;
   ResponseMeta meta = 2;
+}
+
+// DestinationInfo is a configured backup destination's NON-SECRET descriptor for the admin UI. It has NO
+// credential field by design — it is structurally impossible to leak a key through this message.
+message DestinationInfo {
+  string name = 1; // set for a named destination; empty for the default
+  string bucket = 2;
+  string prefix = 3;
+  string region = 4;
+  string endpoint = 5;
+  bool use_ssl = 6;
+  bool use_path_style = 7;
+}
+
+message ListDestinationsRequest {}
+message ListDestinationsResult {
+  DestinationInfo default_destination = 1;
+  bool default_is_fs = 2; // the default has no bucket → local filesystem fallback (dev)
+  repeated DestinationInfo named = 3;
+  bool allow_inline_creds = 4; // whether ad-hoc explicit destinations may carry inline credentials
+  ResponseMeta meta = 5;
 }
 
 // PrepareBackupRequest asks a node to seal its view at frontier_t.

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { backup } from "../transport";
 import { Badge, Button, Checkbox, FieldLabel, InlineMessage, Input, Modal, Panel, Select, Spinner, Table } from "../components";
-import type { BackupState, BackupSummary } from "../gen/wavespan/v1/backup_pb";
+import type { BackupState, BackupSummary, ListDestinationsResult } from "../gen/wavespan/v1/backup_pb";
 import {
   backupHelp,
+  defaultDestLabel,
+  namedOptions,
   buildBeginRequest,
   emptyForm,
   fmtBytes,
@@ -59,12 +61,14 @@ export function Backups() {
   const [msg, setMsg] = useState<string | null>(null);
   const [watch, setWatch] = useState<string | null>(null);
   const [form, setForm] = useState<BackupForm>(emptyForm());
+  const [dests, setDests] = useState<ListDestinationsResult | null>(null);
 
   const set = <K extends keyof BackupForm>(k: K, v: BackupForm[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const load = async () => {
-    const r = await backup.listBackups({});
+    const [r, d] = await Promise.all([backup.listBackups({}), backup.listDestinations({})]);
     setList(r.backups);
+    setDests(d);
   };
 
   const run = async (fn: () => Promise<void>) => {
@@ -121,7 +125,7 @@ export function Backups() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <TriggerForm form={form} set={set} setDestMode={setDestMode} backups={list} busy={busy} onSubmit={submit} />
+      <TriggerForm form={form} set={set} setDestMode={setDestMode} backups={list} dests={dests} busy={busy} onSubmit={submit} />
       {watch && <BackupProgress backupId={watch} onClose={() => setWatch(null)} />}
       <Panel
         title="Backups"
@@ -201,6 +205,7 @@ function TriggerForm({
   set,
   setDestMode,
   backups,
+  dests,
   busy,
   onSubmit,
 }: {
@@ -208,9 +213,12 @@ function TriggerForm({
   set: <K extends keyof BackupForm>(k: K, v: BackupForm[K]) => void;
   setDestMode: (v: BackupForm["destMode"]) => void;
   backups: BackupSummary[];
+  dests: ListDestinationsResult | null;
   busy: boolean;
   onSubmit: () => void;
 }) {
+  const named = namedOptions(dests);
+  const inlineAllowed = dests?.allowInlineCreds ?? true;
   const [help, setHelp] = useState<HelpKey | null>(null);
   // labelHelp renders a field label with a "?" affordance opening that option's help modal.
   const labelHelp = (text: string, topic: HelpKey) => (
@@ -269,14 +277,26 @@ function TriggerForm({
         <label>
           {labelHelp("Destination", "destination")}
           <Select value={form.destMode} onChange={(e) => setDestMode(e.target.value as BackupForm["destMode"])}>
-            <option value="default">Default (node config)</option>
-            <option value="named">Named</option>
+            <option value="default">Default → {defaultDestLabel(dests)}</option>
+            <option value="named" disabled={named.length === 0}>
+              Named{named.length === 0 ? " (none configured)" : ""}
+            </option>
             <option value="explicit">Explicit (ad-hoc bucket)</option>
           </Select>
         </label>
-        {form.destMode === "named" && (
-          <Input placeholder="destination name" value={form.destName} onChange={(e) => set("destName", e.target.value)} />
-        )}
+        {form.destMode === "named" &&
+          (named.length > 0 ? (
+            <Select value={form.destName} onChange={(e) => set("destName", e.target.value)}>
+              <option value="">select a destination…</option>
+              {named.map((n) => (
+                <option key={n.value} value={n.value}>
+                  {n.label}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <InlineMessage tone="warning">No named destinations are configured on this node.</InlineMessage>
+          ))}
         {form.destMode === "explicit" && (
           <>
             <Input placeholder="bucket" value={form.bucket} onChange={(e) => set("bucket", e.target.value)} />
@@ -286,12 +306,21 @@ function TriggerForm({
             <Checkbox label="use SSL" checked={form.useSsl} onChange={(e) => set("useSsl", e.target.checked)} />
             <Checkbox label="path-style" checked={form.usePathStyle} onChange={(e) => set("usePathStyle", e.target.checked)} />
             <Input placeholder="credential reference (secret name) — preferred" value={form.secretRef} onChange={(e) => set("secretRef", e.target.value)} />
-            <InlineMessage tone="info">
-              Inline credentials below are sent only with this request (never stored or logged). Leave
-              blank to use the credential reference. A node in named-only mode rejects inline creds.
-            </InlineMessage>
-            <Input type="password" placeholder="access key (transient)" value={form.accessKey} onChange={(e) => set("accessKey", e.target.value)} />
-            <Input type="password" placeholder="secret key (transient)" value={form.secretKey} onChange={(e) => set("secretKey", e.target.value)} />
+            {inlineAllowed ? (
+              <>
+                <InlineMessage tone="info">
+                  Inline credentials below are sent only with this request (never stored or logged). Leave
+                  blank to use the credential reference above.
+                </InlineMessage>
+                <Input type="password" placeholder="access key (transient)" value={form.accessKey} onChange={(e) => set("accessKey", e.target.value)} />
+                <Input type="password" placeholder="secret key (transient)" value={form.secretKey} onChange={(e) => set("secretKey", e.target.value)} />
+              </>
+            ) : (
+              <InlineMessage tone="warning">
+                This node is in named-only mode — inline credentials are disabled. Use the credential
+                reference above (a server-side secret name).
+              </InlineMessage>
+            )}
           </>
         )}
       </div>
