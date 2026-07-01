@@ -92,7 +92,7 @@ func (t *memTransport) IndirectPing(_ context.Context, relayAddr, targetAddr str
 }
 
 func fastLiveness() LivenessConfig {
-	return LivenessConfig{SuspicionTimeout: 2 * time.Second, UnreachableTimeout: 4 * time.Second, DeadRetention: time.Minute}
+	return LivenessConfig{SuspicionTimeout: 2 * time.Second, UnreachableTimeout: 4 * time.Second, DeadRetention: time.Minute, ForgottenRetention: time.Minute}
 }
 
 func TestGossipThreeNodeFormUpThenKill(t *testing.T) {

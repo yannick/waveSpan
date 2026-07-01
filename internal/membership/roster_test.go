@@ -10,6 +10,7 @@ func testCfg() LivenessConfig {
 		SuspicionTimeout:   3 * time.Second,
 		UnreachableTimeout: 10 * time.Second,
 		DeadRetention:      1 * time.Minute,
+		ForgottenRetention: 1 * time.Minute,
 	}
 }
 
@@ -72,10 +73,25 @@ func drivePeerToDead(t *testing.T, r *Roster, base time.Time) {
 	}
 }
 
-// TestDeadEvictedAfterRetentionWithoutRepair: a dead member is evicted after DeadRetention even when
-// MarkRepairComplete is never called (it has no production callers). Before the fix such members stayed
-// DEAD forever and Members() kept returning them (the stag stale-roster growth).
-func TestDeadEvictedAfterRetentionWithoutRepair(t *testing.T) {
+func notInMembers(t *testing.T, r *Roster, id string) {
+	t.Helper()
+	for _, m := range r.Members() {
+		if m.Member.MemberID == id {
+			t.Fatalf("%s must not appear in Members()", id)
+		}
+	}
+	for _, m := range r.Live() {
+		if m.Member.MemberID == id {
+			t.Fatalf("%s must not appear in Live()", id)
+		}
+	}
+}
+
+// TestDeadToForgottenToDeleteTwoStage: a dead member (no repair) transitions DEAD -> FORGOTTEN (a retained,
+// non-gossiped tombstone excluded from Members()/Live()) after DeadRetention, then is DELETED from the map
+// after a further ForgottenRetention (bounded growth). This keeps bug-B's guarantee (a dead member IS
+// eventually evicted) while retaining the tombstone to block resurrection during the convergence window.
+func TestDeadToForgottenToDeleteTwoStage(t *testing.T) {
 	base := time.Unix(2_000_000, 0)
 	r := NewRoster(mem("self"), testCfg(), 0)
 	drivePeerToDead(t, r, base) // DEAD at ~base+15s, no MarkRepairComplete
@@ -85,34 +101,84 @@ func TestDeadEvictedAfterRetentionWithoutRepair(t *testing.T) {
 	if stateOf(t, r, "p1") != StateDead {
 		t.Fatal("before retention the dead member must still be present as DEAD")
 	}
-	// After DeadRetention: evicted (deleted from the roster map, absent from Members()).
-	r.Tick(at(base, 2*time.Minute))
-	if _, ok := r.Get("p1"); ok {
-		t.Fatal("dead member must be EVICTED (deleted) after retention even without repair")
+	// After DeadRetention: FORGOTTEN tombstone — still in the map (Get resolves) but out of Members()/Live().
+	r.Tick(at(base, 90*time.Second))
+	if stateOf(t, r, "p1") != StateForgotten {
+		t.Fatalf("after DeadRetention want FORGOTTEN tombstone, got %s", stateOf(t, r, "p1"))
 	}
-	for _, m := range r.Members() {
-		if m.Member.MemberID == "p1" {
-			t.Fatal("evicted member must not appear in Members()")
-		}
+	notInMembers(t, r, "p1")
+	// After a further ForgottenRetention: deleted from the map (bounded growth).
+	r.Tick(at(base, 160*time.Second))
+	if _, ok := r.Get("p1"); ok {
+		t.Fatal("the forgotten tombstone must be DELETED after ForgottenRetention")
 	}
 }
 
-// TestDeadForgottenEarlyOnRepairComplete: MarkRepairComplete is the optional EARLIER-forget path — a dead
-// member whose repair is done is evicted immediately, before the full retention backstop elapses.
+// TestDeadForgottenEarlyOnRepairComplete: MarkRepairComplete is the optional EARLIER Dead->Forgotten path —
+// a repair-complete dead member becomes a FORGOTTEN tombstone before DeadRetention elapses (still retained,
+// still out of Members()).
 func TestDeadForgottenEarlyOnRepairComplete(t *testing.T) {
 	base := time.Unix(2_500_000, 0)
 	r := NewRoster(mem("self"), testCfg(), 0)
 	drivePeerToDead(t, r, base) // DEAD at ~base+15s
 
 	r.MarkRepairComplete("p1")
-	r.Tick(at(base, 20*time.Second)) // still well within DeadRetention (1m), but repair done → forget now
-	if _, ok := r.Get("p1"); ok {
-		t.Fatal("a repair-complete dead member must be forgotten EARLY (before full retention)")
+	r.Tick(at(base, 20*time.Second)) // well within DeadRetention (1m), but repair done → forget early
+	if stateOf(t, r, "p1") != StateForgotten {
+		t.Fatalf("a repair-complete dead member must be FORGOTTEN early, got %s", stateOf(t, r, "p1"))
 	}
-	for _, m := range r.Members() {
+	notInMembers(t, r, "p1")
+}
+
+// driveMemberToForgotten drives m through to a FORGOTTEN tombstone (past DeadRetention) and asserts it.
+func driveMemberToForgotten(t *testing.T, r *Roster, m Member, base time.Time) {
+	t.Helper()
+	r.Upsert(m, base)
+	r.Suspect(m.MemberID, base)
+	r.Tick(at(base, 4*time.Second))  // UNREACHABLE
+	r.Tick(at(base, 15*time.Second)) // DEAD
+	r.Tick(at(base, 90*time.Second)) // past DeadRetention → FORGOTTEN tombstone
+	if stateOf(t, r, m.MemberID) != StateForgotten {
+		t.Fatalf("expected FORGOTTEN tombstone, got %s", stateOf(t, r, m.MemberID))
+	}
+}
+
+// TestForgottenTombstoneBlocksStaleAliveResurrection (Risk 1): a lagging/partitioned peer's stale ALIVE at
+// the member's dead old address (incarnation <= the tombstone's) must NOT resurrect it — the retained
+// FORGOTTEN tombstone's higher state ordinal makes ApplyGossip's existing ordering reject it.
+func TestForgottenTombstoneBlocksStaleAliveResurrection(t *testing.T) {
+	base := time.Unix(9_500_000, 0)
+	r := NewRoster(mem("self"), testCfg(), 0)
+	old := addrMember("p1", "10.0.0.1")
+	driveMemberToForgotten(t, r, old, base)
+
+	r.ApplyGossip(MemberView{Member: old, State: StateAlive, Incarnation: 0}, at(base, 91*time.Second))
+	if v, _ := r.Get("p1"); v.State != StateForgotten {
+		t.Fatalf("stale ALIVE must NOT resurrect a forgotten member: state=%s", v.State)
+	}
+	notInMembers(t, r, "p1") // not resurrected into Members()/Live() at the dead old address
+}
+
+// TestForgottenMemberRevivesOnHigherIncarnation (Risk 1): a GENUINE restart-after-forget — a higher-
+// incarnation ALIVE at a new address — still supersedes the tombstone and revives the member.
+func TestForgottenMemberRevivesOnHigherIncarnation(t *testing.T) {
+	base := time.Unix(9_600_000, 0)
+	r := NewRoster(mem("self"), testCfg(), 0)
+	driveMemberToForgotten(t, r, addrMember("p1", "10.0.0.1"), base)
+
+	r.ApplyGossip(MemberView{Member: addrMember("p1", "10.0.0.9"), State: StateAlive, Incarnation: 100}, at(base, 91*time.Second))
+	v, ok := r.Get("p1")
+	if !ok || v.State != StateAlive || v.Member.DataAddr != "10.0.0.9:7800" {
+		t.Fatalf("a genuine higher-incarnation revival must supersede the tombstone: ok=%v %+v", ok, v)
+	}
+	found := false
+	for _, m := range r.Live() {
 		if m.Member.MemberID == "p1" {
-			t.Fatal("early-forgotten member must not appear in Members()")
+			found = true
 		}
+	}
+	if !found {
+		t.Fatal("revived member must be back in Live()")
 	}
 }
 

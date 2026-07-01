@@ -192,7 +192,8 @@ func (r *Roster) ApplyGossip(u MemberView, now time.Time) {
 	}
 }
 
-// Tick advances timeout-driven transitions: SUSPECT->UNREACHABLE->DEAD->FORGOTTEN.
+// Tick advances timeout-driven transitions: SUSPECT->UNREACHABLE->DEAD->FORGOTTEN (a retained,
+// non-gossiped tombstone)->deleted (after a further ForgottenRetention).
 func (r *Roster) Tick(now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -212,21 +213,25 @@ func (r *Roster) Tick(now time.Time) {
 				r.setState(ms, StateDead, now)
 			}
 		case StateDead:
-			// Evict a dead member after DeadRetention (the guaranteed time-based backstop) OR earlier if
-			// repair has released its holder records (repairDone). On eviction, delete it from the map so
-			// the roster can't grow unbounded — a churned cluster's dead entries are reclaimed rather than
-			// lingering in Members() forever (which staled the roster and forced backups to PARTIAL).
-			//
-			// Trade-off (risk 1, accepted): deleting the entry drops the tombstone that would block a
-			// lagging/partitioned peer's stale ALIVE from re-adding this member at its dead old address.
-			// It is bounded — a peer must be partitioned longer than DeadRetention (default 5m), the
-			// resurrected entry re-dies within ~one liveness window (SUSPECT+UNREACHABLE ≈ 13s), and F5
-			// makes backups tolerant of such a stale member (skipped → PARTIAL, not fatal). If it ever
-			// matters, the hardening is a non-gossiped Forgotten tombstone: keep the entry one extra
-			// retention in a FORGOTTEN state that rebuildSnapshots excludes from OUTGOING gossip, then
-			// delete — blocking resurrection without unbounded growth. Not built now.
+			// Stage 1: DEAD -> FORGOTTEN after DeadRetention (the guaranteed time-based backstop) OR earlier
+			// once repair has released this member's holder records (repairDone). The entry is RETAINED as a
+			// non-gossiped tombstone — rebuildSnapshots excludes FORGOTTEN from Members()/Live(), and
+			// outgoing gossip is sourced from Members(), so we hold it locally without spreading it. This
+			// stops a churned cluster's dead members from lingering in Members() forever (which staled the
+			// roster and forced backups to PARTIAL) while keeping the tombstone that blocks resurrection.
 			if nowMs-ms.stateSince >= r.cfg.DeadRetention.Milliseconds() || ms.repairDone {
-				r.setState(ms, StateForgotten, now) // fire the transition observer before removal
+				r.setState(ms, StateForgotten, now)
+			}
+		case StateForgotten:
+			// Stage 2: FORGOTTEN -> deleted after a further ForgottenRetention, reclaiming the map entry so
+			// the roster can't grow unbounded (total tombstone lifetime ≈ DeadRetention + ForgottenRetention).
+			// While the tombstone lives, ApplyGossip's ordering rejects a stale ALIVE (state ordinal < the
+			// FORGOTTEN tombstone's, incarnation <= it) at the dead old address; a genuine higher-incarnation
+			// revival still supersedes it. Residual (inherent to SWIM): a peer partitioned LONGER than this
+			// full window can still transiently re-add the member — it re-dies within ~one liveness window
+			// (SUSPECT+UNREACHABLE), and F5 keeps backups tolerant (a stale member is skipped → PARTIAL, not
+			// fatal). A truly-dead member cannot refute for itself, so no finite tombstone fully closes this.
+			if nowMs-ms.stateSince >= r.cfg.ForgottenRetention.Milliseconds() {
 				delete(r.members, id)
 			}
 		}
