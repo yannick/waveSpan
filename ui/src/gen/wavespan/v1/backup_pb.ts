@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file wavespan/v1/backup.proto.
  */
 export const file_wavespan_v1_backup: GenFile = /*@__PURE__*/
-  fileDesc("Chh3YXZlc3Bhbi92MS9iYWNrdXAucHJvdG8SC3dhdmVzcGFuLnYxIkwKDUNyZWRlbnRpYWxSZWYSEwoLc2VjcmV0X25hbWUYASABKAkSEgoKYWNjZXNzX2tleRgCIAEoCRISCgpzZWNyZXRfa2V5GAMgASgJIrYBCgtEZXN0aW5hdGlvbhIMCgRuYW1lGAEgASgJEg4KBmJ1Y2tldBgCIAEoCRIOCgZwcmVmaXgYAyABKAkSDgoGcmVnaW9uGAQgASgJEhAKCGVuZHBvaW50GAUgASgJEg8KB3VzZV9zc2wYBiABKAgSFgoOdXNlX3BhdGhfc3R5bGUYByABKAgSLgoKY3JlZGVudGlhbBgIIAEoCzIaLndhdmVzcGFuLnYxLkNyZWRlbnRpYWxSZWYiSwoJU2VsZWN0aW9uEhIKCm5hbWVzcGFjZXMYASADKAkSDgoGZ3JhcGhzGAIgAygJEhoKEnZlY3Rvcl9jb2xsZWN0aW9ucxgDIAMoCSKgAQoKQmFja3VwU3BlYxIpCglzZWxlY3Rpb24YASABKAsyFi53YXZlc3Bhbi52MS5TZWxlY3Rpb24SKAoGcGxhbmVzGAIgAygOMhgud2F2ZXNwYW4udjEuQmFja3VwUGxhbmUSDgoGcGFyZW50GAMgASgJEi0KC2Rlc3RpbmF0aW9uGAQgASgLMhgud2F2ZXNwYW4udjEuRGVzdGluYXRpb24ieAoMTm9kZVByb2dyZXNzEhEKCW1lbWJlcl9pZBgBIAEoCRInCgVwaGFzZRgCIAEoDjIYLndhdmVzcGFuLnYxLkJhY2t1cFBoYXNlEg8KB29iamVjdHMYAyABKAMSDQoFYnl0ZXMYBCABKAMSDAoEZG9uZRgFIAEoCCLVAgoLQmFja3VwU3RhdGUSEQoJYmFja3VwX2lkGAEgASgJEikKBnN0YXR1cxgCIAEoDjIZLndhdmVzcGFuLnYxLkJhY2t1cFN0YXR1cxInCgVwaGFzZRgDIAEoDjIYLndhdmVzcGFuLnYxLkJhY2t1cFBoYXNlEisKCHBlcl9ub2RlGAQgAygLMhkud2F2ZXNwYW4udjEuTm9kZVByb2dyZXNzEhMKC292ZXJhbGxfcGN0GAUgASgBEgwKBGdhcHMYBiADKAkSEgoKc3RhcnRlZF9tcxgHIAEoAxITCgtmaW5pc2hlZF9tcxgIIAEoAxIOCgZwYXJlbnQYCSABKAkSLQoLZGVzdGluYXRpb24YCiABKAsyGC53YXZlc3Bhbi52MS5EZXN0aW5hdGlvbhInCgRtZXRhGAsgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhIqsCCg1CYWNrdXBTdW1tYXJ5EhEKCWJhY2t1cF9pZBgBIAEoCRIpCgZzdGF0dXMYAiABKA4yGS53YXZlc3Bhbi52MS5CYWNrdXBTdGF0dXMSEgoKc3RhcnRlZF9tcxgDIAEoAxITCgtmaW5pc2hlZF9tcxgEIAEoAxIOCgZwYXJlbnQYBSABKAkSKAoGcGxhbmVzGAYgAygOMhgud2F2ZXNwYW4udjEuQmFja3VwUGxhbmUSEgoKc2l6ZV9ieXRlcxgHIAEoAxItCgtkZXN0aW5hdGlvbhgIIAEoCzIYLndhdmVzcGFuLnYxLkRlc3RpbmF0aW9uEhcKD3JldGFpbl91bnRpbF9tcxgJIAEoAxIPCgdwYXJ0aWFsGAogASgIEgwKBGdhcHMYCyADKAkiOwoSQmVnaW5CYWNrdXBSZXF1ZXN0EiUKBHNwZWMYASABKAsyFy53YXZlc3Bhbi52MS5CYWNrdXBTcGVjIk8KEUJlZ2luQmFja3VwUmVzdWx0EhEKCWJhY2t1cF9pZBgBIAEoCRInCgRtZXRhGAIgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhIigKE0JhY2t1cFN0YXR1c1JlcXVlc3QSEQoJYmFja3VwX2lkGAEgASgJIhQKEkxpc3RCYWNrdXBzUmVxdWVzdCJpChFMaXN0QmFja3Vwc1Jlc3VsdBIrCgdiYWNrdXBzGAEgAygLMhoud2F2ZXNwYW4udjEuQmFja3VwU3VtbWFyeRInCgRtZXRhGAIgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhIjcKE0RlbGV0ZUJhY2t1cFJlcXVlc3QSEQoJYmFja3VwX2lkGAEgASgJEg0KBWZvcmNlGAIgASgIIk4KEkRlbGV0ZUJhY2t1cFJlc3VsdBIPCgdkZWxldGVkGAEgASgIEicKBG1ldGEYAiABKAsyGS53YXZlc3Bhbi52MS5SZXNwb25zZU1ldGEiPQoUUHJlcGFyZUJhY2t1cFJlcXVlc3QSEQoJYmFja3VwX2lkGAEgASgJEhIKCmZyb250aWVyX3QYAiABKAMiZwoTUHJlcGFyZUJhY2t1cFJlc3VsdBISCgpnbG9iYWxfc2VxGAEgASgEEhMKC2hlbGRfcmFuZ2VzGAIgAygJEicKBG1ldGEYAyABKAsyGS53YXZlc3Bhbi52MS5SZXNwb25zZU1ldGEi7wEKE0V4cG9ydEJhY2t1cFJlcXVlc3QSEQoJYmFja3VwX2lkGAEgASgJEhIKCmZyb250aWVyX3QYAiABKAMSKgoKYXNzaWdubWVudBgDIAEoCzIWLndhdmVzcGFuLnYxLlNlbGVjdGlvbhIoCgZwbGFuZXMYBCADKA4yGC53YXZlc3Bhbi52MS5CYWNrdXBQbGFuZRISCgprZXlfcHJlZml4GAUgASgJEhgKEHBhcmVudF9iYWNrdXBfaWQYBiABKAkSLQoLZGVzdGluYXRpb24YByABKAsyGC53YXZlc3Bhbi52MS5EZXN0aW5hdGlvbiKNAQoSRXhwb3J0QmFja3VwUmVzdWx0Eg8KB29iamVjdHMYASABKAMSDQoFYnl0ZXMYAiABKAMSGAoQc3ViX21hbmlmZXN0X2tleRgDIAEoCRInCgRtZXRhGAQgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhEhQKDHN0b3JhZ2VfdXVpZBgFIAEoCSp9CgxCYWNrdXBTdGF0dXMSHQoZQkFDS1VQX1NUQVRVU19VTlNQRUNJRklFRBAAEhIKDkJBQ0tVUF9SVU5OSU5HEAESEwoPQkFDS1VQX0NPTVBMRVRFEAISEgoOQkFDS1VQX1BBUlRJQUwQAxIRCg1CQUNLVVBfRkFJTEVEEAQqkAEKC0JhY2t1cFBoYXNlEhwKGEJBQ0tVUF9QSEFTRV9VTlNQRUNJRklFRBAAEhcKE0JBQ0tVUF9QSEFTRV9BU1NJR04QARIYChRCQUNLVVBfUEhBU0VfUFJFUEFSRRACEhcKE0JBQ0tVUF9QSEFTRV9FWFBPUlQQAxIXChNCQUNLVVBfUEhBU0VfQ09NTUlUEAQqYAoLQmFja3VwUGxhbmUSHAoYQkFDS1VQX1BMQU5FX1VOU1BFQ0lGSUVEEAASGAoUQkFDS1VQX1BMQU5FX0xPR0lDQUwQARIZChVCQUNLVVBfUExBTkVfUEhZU0lDQUwQAjLOAgoNQmFja3VwU2VydmljZRJOCgtCZWdpbkJhY2t1cBIfLndhdmVzcGFuLnYxLkJlZ2luQmFja3VwUmVxdWVzdBoeLndhdmVzcGFuLnYxLkJlZ2luQmFja3VwUmVzdWx0EkoKDEJhY2t1cFN0YXR1cxIgLndhdmVzcGFuLnYxLkJhY2t1cFN0YXR1c1JlcXVlc3QaGC53YXZlc3Bhbi52MS5CYWNrdXBTdGF0ZRJOCgtMaXN0QmFja3VwcxIfLndhdmVzcGFuLnYxLkxpc3RCYWNrdXBzUmVxdWVzdBoeLndhdmVzcGFuLnYxLkxpc3RCYWNrdXBzUmVzdWx0ElEKDERlbGV0ZUJhY2t1cBIgLndhdmVzcGFuLnYxLkRlbGV0ZUJhY2t1cFJlcXVlc3QaHy53YXZlc3Bhbi52MS5EZWxldGVCYWNrdXBSZXN1bHQyvAEKEUJhY2t1cE5vZGVTZXJ2aWNlElQKDVByZXBhcmVCYWNrdXASIS53YXZlc3Bhbi52MS5QcmVwYXJlQmFja3VwUmVxdWVzdBogLndhdmVzcGFuLnYxLlByZXBhcmVCYWNrdXBSZXN1bHQSUQoMRXhwb3J0QmFja3VwEiAud2F2ZXNwYW4udjEuRXhwb3J0QmFja3VwUmVxdWVzdBofLndhdmVzcGFuLnYxLkV4cG9ydEJhY2t1cFJlc3VsdEKlAQoPY29tLndhdmVzcGFuLnYxQgtCYWNrdXBQcm90b1ABWjhnaXRodWIuY29tL3lhbm5pY2svd2F2ZXNwYW4vcHJvdG8vd2F2ZXNwYW4vdjE7d2F2ZXNwYW52MaICA1dYWKoCC1dhdmVzcGFuLlYxygILV2F2ZXNwYW5cVjHiAhdXYXZlc3BhblxWMVxHUEJNZXRhZGF0YeoCDFdhdmVzcGFuOjpWMWIGcHJvdG8z", [file_wavespan_v1_common]);
+  fileDesc("Chh3YXZlc3Bhbi92MS9iYWNrdXAucHJvdG8SC3dhdmVzcGFuLnYxIkwKDUNyZWRlbnRpYWxSZWYSEwoLc2VjcmV0X25hbWUYASABKAkSEgoKYWNjZXNzX2tleRgCIAEoCRISCgpzZWNyZXRfa2V5GAMgASgJIrYBCgtEZXN0aW5hdGlvbhIMCgRuYW1lGAEgASgJEg4KBmJ1Y2tldBgCIAEoCRIOCgZwcmVmaXgYAyABKAkSDgoGcmVnaW9uGAQgASgJEhAKCGVuZHBvaW50GAUgASgJEg8KB3VzZV9zc2wYBiABKAgSFgoOdXNlX3BhdGhfc3R5bGUYByABKAgSLgoKY3JlZGVudGlhbBgIIAEoCzIaLndhdmVzcGFuLnYxLkNyZWRlbnRpYWxSZWYiSwoJU2VsZWN0aW9uEhIKCm5hbWVzcGFjZXMYASADKAkSDgoGZ3JhcGhzGAIgAygJEhoKEnZlY3Rvcl9jb2xsZWN0aW9ucxgDIAMoCSKgAQoKQmFja3VwU3BlYxIpCglzZWxlY3Rpb24YASABKAsyFi53YXZlc3Bhbi52MS5TZWxlY3Rpb24SKAoGcGxhbmVzGAIgAygOMhgud2F2ZXNwYW4udjEuQmFja3VwUGxhbmUSDgoGcGFyZW50GAMgASgJEi0KC2Rlc3RpbmF0aW9uGAQgASgLMhgud2F2ZXNwYW4udjEuRGVzdGluYXRpb24ieAoMTm9kZVByb2dyZXNzEhEKCW1lbWJlcl9pZBgBIAEoCRInCgVwaGFzZRgCIAEoDjIYLndhdmVzcGFuLnYxLkJhY2t1cFBoYXNlEg8KB29iamVjdHMYAyABKAMSDQoFYnl0ZXMYBCABKAMSDAoEZG9uZRgFIAEoCCLVAgoLQmFja3VwU3RhdGUSEQoJYmFja3VwX2lkGAEgASgJEikKBnN0YXR1cxgCIAEoDjIZLndhdmVzcGFuLnYxLkJhY2t1cFN0YXR1cxInCgVwaGFzZRgDIAEoDjIYLndhdmVzcGFuLnYxLkJhY2t1cFBoYXNlEisKCHBlcl9ub2RlGAQgAygLMhkud2F2ZXNwYW4udjEuTm9kZVByb2dyZXNzEhMKC292ZXJhbGxfcGN0GAUgASgBEgwKBGdhcHMYBiADKAkSEgoKc3RhcnRlZF9tcxgHIAEoAxITCgtmaW5pc2hlZF9tcxgIIAEoAxIOCgZwYXJlbnQYCSABKAkSLQoLZGVzdGluYXRpb24YCiABKAsyGC53YXZlc3Bhbi52MS5EZXN0aW5hdGlvbhInCgRtZXRhGAsgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhIqsCCg1CYWNrdXBTdW1tYXJ5EhEKCWJhY2t1cF9pZBgBIAEoCRIpCgZzdGF0dXMYAiABKA4yGS53YXZlc3Bhbi52MS5CYWNrdXBTdGF0dXMSEgoKc3RhcnRlZF9tcxgDIAEoAxITCgtmaW5pc2hlZF9tcxgEIAEoAxIOCgZwYXJlbnQYBSABKAkSKAoGcGxhbmVzGAYgAygOMhgud2F2ZXNwYW4udjEuQmFja3VwUGxhbmUSEgoKc2l6ZV9ieXRlcxgHIAEoAxItCgtkZXN0aW5hdGlvbhgIIAEoCzIYLndhdmVzcGFuLnYxLkRlc3RpbmF0aW9uEhcKD3JldGFpbl91bnRpbF9tcxgJIAEoAxIPCgdwYXJ0aWFsGAogASgIEgwKBGdhcHMYCyADKAkiOwoSQmVnaW5CYWNrdXBSZXF1ZXN0EiUKBHNwZWMYASABKAsyFy53YXZlc3Bhbi52MS5CYWNrdXBTcGVjIk8KEUJlZ2luQmFja3VwUmVzdWx0EhEKCWJhY2t1cF9pZBgBIAEoCRInCgRtZXRhGAIgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhIigKE0JhY2t1cFN0YXR1c1JlcXVlc3QSEQoJYmFja3VwX2lkGAEgASgJIhQKEkxpc3RCYWNrdXBzUmVxdWVzdCJpChFMaXN0QmFja3Vwc1Jlc3VsdBIrCgdiYWNrdXBzGAEgAygLMhoud2F2ZXNwYW4udjEuQmFja3VwU3VtbWFyeRInCgRtZXRhGAIgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhIjcKE0RlbGV0ZUJhY2t1cFJlcXVlc3QSEQoJYmFja3VwX2lkGAEgASgJEg0KBWZvcmNlGAIgASgIIk4KEkRlbGV0ZUJhY2t1cFJlc3VsdBIPCgdkZWxldGVkGAEgASgIEicKBG1ldGEYAiABKAsyGS53YXZlc3Bhbi52MS5SZXNwb25zZU1ldGEiigEKD0Rlc3RpbmF0aW9uSW5mbxIMCgRuYW1lGAEgASgJEg4KBmJ1Y2tldBgCIAEoCRIOCgZwcmVmaXgYAyABKAkSDgoGcmVnaW9uGAQgASgJEhAKCGVuZHBvaW50GAUgASgJEg8KB3VzZV9zc2wYBiABKAgSFgoOdXNlX3BhdGhfc3R5bGUYByABKAgiGQoXTGlzdERlc3RpbmF0aW9uc1JlcXVlc3Qi3AEKFkxpc3REZXN0aW5hdGlvbnNSZXN1bHQSOQoTZGVmYXVsdF9kZXN0aW5hdGlvbhgBIAEoCzIcLndhdmVzcGFuLnYxLkRlc3RpbmF0aW9uSW5mbxIVCg1kZWZhdWx0X2lzX2ZzGAIgASgIEisKBW5hbWVkGAMgAygLMhwud2F2ZXNwYW4udjEuRGVzdGluYXRpb25JbmZvEhoKEmFsbG93X2lubGluZV9jcmVkcxgEIAEoCBInCgRtZXRhGAUgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhIj0KFFByZXBhcmVCYWNrdXBSZXF1ZXN0EhEKCWJhY2t1cF9pZBgBIAEoCRISCgpmcm9udGllcl90GAIgASgDImcKE1ByZXBhcmVCYWNrdXBSZXN1bHQSEgoKZ2xvYmFsX3NlcRgBIAEoBBITCgtoZWxkX3JhbmdlcxgCIAMoCRInCgRtZXRhGAMgASgLMhkud2F2ZXNwYW4udjEuUmVzcG9uc2VNZXRhIu8BChNFeHBvcnRCYWNrdXBSZXF1ZXN0EhEKCWJhY2t1cF9pZBgBIAEoCRISCgpmcm9udGllcl90GAIgASgDEioKCmFzc2lnbm1lbnQYAyABKAsyFi53YXZlc3Bhbi52MS5TZWxlY3Rpb24SKAoGcGxhbmVzGAQgAygOMhgud2F2ZXNwYW4udjEuQmFja3VwUGxhbmUSEgoKa2V5X3ByZWZpeBgFIAEoCRIYChBwYXJlbnRfYmFja3VwX2lkGAYgASgJEi0KC2Rlc3RpbmF0aW9uGAcgASgLMhgud2F2ZXNwYW4udjEuRGVzdGluYXRpb24ijQEKEkV4cG9ydEJhY2t1cFJlc3VsdBIPCgdvYmplY3RzGAEgASgDEg0KBWJ5dGVzGAIgASgDEhgKEHN1Yl9tYW5pZmVzdF9rZXkYAyABKAkSJwoEbWV0YRgEIAEoCzIZLndhdmVzcGFuLnYxLlJlc3BvbnNlTWV0YRIUCgxzdG9yYWdlX3V1aWQYBSABKAkqfQoMQmFja3VwU3RhdHVzEh0KGUJBQ0tVUF9TVEFUVVNfVU5TUEVDSUZJRUQQABISCg5CQUNLVVBfUlVOTklORxABEhMKD0JBQ0tVUF9DT01QTEVURRACEhIKDkJBQ0tVUF9QQVJUSUFMEAMSEQoNQkFDS1VQX0ZBSUxFRBAEKpABCgtCYWNrdXBQaGFzZRIcChhCQUNLVVBfUEhBU0VfVU5TUEVDSUZJRUQQABIXChNCQUNLVVBfUEhBU0VfQVNTSUdOEAESGAoUQkFDS1VQX1BIQVNFX1BSRVBBUkUQAhIXChNCQUNLVVBfUEhBU0VfRVhQT1JUEAMSFwoTQkFDS1VQX1BIQVNFX0NPTU1JVBAEKmAKC0JhY2t1cFBsYW5lEhwKGEJBQ0tVUF9QTEFORV9VTlNQRUNJRklFRBAAEhgKFEJBQ0tVUF9QTEFORV9MT0dJQ0FMEAESGQoVQkFDS1VQX1BMQU5FX1BIWVNJQ0FMEAIyrQMKDUJhY2t1cFNlcnZpY2USTgoLQmVnaW5CYWNrdXASHy53YXZlc3Bhbi52MS5CZWdpbkJhY2t1cFJlcXVlc3QaHi53YXZlc3Bhbi52MS5CZWdpbkJhY2t1cFJlc3VsdBJKCgxCYWNrdXBTdGF0dXMSIC53YXZlc3Bhbi52MS5CYWNrdXBTdGF0dXNSZXF1ZXN0Ghgud2F2ZXNwYW4udjEuQmFja3VwU3RhdGUSTgoLTGlzdEJhY2t1cHMSHy53YXZlc3Bhbi52MS5MaXN0QmFja3Vwc1JlcXVlc3QaHi53YXZlc3Bhbi52MS5MaXN0QmFja3Vwc1Jlc3VsdBJRCgxEZWxldGVCYWNrdXASIC53YXZlc3Bhbi52MS5EZWxldGVCYWNrdXBSZXF1ZXN0Gh8ud2F2ZXNwYW4udjEuRGVsZXRlQmFja3VwUmVzdWx0El0KEExpc3REZXN0aW5hdGlvbnMSJC53YXZlc3Bhbi52MS5MaXN0RGVzdGluYXRpb25zUmVxdWVzdBojLndhdmVzcGFuLnYxLkxpc3REZXN0aW5hdGlvbnNSZXN1bHQyvAEKEUJhY2t1cE5vZGVTZXJ2aWNlElQKDVByZXBhcmVCYWNrdXASIS53YXZlc3Bhbi52MS5QcmVwYXJlQmFja3VwUmVxdWVzdBogLndhdmVzcGFuLnYxLlByZXBhcmVCYWNrdXBSZXN1bHQSUQoMRXhwb3J0QmFja3VwEiAud2F2ZXNwYW4udjEuRXhwb3J0QmFja3VwUmVxdWVzdBofLndhdmVzcGFuLnYxLkV4cG9ydEJhY2t1cFJlc3VsdEKlAQoPY29tLndhdmVzcGFuLnYxQgtCYWNrdXBQcm90b1ABWjhnaXRodWIuY29tL3lhbm5pY2svd2F2ZXNwYW4vcHJvdG8vd2F2ZXNwYW4vdjE7d2F2ZXNwYW52MaICA1dYWKoCC1dhdmVzcGFuLlYxygILV2F2ZXNwYW5cVjHiAhdXYXZlc3BhblxWMVxHUEJNZXRhZGF0YeoCDFdhdmVzcGFuOjpWMWIGcHJvdG8z", [file_wavespan_v1_common]);
 
 /**
  * CredentialRef references a credential held outside the request (e.g. a k8s secret name / env ref),
@@ -492,6 +492,112 @@ export const DeleteBackupResultSchema: GenMessage<DeleteBackupResult> = /*@__PUR
   messageDesc(file_wavespan_v1_backup, 13);
 
 /**
+ * DestinationInfo is a configured backup destination's NON-SECRET descriptor for the admin UI. It has NO
+ * credential field by design — it is structurally impossible to leak a key through this message.
+ *
+ * @generated from message wavespan.v1.DestinationInfo
+ */
+export type DestinationInfo = Message<"wavespan.v1.DestinationInfo"> & {
+  /**
+   * set for a named destination; empty for the default
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string bucket = 2;
+   */
+  bucket: string;
+
+  /**
+   * @generated from field: string prefix = 3;
+   */
+  prefix: string;
+
+  /**
+   * @generated from field: string region = 4;
+   */
+  region: string;
+
+  /**
+   * @generated from field: string endpoint = 5;
+   */
+  endpoint: string;
+
+  /**
+   * @generated from field: bool use_ssl = 6;
+   */
+  useSsl: boolean;
+
+  /**
+   * @generated from field: bool use_path_style = 7;
+   */
+  usePathStyle: boolean;
+};
+
+/**
+ * Describes the message wavespan.v1.DestinationInfo.
+ * Use `create(DestinationInfoSchema)` to create a new message.
+ */
+export const DestinationInfoSchema: GenMessage<DestinationInfo> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_backup, 14);
+
+/**
+ * @generated from message wavespan.v1.ListDestinationsRequest
+ */
+export type ListDestinationsRequest = Message<"wavespan.v1.ListDestinationsRequest"> & {
+};
+
+/**
+ * Describes the message wavespan.v1.ListDestinationsRequest.
+ * Use `create(ListDestinationsRequestSchema)` to create a new message.
+ */
+export const ListDestinationsRequestSchema: GenMessage<ListDestinationsRequest> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_backup, 15);
+
+/**
+ * @generated from message wavespan.v1.ListDestinationsResult
+ */
+export type ListDestinationsResult = Message<"wavespan.v1.ListDestinationsResult"> & {
+  /**
+   * @generated from field: wavespan.v1.DestinationInfo default_destination = 1;
+   */
+  defaultDestination?: DestinationInfo | undefined;
+
+  /**
+   * the default has no bucket → local filesystem fallback (dev)
+   *
+   * @generated from field: bool default_is_fs = 2;
+   */
+  defaultIsFs: boolean;
+
+  /**
+   * @generated from field: repeated wavespan.v1.DestinationInfo named = 3;
+   */
+  named: DestinationInfo[];
+
+  /**
+   * whether ad-hoc explicit destinations may carry inline credentials
+   *
+   * @generated from field: bool allow_inline_creds = 4;
+   */
+  allowInlineCreds: boolean;
+
+  /**
+   * @generated from field: wavespan.v1.ResponseMeta meta = 5;
+   */
+  meta?: ResponseMeta | undefined;
+};
+
+/**
+ * Describes the message wavespan.v1.ListDestinationsResult.
+ * Use `create(ListDestinationsResultSchema)` to create a new message.
+ */
+export const ListDestinationsResultSchema: GenMessage<ListDestinationsResult> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_backup, 16);
+
+/**
  * PrepareBackupRequest asks a node to seal its view at frontier_t.
  *
  * @generated from message wavespan.v1.PrepareBackupRequest
@@ -513,7 +619,7 @@ export type PrepareBackupRequest = Message<"wavespan.v1.PrepareBackupRequest"> &
  * Use `create(PrepareBackupRequestSchema)` to create a new message.
  */
 export const PrepareBackupRequestSchema: GenMessage<PrepareBackupRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_backup, 14);
+  messageDesc(file_wavespan_v1_backup, 17);
 
 /**
  * @generated from message wavespan.v1.PrepareBackupResult
@@ -540,7 +646,7 @@ export type PrepareBackupResult = Message<"wavespan.v1.PrepareBackupResult"> & {
  * Use `create(PrepareBackupResultSchema)` to create a new message.
  */
 export const PrepareBackupResultSchema: GenMessage<PrepareBackupResult> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_backup, 15);
+  messageDesc(file_wavespan_v1_backup, 18);
 
 /**
  * ExportBackupRequest asks a node to export its assignment under key_prefix.
@@ -596,7 +702,7 @@ export type ExportBackupRequest = Message<"wavespan.v1.ExportBackupRequest"> & {
  * Use `create(ExportBackupRequestSchema)` to create a new message.
  */
 export const ExportBackupRequestSchema: GenMessage<ExportBackupRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_backup, 16);
+  messageDesc(file_wavespan_v1_backup, 19);
 
 /**
  * @generated from message wavespan.v1.ExportBackupResult
@@ -635,7 +741,7 @@ export type ExportBackupResult = Message<"wavespan.v1.ExportBackupResult"> & {
  * Use `create(ExportBackupResultSchema)` to create a new message.
  */
 export const ExportBackupResultSchema: GenMessage<ExportBackupResult> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_backup, 17);
+  messageDesc(file_wavespan_v1_backup, 20);
 
 /**
  * BackupStatus is the lifecycle state of a backup.
@@ -793,6 +899,17 @@ export const BackupService: GenService<{
     methodKind: "unary";
     input: typeof DeleteBackupRequestSchema;
     output: typeof DeleteBackupResultSchema;
+  },
+  /**
+   * ListDestinations reports the node's configured backup destinations (default + named) for the admin
+   * UI. It returns only non-secret descriptor fields — never any credential.
+   *
+   * @generated from rpc wavespan.v1.BackupService.ListDestinations
+   */
+  listDestinations: {
+    methodKind: "unary";
+    input: typeof ListDestinationsRequestSchema;
+    output: typeof ListDestinationsResultSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_wavespan_v1_backup, 0);

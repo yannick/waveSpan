@@ -21,6 +21,7 @@ type backupCoordinator interface {
 	BeginBackup(ctx context.Context, spec *wavespanv1.BackupSpec) (string, error)
 	BackupStatus(ctx context.Context, backupID string) (*wavespanv1.BackupState, error)
 	ListBackups(ctx context.Context) ([]*wavespanv1.BackupSummary, error)
+	ListDestinations(ctx context.Context) (*wavespanv1.ListDestinationsResult, error)
 	DeleteBackup(ctx context.Context, backupID string, force bool) (bool, error)
 	PrepareLocal(ctx context.Context, req *wavespanv1.PrepareBackupRequest) (*wavespanv1.PrepareBackupResult, error)
 	ExportLocal(ctx context.Context, req *wavespanv1.ExportBackupRequest) (*wavespanv1.ExportBackupResult, error)
@@ -89,6 +90,20 @@ func (s *Service) ListBackups(ctx context.Context, _ *connect.Request[wavespanv1
 		return nil, backupErr(err)
 	}
 	return connect.NewResponse(&wavespanv1.ListBackupsResult{Backups: list, Meta: s.meta()}), nil
+}
+
+// ListDestinations reports the node's configured backup destinations (default + named) for the admin UI.
+// The result carries only non-secret descriptor fields — never any credential.
+func (s *Service) ListDestinations(ctx context.Context, _ *connect.Request[wavespanv1.ListDestinationsRequest]) (*connect.Response[wavespanv1.ListDestinationsResult], error) {
+	if s.backup == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errBackupUnconfigured)
+	}
+	res, err := s.backup.ListDestinations(ctx)
+	if err != nil {
+		return nil, backupErr(err)
+	}
+	res.Meta = s.meta()
+	return connect.NewResponse(res), nil
 }
 
 // DeleteBackup removes a backup's catalog intent and its object-store objects, chain-aware (Phase 3d).

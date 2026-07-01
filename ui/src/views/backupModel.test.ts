@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { create } from "@bufbuild/protobuf";
-import { BackupStatus, BackupPhase, BackupPlane, BackupSummarySchema } from "../gen/wavespan/v1/backup_pb";
+import { BackupStatus, BackupPhase, BackupPlane, BackupSummarySchema, DestinationInfoSchema, ListDestinationsResultSchema } from "../gen/wavespan/v1/backup_pb";
 import {
   statusLabel,
   statusTone,
@@ -19,6 +19,8 @@ import {
   destinationLabel,
   summaryRow,
   backupHelp,
+  defaultDestLabel,
+  namedOptions,
   type HelpKey,
 } from "./backupModel";
 
@@ -229,6 +231,40 @@ describe("backupHelp", () => {
         expect(p.trim().length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("destinations (ListDestinations formatting)", () => {
+  it("defaultDestLabel shows bucket @ endpoint, or local FS", () => {
+    expect(defaultDestLabel(null)).toBe("…");
+    const fs = create(ListDestinationsResultSchema, { defaultIsFs: true });
+    expect(defaultDestLabel(fs)).toBe("local filesystem (dev)");
+    const s3 = create(ListDestinationsResultSchema, {
+      defaultDestination: { bucket: "wavespan-de-stag", endpoint: "s3.de.io.cloud.ovh.net" },
+    });
+    expect(defaultDestLabel(s3)).toBe("wavespan-de-stag @ s3.de.io.cloud.ovh.net");
+  });
+
+  it("namedOptions maps name — bucket", () => {
+    const r = create(ListDestinationsResultSchema, {
+      named: [
+        { name: "alt", bucket: "wavespan2-de-stag" },
+        { name: "cold", bucket: "cold-bkt" },
+      ],
+    });
+    expect(namedOptions(r)).toEqual([
+      { value: "alt", label: "alt — wavespan2-de-stag" },
+      { value: "cold", label: "cold — cold-bkt" },
+    ]);
+    expect(namedOptions(null)).toEqual([]);
+  });
+
+  it("DestinationInfo has NO credential field (structural no-secret guarantee)", () => {
+    const info = create(DestinationInfoSchema, {});
+    // The wire type carries only non-secret descriptor fields — a credential field must not exist.
+    expect(Object.keys(info)).not.toContain("credential");
+    expect(Object.keys(info)).not.toContain("accessKey");
+    expect(Object.keys(info)).not.toContain("secretKey");
   });
 });
 

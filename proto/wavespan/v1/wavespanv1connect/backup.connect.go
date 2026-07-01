@@ -47,6 +47,9 @@ const (
 	// BackupServiceDeleteBackupProcedure is the fully-qualified name of the BackupService's
 	// DeleteBackup RPC.
 	BackupServiceDeleteBackupProcedure = "/wavespan.v1.BackupService/DeleteBackup"
+	// BackupServiceListDestinationsProcedure is the fully-qualified name of the BackupService's
+	// ListDestinations RPC.
+	BackupServiceListDestinationsProcedure = "/wavespan.v1.BackupService/ListDestinations"
 	// BackupNodeServicePrepareBackupProcedure is the fully-qualified name of the BackupNodeService's
 	// PrepareBackup RPC.
 	BackupNodeServicePrepareBackupProcedure = "/wavespan.v1.BackupNodeService/PrepareBackup"
@@ -66,6 +69,9 @@ type BackupServiceClient interface {
 	ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResult], error)
 	// DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
 	DeleteBackup(context.Context, *connect.Request[v1.DeleteBackupRequest]) (*connect.Response[v1.DeleteBackupResult], error)
+	// ListDestinations reports the node's configured backup destinations (default + named) for the admin
+	// UI. It returns only non-secret descriptor fields — never any credential.
+	ListDestinations(context.Context, *connect.Request[v1.ListDestinationsRequest]) (*connect.Response[v1.ListDestinationsResult], error)
 }
 
 // NewBackupServiceClient constructs a client for the wavespan.v1.BackupService service. By default,
@@ -103,15 +109,22 @@ func NewBackupServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(backupServiceMethods.ByName("DeleteBackup")),
 			connect.WithClientOptions(opts...),
 		),
+		listDestinations: connect.NewClient[v1.ListDestinationsRequest, v1.ListDestinationsResult](
+			httpClient,
+			baseURL+BackupServiceListDestinationsProcedure,
+			connect.WithSchema(backupServiceMethods.ByName("ListDestinations")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // backupServiceClient implements BackupServiceClient.
 type backupServiceClient struct {
-	beginBackup  *connect.Client[v1.BeginBackupRequest, v1.BeginBackupResult]
-	backupStatus *connect.Client[v1.BackupStatusRequest, v1.BackupState]
-	listBackups  *connect.Client[v1.ListBackupsRequest, v1.ListBackupsResult]
-	deleteBackup *connect.Client[v1.DeleteBackupRequest, v1.DeleteBackupResult]
+	beginBackup      *connect.Client[v1.BeginBackupRequest, v1.BeginBackupResult]
+	backupStatus     *connect.Client[v1.BackupStatusRequest, v1.BackupState]
+	listBackups      *connect.Client[v1.ListBackupsRequest, v1.ListBackupsResult]
+	deleteBackup     *connect.Client[v1.DeleteBackupRequest, v1.DeleteBackupResult]
+	listDestinations *connect.Client[v1.ListDestinationsRequest, v1.ListDestinationsResult]
 }
 
 // BeginBackup calls wavespan.v1.BackupService.BeginBackup.
@@ -134,6 +147,11 @@ func (c *backupServiceClient) DeleteBackup(ctx context.Context, req *connect.Req
 	return c.deleteBackup.CallUnary(ctx, req)
 }
 
+// ListDestinations calls wavespan.v1.BackupService.ListDestinations.
+func (c *backupServiceClient) ListDestinations(ctx context.Context, req *connect.Request[v1.ListDestinationsRequest]) (*connect.Response[v1.ListDestinationsResult], error) {
+	return c.listDestinations.CallUnary(ctx, req)
+}
+
 // BackupServiceHandler is an implementation of the wavespan.v1.BackupService service.
 type BackupServiceHandler interface {
 	// BeginBackup records a durable BackupIntent, picks a cluster HLC frontier, and drives the
@@ -145,6 +163,9 @@ type BackupServiceHandler interface {
 	ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResult], error)
 	// DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
 	DeleteBackup(context.Context, *connect.Request[v1.DeleteBackupRequest]) (*connect.Response[v1.DeleteBackupResult], error)
+	// ListDestinations reports the node's configured backup destinations (default + named) for the admin
+	// UI. It returns only non-secret descriptor fields — never any credential.
+	ListDestinations(context.Context, *connect.Request[v1.ListDestinationsRequest]) (*connect.Response[v1.ListDestinationsResult], error)
 }
 
 // NewBackupServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -178,6 +199,12 @@ func NewBackupServiceHandler(svc BackupServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(backupServiceMethods.ByName("DeleteBackup")),
 		connect.WithHandlerOptions(opts...),
 	)
+	backupServiceListDestinationsHandler := connect.NewUnaryHandler(
+		BackupServiceListDestinationsProcedure,
+		svc.ListDestinations,
+		connect.WithSchema(backupServiceMethods.ByName("ListDestinations")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.BackupService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case BackupServiceBeginBackupProcedure:
@@ -188,6 +215,8 @@ func NewBackupServiceHandler(svc BackupServiceHandler, opts ...connect.HandlerOp
 			backupServiceListBackupsHandler.ServeHTTP(w, r)
 		case BackupServiceDeleteBackupProcedure:
 			backupServiceDeleteBackupHandler.ServeHTTP(w, r)
+		case BackupServiceListDestinationsProcedure:
+			backupServiceListDestinationsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -211,6 +240,10 @@ func (UnimplementedBackupServiceHandler) ListBackups(context.Context, *connect.R
 
 func (UnimplementedBackupServiceHandler) DeleteBackup(context.Context, *connect.Request[v1.DeleteBackupRequest]) (*connect.Response[v1.DeleteBackupResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.BackupService.DeleteBackup is not implemented"))
+}
+
+func (UnimplementedBackupServiceHandler) ListDestinations(context.Context, *connect.Request[v1.ListDestinationsRequest]) (*connect.Response[v1.ListDestinationsResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.BackupService.ListDestinations is not implemented"))
 }
 
 // BackupNodeServiceClient is a client for the wavespan.v1.BackupNodeService service.

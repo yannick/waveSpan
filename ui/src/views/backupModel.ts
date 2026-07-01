@@ -3,7 +3,7 @@
 // stays thin — mirrors src/lib/valuecodec.ts + its test).
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { BackupStatus, BackupPhase, BackupPlane, BeginBackupRequestSchema } from "../gen/wavespan/v1/backup_pb";
-import type { BackupSummary, Destination } from "../gen/wavespan/v1/backup_pb";
+import type { BackupSummary, Destination, ListDestinationsResult } from "../gen/wavespan/v1/backup_pb";
 
 export type Tone = "neutral" | "success" | "warning" | "danger" | "info";
 
@@ -240,6 +240,27 @@ export function emptyForm(): BackupForm {
     accessKey: "",
     secretKey: "",
   };
+}
+
+// defaultDestLabel describes where the DEFAULT destination writes, for the trigger form's "Default"
+// option — the bucket [@ endpoint], or the local FS fallback in dev. Reads only descriptor fields.
+export function defaultDestLabel(d: ListDestinationsResult | null | undefined): string {
+  if (!d) return "…";
+  const dd = d.defaultDestination;
+  if (d.defaultIsFs || !dd || !dd.bucket) return "local filesystem (dev)";
+  return dd.endpoint ? `${dd.bucket} @ ${dd.endpoint}` : dd.bucket;
+}
+
+// NamedOption is a dropdown entry for a configured named destination (value = the name to send).
+export interface NamedOption {
+  value: string;
+  label: string;
+}
+
+// namedOptions maps the configured named destinations to dropdown entries (name — bucket). No creds.
+export function namedOptions(d: ListDestinationsResult | null | undefined): NamedOption[] {
+  if (!d) return [];
+  return d.named.map((n) => ({ value: n.name, label: n.bucket ? `${n.name} — ${n.bucket}` : n.name }));
 }
 
 // destinationLabel renders a backup's destination for the list: the bucket (with prefix), a named
