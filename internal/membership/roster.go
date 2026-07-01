@@ -198,15 +198,21 @@ func (r *Roster) Tick(now time.Time) {
 				r.setState(ms, StateDead, now)
 			}
 		case StateDead:
-			if ms.repairDone && nowMs-ms.stateSince >= r.cfg.DeadRetention.Milliseconds() {
-				r.setState(ms, StateForgotten, now)
+			// Evict a dead member after DeadRetention (the guaranteed time-based backstop) OR earlier if
+			// repair has released its holder records (repairDone). On eviction, delete it from the map so
+			// the roster can't grow unbounded — a churned cluster's dead entries are reclaimed rather than
+			// lingering in Members() forever (which staled the roster and forced backups to PARTIAL).
+			if nowMs-ms.stateSince >= r.cfg.DeadRetention.Milliseconds() || ms.repairDone {
+				r.setState(ms, StateForgotten, now) // fire the transition observer before removal
+				delete(r.members, id)
 			}
 		}
 	}
 }
 
-// MarkRepairComplete signals that repair no longer needs a dead member's holder records, so it
-// may be forgotten after retention (design/04: "do not forget dead members" until then).
+// MarkRepairComplete signals that repair no longer needs a dead member's holder records, so it may be
+// forgotten EARLY — before the DeadRetention backstop that evicts it regardless (see Tick). Optional: a
+// dead member is always evicted after retention even if this is never called.
 func (r *Roster) MarkRepairComplete(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

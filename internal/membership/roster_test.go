@@ -60,9 +60,9 @@ func TestLivenessSuspectToUnreachableToDead(t *testing.T) {
 	}
 }
 
-func TestDeadRetainedUntilRepairAndRetention(t *testing.T) {
-	base := time.Unix(2_000_000, 0)
-	r := NewRoster(mem("self"), testCfg(), 0)
+// drivePeerToDead advances p1 through SUSPECT->UNREACHABLE->DEAD via Tick.
+func drivePeerToDead(t *testing.T, r *Roster, base time.Time) {
+	t.Helper()
 	r.Upsert(mem("p1"), base)
 	r.Suspect("p1", base)
 	r.Tick(at(base, 4*time.Second))  // -> UNREACHABLE
@@ -70,23 +70,48 @@ func TestDeadRetainedUntilRepairAndRetention(t *testing.T) {
 	if stateOf(t, r, "p1") != StateDead {
 		t.Fatal("expected DEAD")
 	}
-	// retention elapsed but repair NOT complete: must stay DEAD (holder records needed)
+}
+
+// TestDeadEvictedAfterRetentionWithoutRepair: a dead member is evicted after DeadRetention even when
+// MarkRepairComplete is never called (it has no production callers). Before the fix such members stayed
+// DEAD forever and Members() kept returning them (the stag stale-roster growth).
+func TestDeadEvictedAfterRetentionWithoutRepair(t *testing.T) {
+	base := time.Unix(2_000_000, 0)
+	r := NewRoster(mem("self"), testCfg(), 0)
+	drivePeerToDead(t, r, base) // DEAD at ~base+15s, no MarkRepairComplete
+
+	// Before DeadRetention (1m): still DEAD, still present.
+	r.Tick(at(base, 30*time.Second))
+	if stateOf(t, r, "p1") != StateDead {
+		t.Fatal("before retention the dead member must still be present as DEAD")
+	}
+	// After DeadRetention: evicted (deleted from the roster map, absent from Members()).
 	r.Tick(at(base, 2*time.Minute))
-	if got := stateOf(t, r, "p1"); got != StateDead {
-		t.Fatalf("dead member forgotten before repair complete: %s", got)
-	}
-	// repair complete + retention -> FORGOTTEN (drops out of Members())
-	r.MarkRepairComplete("p1")
-	r.Tick(at(base, 4*time.Minute))
-	if _, ok := r.Get("p1"); !ok {
-		t.Fatal("get should still resolve")
-	}
-	if stateOf(t, r, "p1") != StateForgotten {
-		t.Fatal("expected FORGOTTEN after repair+retention")
+	if _, ok := r.Get("p1"); ok {
+		t.Fatal("dead member must be EVICTED (deleted) after retention even without repair")
 	}
 	for _, m := range r.Members() {
 		if m.Member.MemberID == "p1" {
-			t.Fatal("forgotten member should not appear in Members()")
+			t.Fatal("evicted member must not appear in Members()")
+		}
+	}
+}
+
+// TestDeadForgottenEarlyOnRepairComplete: MarkRepairComplete is the optional EARLIER-forget path — a dead
+// member whose repair is done is evicted immediately, before the full retention backstop elapses.
+func TestDeadForgottenEarlyOnRepairComplete(t *testing.T) {
+	base := time.Unix(2_500_000, 0)
+	r := NewRoster(mem("self"), testCfg(), 0)
+	drivePeerToDead(t, r, base) // DEAD at ~base+15s
+
+	r.MarkRepairComplete("p1")
+	r.Tick(at(base, 20*time.Second)) // still well within DeadRetention (1m), but repair done → forget now
+	if _, ok := r.Get("p1"); ok {
+		t.Fatal("a repair-complete dead member must be forgotten EARLY (before full retention)")
+	}
+	for _, m := range r.Members() {
+		if m.Member.MemberID == "p1" {
+			t.Fatal("early-forgotten member must not appear in Members()")
 		}
 	}
 }
