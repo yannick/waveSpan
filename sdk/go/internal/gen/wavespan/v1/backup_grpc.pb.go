@@ -19,10 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	BackupService_BeginBackup_FullMethodName  = "/wavespan.v1.BackupService/BeginBackup"
-	BackupService_BackupStatus_FullMethodName = "/wavespan.v1.BackupService/BackupStatus"
-	BackupService_ListBackups_FullMethodName  = "/wavespan.v1.BackupService/ListBackups"
-	BackupService_DeleteBackup_FullMethodName = "/wavespan.v1.BackupService/DeleteBackup"
+	BackupService_BeginBackup_FullMethodName      = "/wavespan.v1.BackupService/BeginBackup"
+	BackupService_BackupStatus_FullMethodName     = "/wavespan.v1.BackupService/BackupStatus"
+	BackupService_ListBackups_FullMethodName      = "/wavespan.v1.BackupService/ListBackups"
+	BackupService_DeleteBackup_FullMethodName     = "/wavespan.v1.BackupService/DeleteBackup"
+	BackupService_ListDestinations_FullMethodName = "/wavespan.v1.BackupService/ListDestinations"
 )
 
 // BackupServiceClient is the client API for BackupService service.
@@ -44,6 +45,9 @@ type BackupServiceClient interface {
 	ListBackups(ctx context.Context, in *ListBackupsRequest, opts ...grpc.CallOption) (*ListBackupsResult, error)
 	// DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
 	DeleteBackup(ctx context.Context, in *DeleteBackupRequest, opts ...grpc.CallOption) (*DeleteBackupResult, error)
+	// ListDestinations reports the node's configured backup destinations (default + named) for the admin
+	// UI. It returns only non-secret descriptor fields — never any credential.
+	ListDestinations(ctx context.Context, in *ListDestinationsRequest, opts ...grpc.CallOption) (*ListDestinationsResult, error)
 }
 
 type backupServiceClient struct {
@@ -94,6 +98,16 @@ func (c *backupServiceClient) DeleteBackup(ctx context.Context, in *DeleteBackup
 	return out, nil
 }
 
+func (c *backupServiceClient) ListDestinations(ctx context.Context, in *ListDestinationsRequest, opts ...grpc.CallOption) (*ListDestinationsResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDestinationsResult)
+	err := c.cc.Invoke(ctx, BackupService_ListDestinations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BackupServiceServer is the server API for BackupService service.
 // All implementations must embed UnimplementedBackupServiceServer
 // for forward compatibility.
@@ -113,6 +127,9 @@ type BackupServiceServer interface {
 	ListBackups(context.Context, *ListBackupsRequest) (*ListBackupsResult, error)
 	// DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
 	DeleteBackup(context.Context, *DeleteBackupRequest) (*DeleteBackupResult, error)
+	// ListDestinations reports the node's configured backup destinations (default + named) for the admin
+	// UI. It returns only non-secret descriptor fields — never any credential.
+	ListDestinations(context.Context, *ListDestinationsRequest) (*ListDestinationsResult, error)
 	mustEmbedUnimplementedBackupServiceServer()
 }
 
@@ -134,6 +151,9 @@ func (UnimplementedBackupServiceServer) ListBackups(context.Context, *ListBackup
 }
 func (UnimplementedBackupServiceServer) DeleteBackup(context.Context, *DeleteBackupRequest) (*DeleteBackupResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteBackup not implemented")
+}
+func (UnimplementedBackupServiceServer) ListDestinations(context.Context, *ListDestinationsRequest) (*ListDestinationsResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDestinations not implemented")
 }
 func (UnimplementedBackupServiceServer) mustEmbedUnimplementedBackupServiceServer() {}
 func (UnimplementedBackupServiceServer) testEmbeddedByValue()                       {}
@@ -228,6 +248,24 @@ func _BackupService_DeleteBackup_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BackupService_ListDestinations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDestinationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BackupServiceServer).ListDestinations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BackupService_ListDestinations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BackupServiceServer).ListDestinations(ctx, req.(*ListDestinationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BackupService_ServiceDesc is the grpc.ServiceDesc for BackupService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -250,6 +288,10 @@ var BackupService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteBackup",
 			Handler:    _BackupService_DeleteBackup_Handler,
+		},
+		{
+			MethodName: "ListDestinations",
+			Handler:    _BackupService_ListDestinations_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
