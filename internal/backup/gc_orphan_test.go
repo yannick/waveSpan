@@ -88,6 +88,12 @@ func (h *hidingMetaStore) ListBlobs(ctx context.Context) (map[string][]byte, err
 	return m, nil
 }
 
+// ListBlobsStale hides the id too — ReconcileOrphans's enumeration scan now uses the stale list, so the
+// TOCTOU window (id absent from the scan snapshot, present via the fresh GetBlob re-check) is simulated here.
+func (h *hidingMetaStore) ListBlobsStale(ctx context.Context) (map[string][]byte, error) {
+	return h.ListBlobs(ctx)
+}
+
 // TestReconcileOrphansTOCTOU proves an in-flight backup (intent created after the live snapshot, so
 // absent from it) is NOT collected: the fresh GetIntent re-check sees it and its objects survive, while
 // a genuinely intent-less backup id is still deleted.
