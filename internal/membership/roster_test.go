@@ -182,6 +182,29 @@ func TestForgottenMemberRevivesOnHigherIncarnation(t *testing.T) {
 	}
 }
 
+// TestForgottenTimerNotResetByReLearn locks the bounded-growth invariant: a stale gossip re-learning a
+// FORGOTTEN member (incarnation <= tombstone) must NOT reset its ForgottenRetention timer, so active
+// gossip cannot keep a tombstone alive forever — it is still deleted on its ORIGINAL schedule.
+func TestForgottenTimerNotResetByReLearn(t *testing.T) {
+	base := time.Unix(9_700_000, 0)
+	r := NewRoster(mem("self"), testCfg(), 0)
+	m := addrMember("p1", "10.0.0.1")
+	driveMemberToForgotten(t, r, m, base) // FORGOTTEN at base+90s; delete deadline = +90s + ForgottenRetention(1m) = +150s
+
+	// Re-learn partway through ForgottenRetention: a stale ALIVE (and a stale DEAD) about the tombstone.
+	r.ApplyGossip(MemberView{Member: m, State: StateAlive, Incarnation: 0}, at(base, 120*time.Second))
+	r.ApplyGossip(MemberView{Member: m, State: StateDead, Incarnation: 0}, at(base, 130*time.Second))
+	if stateOf(t, r, "p1") != StateForgotten {
+		t.Fatal("a stale re-learn must not revive or change the tombstone")
+	}
+	// Past the ORIGINAL deadline (+150s): deleted on schedule — the re-learn did NOT push it out. Had the
+	// timer reset at the +130s re-learn, the deadline would be +190s and this Tick would NOT delete.
+	r.Tick(at(base, 155*time.Second))
+	if _, ok := r.Get("p1"); ok {
+		t.Fatal("re-learning a FORGOTTEN member must not extend ForgottenRetention — must delete on the original schedule")
+	}
+}
+
 func TestObserveAckRevivesSuspect(t *testing.T) {
 	base := time.Unix(3_000_000, 0)
 	r := NewRoster(mem("self"), testCfg(), 0)
