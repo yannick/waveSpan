@@ -11,8 +11,7 @@ import (
 
 // grpcConnPool caches one *grpc.ClientConn per peer address. gRPC multiplexes all concurrent RPCs
 // for a peer over that single connection, so a per-address cache (not per-call dial) is what keeps
-// internal node→node traffic on shared HTTP/2 connections — mirroring the H2CClient pooling posture
-// the Connect clients used.
+// internal node→node traffic on shared, pooled HTTP/2 connections.
 var (
 	grpcConnMu   sync.Mutex
 	grpcConnPool = map[string]*grpc.ClientConn{}
@@ -20,9 +19,9 @@ var (
 
 // GRPCConn returns a cached *grpc.ClientConn for addr (a host:port, NOT a "http://..." URL). The
 // first call for an address dials it; subsequent calls return the same conn. The connection is
-// cleartext/insecure — it mirrors H2CClient's dev posture (production TLS for grpc clients is a
-// separate follow-up). grpc.NewClient is lazy: it does not block on a live connection here; the
-// first RPC drives connection establishment.
+// cleartext/insecure for the dev/cluster path (production TLS for grpc clients is a separate
+// follow-up). grpc.NewClient is lazy: it does not block on a live connection here; the first RPC
+// drives connection establishment.
 func GRPCConn(addr string) (grpc.ClientConnInterface, error) {
 	grpcConnMu.Lock()
 	defer grpcConnMu.Unlock()

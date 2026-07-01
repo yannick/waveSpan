@@ -2,7 +2,6 @@ package cypher
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/yannick/wavespan/internal/rpcopts"
 	"github.com/yannick/wavespan/internal/vector"
@@ -22,10 +21,9 @@ type ScatterFunc func(ctx context.Context, indexName string, query []float32, k,
 // NewVectorScatter builds the scatter closure used by the executor's distributed vector search
 // (design/08): for each alive peer other than self it calls VectorService.SearchLocal and collects
 // the returned fragment. A peer that errors is counted unreachable, not fatal. peers() is evaluated
-// per query so it tracks live membership; clients are cached per address.
-// The hc argument is retained for call-site compatibility but is unused: peer Vector clients are now
+// per query so it tracks live membership; clients are cached per address. Peer Vector clients are
 // dialled over gRPC via the rpcopts pooled connections.
-func NewVectorScatter(self string, peers func() []Peer, _ *http.Client) ScatterFunc {
+func NewVectorScatter(self string, peers func() []Peer) ScatterFunc {
 	clients := map[string]wavespanv1.VectorServiceClient{}
 	return func(ctx context.Context, indexName string, query []float32, k, efSearch int, exact, rerank bool) ([][]vector.Hit, int) {
 		var fragments [][]vector.Hit

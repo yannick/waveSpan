@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"net"
-	"net/http"
 	"testing"
 	"time"
 
@@ -63,8 +62,8 @@ func TestCacheSubscriptionPropagatesUpdate(t *testing.T) {
 
 	self3 := membership.Member{ClusterID: "dev", MemberID: "node3"}
 	cluster := staticCluster{{Member: membership.Member{MemberID: "node1", DataAddr: addr1}, State: membership.StateAlive}}
-	fetcher := NewFetcher(self3, dir3, cluster, latencygraph.New(latencygraph.DefaultConfig()), http.DefaultClient)
-	subscriber := NewSubscriber(self3, cacheStore, fetcher, http.DefaultClient)
+	fetcher := NewFetcher(self3, dir3, cluster, latencygraph.New(latencygraph.DefaultConfig()))
+	subscriber := NewSubscriber(self3, cacheStore, fetcher)
 	// cancel the subscription before the httptest server closes, so the streaming handler returns
 	// and Close() does not block (cleanup runs LIFO: this is registered after ts.Close).
 	subCtx, subCancel := context.WithCancel(context.Background())

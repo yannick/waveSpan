@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"net/http"
 	"sync"
 
 	"github.com/yannick/wavespan/internal/latencygraph"
@@ -35,9 +34,9 @@ type Fetcher struct {
 	clients map[string]wavespanv1.ReplicationServiceClient
 }
 
-// NewFetcher wires a fetcher. The hc argument is retained for call-site compatibility but is unused:
-// internal data-port clients now dial peers over gRPC via the rpcopts pooled connections.
-func NewFetcher(self membership.Member, dir *Directory, cluster Cluster, graph *latencygraph.Graph, _ *http.Client) *Fetcher {
+// NewFetcher wires a fetcher. Internal data-port clients dial peers over gRPC via the rpcopts pooled
+// connections.
+func NewFetcher(self membership.Member, dir *Directory, cluster Cluster, graph *latencygraph.Graph) *Fetcher {
 	return &Fetcher{self: self, dir: dir, cluster: cluster, graph: graph, clients: map[string]wavespanv1.ReplicationServiceClient{}}
 }
 

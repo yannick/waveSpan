@@ -133,7 +133,7 @@ func TestFetchFromClosestHolder(t *testing.T) {
 
 	self := membership.Member{ClusterID: "dev", MemberID: "node3"}
 	cluster := staticCluster{{Member: membership.Member{MemberID: "node1", DataAddr: addr}, State: membership.StateAlive}}
-	f := NewFetcher(self, dir, cluster, latencygraph.New(latencygraph.DefaultConfig()), nil)
+	f := NewFetcher(self, dir, cluster, latencygraph.New(latencygraph.DefaultConfig()))
 
 	res, err := f.Fetch(context.Background(), "default", []byte("foo"))
 	if err != nil {

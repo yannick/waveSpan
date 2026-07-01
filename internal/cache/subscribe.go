@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 	"sync"
 
@@ -142,9 +141,9 @@ type Subscriber struct {
 }
 
 // NewSubscriber builds a subscriber. Subscriptions live under the base context (set via
-// SetBaseContext to the node lifetime), not the per-read request context. The hc argument is
-// retained for call-site compatibility but is unused: subscription streams now dial peers over gRPC.
-func NewSubscriber(self membership.Member, store *Store, fetcher *Fetcher, _ *http.Client) *Subscriber {
+// SetBaseContext to the node lifetime), not the per-read request context. Subscription streams dial
+// peers over gRPC.
+func NewSubscriber(self membership.Member, store *Store, fetcher *Fetcher) *Subscriber {
 	return &Subscriber{self: self, store: store, fetcher: fetcher, baseCtx: context.Background(), active: map[string]context.CancelFunc{}, clients: map[string]wavespanv1.ReplicationServiceClient{}}
 }
 
