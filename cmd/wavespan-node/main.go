@@ -726,6 +726,11 @@ func run() error {
 		if ms := envU64("WAVESPAN_COLLECTIONS_SWEEP_MS"); ms > 0 {
 			tun.SweepEvery = time.Duration(ms) * time.Millisecond
 		}
+		// Adaptive idle-backoff cap for the TTL/budget sweep: an idle pass grows the interval toward this
+		// (default ~8× the base), snapping back to the base the moment a pass has work.
+		if ms := envU64("WAVESPAN_COLLECTIONS_SWEEP_MAX_MS"); ms > 0 {
+			tun.SweepMaxEvery = time.Duration(ms) * time.Millisecond
+		}
 		// Per-shard raft quiescence: idle shards stop exchanging heartbeats (near-zero idle CPU). Default
 		// ON; set WAVESPAN_COLLECTIONS_QUIESCE=0/false to disable (leaving nil → the ON default).
 		if v, ok := os.LookupEnv("WAVESPAN_COLLECTIONS_QUIESCE"); ok {
