@@ -86,6 +86,30 @@ func planesToStrings(ps []Plane) []string {
 	return out
 }
 
+// summaryFromIntent builds a compact catalog entry from an intent. It carries the enriched list-view
+// fields (planes, aggregated size, destination descriptor, retain-until, parent, PARTIAL + gaps). The
+// destination is the descriptor mapping (descriptorToProto), which NEVER carries raw credentials — only
+// the non-secret bucket/prefix/region/endpoint and, if set, the credential reference name.
+func summaryFromIntent(in *Intent) *wavespanv1.BackupSummary {
+	var size int64
+	for _, n := range in.PerNode {
+		size += n.Bytes
+	}
+	return &wavespanv1.BackupSummary{
+		BackupId:      in.BackupID,
+		Status:        statusToProto(in.Status),
+		StartedMs:     in.StartedMs,
+		FinishedMs:    in.FinishedMs,
+		Parent:        in.Parent,
+		Planes:        planesToProto(in.Planes),
+		SizeBytes:     size,
+		Destination:   descriptorToProto(in.Destination),
+		RetainUntilMs: in.RetainUntilMs,
+		Partial:       in.Status == StatusPartial,
+		Gaps:          in.Gaps,
+	}
+}
+
 func descriptorToProto(d Descriptor) *wavespanv1.Destination {
 	dst := &wavespanv1.Destination{
 		Name:         d.Name,

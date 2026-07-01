@@ -538,13 +538,7 @@ func (c *Coordinator) ListBackups(ctx context.Context) ([]*wavespanv1.BackupSumm
 	}
 	out := make([]*wavespanv1.BackupSummary, 0, len(intents))
 	for _, in := range intents {
-		out = append(out, &wavespanv1.BackupSummary{
-			BackupId:   in.BackupID,
-			Status:     statusToProto(in.Status),
-			StartedMs:  in.StartedMs,
-			FinishedMs: in.FinishedMs,
-			Parent:     in.Parent,
-		})
+		out = append(out, summaryFromIntent(in))
 	}
 	return out, nil
 }

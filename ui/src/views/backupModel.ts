@@ -3,6 +3,7 @@
 // stays thin — mirrors src/lib/valuecodec.ts + its test).
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { BackupStatus, BackupPhase, BackupPlane, BeginBackupRequestSchema } from "../gen/wavespan/v1/backup_pb";
+import type { BackupSummary, Destination } from "../gen/wavespan/v1/backup_pb";
 
 export type Tone = "neutral" | "success" | "warning" | "danger" | "info";
 
@@ -193,6 +194,59 @@ export function emptyForm(): BackupForm {
     secretRef: "",
     accessKey: "",
     secretKey: "",
+  };
+}
+
+// destinationLabel renders a backup's destination for the list: the bucket (with prefix), a named
+// destination, or "default" (node config). It reads ONLY the non-secret descriptor fields — never the
+// credential — so the list can never surface a secret.
+export function destinationLabel(d: Destination | undefined): string {
+  if (!d) return "default";
+  if (d.bucket) return d.prefix ? `${d.bucket}/${d.prefix}` : d.bucket;
+  if (d.name) return d.name;
+  return "default";
+}
+
+// gapsLabel summarizes a PARTIAL backup's coverage gaps as a compact count ("" when none).
+export function gapsLabel(gaps: string[]): string {
+  if (gaps.length === 0) return "";
+  return `${gaps.length} gap${gaps.length === 1 ? "" : "s"}`;
+}
+
+// BackupRow is the display-only projection of a BackupSummary for the list table. It is all strings/flags
+// (never the raw summary), so credentials cannot leak into the rendered list.
+export interface BackupRow {
+  id: string;
+  statusLabel: string;
+  statusTone: Tone;
+  kind: string;
+  planes: string;
+  size: string;
+  destination: string;
+  retainUntil: string;
+  started: string;
+  finished: string;
+  partial: boolean;
+  gaps: string[];
+  gapsLabel: string;
+}
+
+// summaryRow projects a BackupSummary to its display row (pure — the JSX just renders these fields).
+export function summaryRow(s: BackupSummary): BackupRow {
+  return {
+    id: s.backupId,
+    statusLabel: statusLabel(s.status),
+    statusTone: statusTone(s.status),
+    kind: kindLabel(s.parent),
+    planes: planesLabel(s.planes),
+    size: fmtBytes(s.sizeBytes),
+    destination: destinationLabel(s.destination),
+    retainUntil: fmtTime(s.retainUntilMs),
+    started: fmtTime(s.startedMs),
+    finished: fmtTime(s.finishedMs),
+    partial: s.partial,
+    gaps: s.gaps,
+    gapsLabel: gapsLabel(s.gaps),
   };
 }
 
