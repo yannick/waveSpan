@@ -43,7 +43,7 @@ func TestGossipObserverEmitsLiveTraffic(t *testing.T) {
 
 	mkNode := func(id string, seedAddr string) *Gossip {
 		self := Member{ClusterID: "dev", MemberID: id, NodeName: id, GossipAddr: id + ":7700"}
-		r := NewRoster(self, fastLiveness())
+		r := NewRoster(self, fastLiveness(), 0)
 		g := latencygraph.New(latencygraph.DefaultConfig())
 		tr := &memTransport{net: net, selfAddr: self.GossipAddr}
 		gs := NewGossip(r, g, tr, staticSeeds{seedAddr}, DefaultGossipConfig(), clock.now, 7)

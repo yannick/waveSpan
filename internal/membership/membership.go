@@ -20,6 +20,10 @@ type ServiceConfig struct {
 	Liveness       LivenessConfig
 	Gossip         GossipConfig
 	Graph          latencygraph.Config
+	// SelfIncarnation seeds this node's SWIM incarnation. It MUST be monotonic across restarts of the same
+	// MemberID so a restarted node's new address propagates (see NewRoster). Production sets boot-time
+	// unix-millis; 0 (the default) preserves test behavior.
+	SelfIncarnation uint64
 }
 
 // DefaultServiceConfig returns sane defaults.
@@ -46,7 +50,7 @@ type Service struct {
 
 // NewService wires a membership service for the local member over the given transport.
 func NewService(self Member, disc Discovery, transport *ConnectTransport, cfg ServiceConfig) *Service {
-	roster := NewRoster(self, cfg.Liveness)
+	roster := NewRoster(self, cfg.Liveness, cfg.SelfIncarnation)
 	graph := latencygraph.New(cfg.Graph)
 	gossip := NewGossip(roster, graph, transport, disc, cfg.Gossip, time.Now, seedFor(self.MemberID))
 	server := NewGossipConnectServer(gossip, transport)

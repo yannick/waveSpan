@@ -265,7 +265,12 @@ func run() error {
 	self := membership.MemberFromConfig(cfg, storageUUID)
 	transport := membership.NewConnectTransport(httpClient)
 	disc := membership.NewDiscovery(cfg, self.GossipAddr)
-	svc := membership.NewService(self, disc, transport, membership.DefaultServiceConfig())
+	// Seed the SWIM incarnation from boot-time wall-clock millis so a restart (same MemberID, new pod IP)
+	// always out-incarnates the prior generation → its new address propagates instead of being rejected
+	// as stale (a persisted counter would reset on a fresh spot-node volume; the clock does not).
+	scfg := membership.DefaultServiceConfig()
+	scfg.SelfIncarnation = uint64(time.Now().UnixMilli())
+	svc := membership.NewService(self, disc, transport, scfg)
 	logger.Info("member identity", "storage_uuid", storageUUID, "gossip_addr", self.GossipAddr,
 		"zone", self.Zone, "region", self.Region, "geo", self.Geo)
 

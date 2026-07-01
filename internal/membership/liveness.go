@@ -43,8 +43,13 @@ type LivenessConfig struct {
 	SuspicionTimeout time.Duration
 	// UnreachableTimeout: UNREACHABLE -> DEAD after this much additional time.
 	UnreachableTimeout time.Duration
-	// DeadRetention: DEAD -> FORGOTTEN after this long, once repair is complete.
+	// DeadRetention: DEAD -> FORGOTTEN after this long (or earlier once repair is complete).
 	DeadRetention time.Duration
+	// ForgottenRetention: FORGOTTEN -> deleted after this much ADDITIONAL time. The FORGOTTEN entry is a
+	// non-gossiped tombstone (excluded from Members()/Live() and thus outgoing gossip) that blocks a
+	// lagging peer's stale ALIVE from resurrecting the member at its dead old address; deleting it after
+	// this window bounds roster growth. Total tombstone lifetime ≈ DeadRetention + ForgottenRetention.
+	ForgottenRetention time.Duration
 }
 
 // DefaultLivenessConfig returns timeouts tuned for fast spot-churn detection (design/04
@@ -54,5 +59,6 @@ func DefaultLivenessConfig() LivenessConfig {
 		SuspicionTimeout:   3 * time.Second,
 		UnreachableTimeout: 10 * time.Second,
 		DeadRetention:      5 * time.Minute,
+		ForgottenRetention: 5 * time.Minute,
 	}
 }
