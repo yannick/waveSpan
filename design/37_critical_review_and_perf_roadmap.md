@@ -126,12 +126,18 @@ Additionally, every profile in the repo (`perf-report-*`) predates the gRPC migr
 
 **P3 — hygiene sweep** — items in Tier C, guided by the fresh profiles from P0.3.
 **STATUS 2026-07-02 (partial):** `MultiGet` now serves local hits inline and spawns goroutines only for network fetch-on-miss keys; the double-Get per read is largely gone via P1.5 inline values. Remaining Tier C backlog (pick by profile): per-op value copies in the engine read path, `time.Now()` in the skiplist TTL check, per-commit `publishMu` map ops, Txn-per-scan snapshot registration, range-bounded compaction.
+**RESOLVED 2026-07-02 (profile-guided close-out).** The roadmap-build profiles (`perf-report-grpc-roadmap/`) re-ranked the backlog; two churn hot spots the original Tier C list missed were fixed, and the listed engine items were measured and retired:
+- **Fixed: `placement.Select` allocation diet** — ran on every write at ~1.46KB/put across 13 allocs (two grown-from-nil slices, two `sort.SliceStable` closures, a `markSpillover` copy, and `append([]Candidate(nil), …)` concatenations; 5.8% of node-wide alloc churn). Now one pre-sized buffer partitioned in place (same-geo prefix via swap), `slices.SortFunc` with the deterministic (score, MemberID) total order (stability unneeded — MemberIDs are unique), and in-place spillover marking. 1 alloc/call, ~0.6KB/put; behavior identical per the existing suite. Pinned by `TestSelectAllocatesAtMostOnce`.
+- **Fixed: identity interceptor metadata copy** — dev-mode `roleFromContext` used `metadata.FromIncomingContext`, which deep-copies the whole MD map on **every RPC** (6.0% of alloc churn, 31 allocs/call on a 33-key MD). Switched to `metadata.ValueFromIncomingContext` (single-key read, same case-insensitive semantics): ≤1 alloc/call, pinned by `TestRoleFromContextDoesNotCopyMetadata`. Note: production mTLS derives the role from the peer cert before this path; the copy hit dev/staging-style deployments.
+- **Measured negligible, left alone:** `time.Now()` in the skiplist TTL check (`time.now` is 1.2% of CPU *across all callers*; 75% of `runtime.nanotime` is scheduler/timer/profiler internals), per-commit `publishSeq` (50ms of a 34s profile), engine read-path value copies (absent from the alloc profile — P1.5 inline values serve small gets from the meta CF), and engine mutex contention (ms-scale in a 20s window).
+- **Retired as stale:** range-bounded `CompactRange` — the method has **zero callers**; TTL reclamation rides wavesdb's native per-key TTL on compaction (wired in P1.5's Apply), so the "TTL/GC full-CF rewrites" concern no longer exists. Txn-per-scan snapshot registration costs one mutex+map op per *scan* (AE tick / sweeper cadence, not per request) and bounds nothing hot — not worth an engine API change.
+- **Outcome:** total alloc churn ~7.4→~6.6KB/op (−10%); throughput unchanged in a same-host back-to-back A/B (19.1k vs 19.4k/18.1k gets/s under load ~18 — the morning baseline's 25.7k was a quieter host, not a code delta). What remains per profile is gRPC framework + proto (de)serialization (~33% CPU; a design-level "fewer/larger RPCs" question, not hygiene) and the WAL append + skiplist insert (the actual work of a write).
 
 ---
 
 ## Roadmap outcome (2026-07-02)
 
-All P0–P2 items resolved (see per-item notes above); P3 partially done. Cumulative e2e on the same 3-node Docker-for-Mac harness as the baseline (`perf-report-grpc-roadmap/`, syncNone comparison mode, pprof on):
+All P0–P3 items resolved (see per-item notes above). Cumulative e2e on the same 3-node Docker-for-Mac harness as the baseline (`perf-report-grpc-roadmap/`, syncNone comparison mode, pprof on):
 
 | metric | baseline | roadmap build | delta |
 |---|---|---|---|

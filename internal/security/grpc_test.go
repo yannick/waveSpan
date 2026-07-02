@@ -125,3 +125,20 @@ func TestGRPCStreamInterceptor(t *testing.T) {
 		t.Error("handler ran despite denial")
 	}
 }
+
+func TestRoleFromContextDoesNotCopyMetadata(t *testing.T) {
+	id := Identity{DevMode: true}
+	// Pad the metadata: a per-call copy of the full MD map shows up as allocations.
+	md := metadata.Pairs("x-wavespan-role", string(RoleReader))
+	for i := 0; i < 32; i++ {
+		md.Set(string(rune('a'+i%26))+"-pad-key", "v")
+	}
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	if got := id.roleFromContext(ctx); got != RoleReader {
+		t.Fatalf("role = %q, want %q", got, RoleReader)
+	}
+	allocs := testing.AllocsPerRun(1000, func() { _ = id.roleFromContext(ctx) })
+	if allocs > 1 {
+		t.Fatalf("roleFromContext allocates %.1f objects per call, want <= 1; it runs on every RPC", allocs)
+	}
+}

@@ -117,3 +117,27 @@ func TestScoringOrdersByMeasuredLatency(t *testing.T) {
 		t.Fatalf("lower-latency peer should rank first, got %s", cands[0].Member.MemberID)
 	}
 }
+
+func TestSelectAllocatesAtMostOnce(t *testing.T) {
+	self := selfMember()
+	members := []membership.MemberView{
+		alive(mem("p-1", "node-1", "z1", "r1", "g1")),
+		alive(mem("p-2", "node-2", "z2", "r1", "g1")),
+		alive(mem("p-3", "node-3", "z1", "r1", "g1")),
+		alive(mem("p-4", "node-4", "z9", "r9", "g2")),
+		alive(mem("p-5", "node-5", "z9", "r9", "g2")),
+	}
+	g := emptyGraph()
+	policy := Policy{
+		TargetNearbyReplicas: 3, MinAckNearbyReplicas: 1, RequireDistinctNodes: true,
+		Geo: PreferLocalGeo, AllowSpilloverForDurability: true,
+	}
+	allocs := testing.AllocsPerRun(1000, func() {
+		if _, err := Select(self, members, g, policy); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocs > 1 {
+		t.Fatalf("Select allocates %.1f objects per call, want <= 1 (the candidate buffer); it runs on every write", allocs)
+	}
+}

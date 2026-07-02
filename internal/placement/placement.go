@@ -4,8 +4,10 @@
 package placement
 
 import (
+	"cmp"
 	"errors"
-	"sort"
+	"slices"
+	"strings"
 
 	"github.com/yannick/wavespan/internal/latencygraph"
 	"github.com/yannick/wavespan/internal/membership"
@@ -56,7 +58,11 @@ func Select(self membership.Member, members []membership.MemberView, graph *late
 		complianceGeo = self.Geo
 	}
 
-	var sameGeo, otherGeo []Candidate
+	// One backing buffer, partitioned in place: all[:nSame] holds compliance-geo candidates,
+	// all[nSame:] the rest. Select runs on every write, so it must not allocate beyond this
+	// single make (pinned by TestSelectAllocatesAtMostOnce).
+	all := make([]Candidate, 0, len(members))
+	nSame := 0
 	for _, mv := range members {
 		m := mv.Member
 		if m.MemberID == self.MemberID || mv.State != membership.StateAlive {
@@ -65,71 +71,66 @@ func Select(self membership.Member, members []membership.MemberView, graph *late
 		if policy.RequireDistinctNodes && self.SameNode(m) {
 			continue // hard filter: distinct node for durable replicas
 		}
-		c := Candidate{
+		all = append(all, Candidate{
 			Member: m,
 			Score:  graph.Score(m.MemberID, 0, 0, latencygraph.TopologyPenalty(self.Zone, self.Region, self.Geo, m.Zone, m.Region, m.Geo)),
-		}
+		})
 		if m.Geo != "" && self.Geo != "" && m.Geo == complianceGeo {
-			sameGeo = append(sameGeo, c)
-		} else {
-			otherGeo = append(otherGeo, c)
+			last := len(all) - 1
+			all[last], all[nSame] = all[nSame], all[last]
+			nSame++
 		}
 	}
-	sortByScore(sameGeo)
-	sortByScore(otherGeo)
 
 	switch policy.Geo {
 	case RequireLocalGeo:
+		sameGeo := all[:nSame]
 		if len(sameGeo) < policy.MinAckNearbyReplicas {
 			return nil, ErrInsufficientLocalReplicas
 		}
+		sortByScore(sameGeo)
 		return sameGeo, nil
 
 	case LatencyOnly:
-		all := append(append([]Candidate(nil), sameGeo...), otherGeo...)
-		sortByScore(all)
 		if len(all) == 0 {
 			return nil, ErrNoCandidates
 		}
+		sortByScore(all)
 		return all, nil
 
 	default: // PreferLocalGeo
-		if len(sameGeo) >= policy.MinAckNearbyReplicas {
-			// enough local; append spillover only to help reach target-N if allowed
-			if policy.AllowSpilloverForDurability {
-				return append(sameGeo, markSpillover(otherGeo)...), nil
-			}
-			return sameGeo, nil
-		}
-		// not enough same-geo to satisfy minAck: spill if allowed
+		sameGeo, otherGeo := all[:nSame], all[nSame:]
+		sortByScore(sameGeo)
 		if policy.AllowSpilloverForDurability {
-			out := append(append([]Candidate(nil), sameGeo...), markSpillover(otherGeo)...)
-			if len(out) == 0 {
+			// spillover follows local: it helps reach target-N when minAck is satisfied
+			// locally, and covers minAck itself when the local geo cannot.
+			sortByScore(otherGeo)
+			markSpillover(otherGeo)
+			if len(sameGeo) < policy.MinAckNearbyReplicas && len(all) == 0 {
 				return nil, ErrNoCandidates
 			}
-			return out, nil
+			return all, nil
 		}
-		if len(sameGeo) == 0 {
+		if len(sameGeo) < policy.MinAckNearbyReplicas && len(sameGeo) == 0 {
 			return nil, ErrNoCandidates
 		}
 		return sameGeo, nil
 	}
 }
 
-func markSpillover(cs []Candidate) []Candidate {
-	out := make([]Candidate, len(cs))
-	for i, c := range cs {
-		c.GeoSpillover = true
-		out[i] = c
+func markSpillover(cs []Candidate) {
+	for i := range cs {
+		cs[i].GeoSpillover = true
 	}
-	return out
 }
 
+// sortByScore orders candidates best (lowest score) first; the unique MemberID tie-break
+// makes the order fully deterministic without needing a stable sort.
 func sortByScore(cs []Candidate) {
-	sort.SliceStable(cs, func(i, j int) bool {
-		if cs[i].Score != cs[j].Score {
-			return cs[i].Score < cs[j].Score
+	slices.SortFunc(cs, func(a, b Candidate) int {
+		if a.Score != b.Score {
+			return cmp.Compare(a.Score, b.Score)
 		}
-		return cs[i].Member.MemberID < cs[j].Member.MemberID // deterministic tie-break
+		return strings.Compare(a.Member.MemberID, b.Member.MemberID)
 	})
 }

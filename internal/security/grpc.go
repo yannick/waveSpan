@@ -21,10 +21,11 @@ func (id Identity) roleFromContext(ctx context.Context) Role {
 		}
 	}
 	if id.DevMode {
-		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			if v := md.Get("x-wavespan-role"); len(v) > 0 && v[0] != "" {
-				return Role(v[0])
-			}
+		// ValueFromIncomingContext reads one key without copying the whole MD map — this
+		// runs on every RPC (via the identity interceptor), so the full-map copy of
+		// FromIncomingContext is measurable GC pressure.
+		if v := metadata.ValueFromIncomingContext(ctx, "x-wavespan-role"); len(v) > 0 && v[0] != "" {
+			return Role(v[0])
 		}
 		return RoleAdmin // insecure dev mode without an explicit role: full access
 	}
