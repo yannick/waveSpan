@@ -706,12 +706,16 @@ func run() error {
 		}
 		raftTLSClient, _ := tlsCfg.ClientTLS()
 		// Consensus tunables (design/30): zero = engine default. Env-overridable for ops tuning.
+		// Defaults are the staging-validated intra-region clock (RTT 5ms, design/33). A WAN cluster
+		// raising RTT_MS should also revisit the multiples: heartbeat = HEARTBEAT_RTT × RTT_MS and
+		// election = ELECTION_RTT × RTT_MS.
 		tun := collections.Tunables{
 			RTTMillisecond:     envU64("WAVESPAN_COLLECTIONS_RTT_MS"),
 			ElectionRTT:        envU64("WAVESPAN_COLLECTIONS_ELECTION_RTT"),
 			HeartbeatRTT:       envU64("WAVESPAN_COLLECTIONS_HEARTBEAT_RTT"),
 			SnapshotEntries:    envU64("WAVESPAN_COLLECTIONS_SNAPSHOT_ENTRIES"),
 			CompactionOverhead: envU64("WAVESPAN_COLLECTIONS_COMPACTION_OVERHEAD"),
+			MaxInMemLogSize:    envU64("WAVESPAN_COLLECTIONS_MAX_INMEM_LOG_BYTES"),
 		}
 		if ms := envU64("WAVESPAN_COLLECTIONS_SWEEP_MS"); ms > 0 {
 			tun.SweepEvery = time.Duration(ms) * time.Millisecond

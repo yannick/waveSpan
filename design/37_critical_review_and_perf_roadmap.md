@@ -109,6 +109,7 @@ Additionally, every profile in the repo (`perf-report-*`) predates the gRPC migr
 5. Merged-iterator scans in `recordstore` (kills N+1; also speeds repair backfill + AE). (A2)
 6. gRPC tuning: windows, keepalive, buffer sizes; then mTLS parity with design/27. (A5)
 7. Ship measured-good consensus defaults in code (`RTTMillisecond`, `MaxInMemLogSize`, GC env in manifests). (B2)
+   **RESOLVED 2026-07-02:** `DefaultTunables` now ships the staging-validated clock (RTT 5ms, heartbeat 50ms, election 500ms — same absolute timings, 10× faster tick); `MaxInMemLogSize` added to `Tunables` + shard config + `WAVESPAN_COLLECTIONS_MAX_INMEM_LOG_BYTES` (0 = dragonboat unlimited, which was already the effective default — the knob exists to *bound* memory-tight pods). GOGC/GOMEMLIMIT confirmed present in `k8s/daemonset.yaml`. Pinned by `TestDefaultTunablesIntraRegionClock` + `TestShardConfigCarriesTunables`; full collections suite green on the new clock.
 
 **P2 — engine-level**
 8. Sharded conflict check to remove global `writeMu`-across-I/O. (A4)

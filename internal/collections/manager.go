@@ -76,6 +76,11 @@ type Tunables struct {
 	SweepMaxEvery      time.Duration // adaptive-backoff cap: an idle sweep grows toward this (idle-cheap)
 	CoalesceWindow     time.Duration // QW2: window the proposer coalesces concurrent data-shard writes over
 	CoalesceMaxOps     int           // QW2: max single ops coalesced into one Raft entry
+	// MaxInMemLogSize bounds the unapplied in-memory Raft log per shard in bytes (dragonboat's
+	// pipeline-depth / backpressure budget, design/32 §3.2). 0 = dragonboat's default, which is
+	// unlimited — proposals are never rejected for log-memory pressure. Set on memory-tight pods
+	// to trade ErrBusy under burst for a bounded heap.
+	MaxInMemLogSize uint64
 	// Quiesce lets an idle shard enter dragonboat's quiesce mode: after ~ElectionRTT×10 idle ticks it
 	// stops exchanging heartbeats (near-zero idle CPU) and wakes on the next real message/proposal.
 	// *bool so the non-false default (ON) survives the zero-value merge: nil = default (ON). While
@@ -89,9 +94,16 @@ type Tunables struct {
 func quiesceOn() *bool { b := true; return &b }
 
 // DefaultTunables returns the built-in consensus defaults.
+//
+// The Raft clock defaults to the intra-region values validated in staging (design/33 §3: RTT 5ms):
+// a 5ms base tick with heartbeat = 10×RTT = 50ms and election = 100×RTT = 500ms — the same absolute
+// heartbeat/election timing as the old 50ms WAN clock, but a 10× faster tick so commit progression
+// isn't quantized to 50ms (design/32 QW1; previously the fast clock was only reachable via
+// WAVESPAN_COLLECTIONS_RTT_MS, so an out-of-the-box cluster ran the slow clock — design/37 B2/P1.7).
+// WAN topologies should raise RTTMillisecond via env and revisit the multiples.
 func DefaultTunables() Tunables {
 	return Tunables{
-		RTTMillisecond: 50, ElectionRTT: 10, HeartbeatRTT: 1,
+		RTTMillisecond: 5, ElectionRTT: 100, HeartbeatRTT: 10,
 		SnapshotEntries: 1000, CompactionOverhead: 500,
 		SweepEvery: 500 * time.Millisecond, SweepMaxEvery: 4 * time.Second, // idle backoff cap ≈ 8× base
 		CoalesceWindow: defaultCoalesceWindow, CoalesceMaxOps: defaultCoalesceMaxOps,
@@ -217,6 +229,7 @@ func (m *Manager) shardConfig(shardID, replicaID uint64) config.Config {
 		Quiesce:            *m.tun.Quiesce, // non-nil: withDefaults() fills the default before we store m.tun
 		SnapshotEntries:    m.tun.SnapshotEntries,
 		CompactionOverhead: m.tun.CompactionOverhead,
+		MaxInMemLogSize:    m.tun.MaxInMemLogSize, // 0 = unlimited (dragonboat default)
 	}
 }
 
