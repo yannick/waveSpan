@@ -102,6 +102,7 @@ Additionally, every profile in the repo (`perf-report-*`) predates the gRPC migr
 2. Bound scans: push limits into `scan.go` local+remote paths. (A3)
    **RESOLVED 2026-07-02:** `Scanner.routed` now pushes 2× the caller limit into the local scan and every holder `ScanLocal` (slack for rows superseded after merge; key-ordered scans make per-holder limit sufficient for the global top-limit). limit 0 stays scan-all by contract. Pinned by `TestScanRoutedPushesLimitToHolders`.
 3. Re-profile on the live gRPC transport; retire/regenerate `perf-report-*`. Every subsequent decision depends on this.
+   **RESOLVED 2026-07-02:** `perf-report-grpc/` (syncMode=full) + `perf-report-grpc-syncnone/` captured on the live transport; see `perf-report-grpc/README.md`. Key results: A1 confirmed live (99.55% of `replicateMinAck` blocking is the serial `StoreReplica` RPC, ~1.4ms/put); gRPC interceptor chain + proto ~33% cum CPU; syncMode full costs 8,740→753 puts/s on Docker-for-Mac (fsync-pathological worst case — needs a Linux measurement). Found: `wavespan-profile`'s block/mutex request-path filter is Connect-era and blind on gRPC (follow-up task filed). Older `perf-report-*` dirs are Connect-era historical evidence.
 
 **P1 — biggest verified throughput/latency wins**
 4. Concurrent + batched replication fan-out in `replicateMinAck` and `Fanout` (port the `proposer.go` coalescing pattern). (A1)
