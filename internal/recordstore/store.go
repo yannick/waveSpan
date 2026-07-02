@@ -124,6 +124,10 @@ func (s *Store) BuildRecord(namespace string, key, value []byte, v version.Versi
 	return rec
 }
 
+// inlineValue is storage.InlineValue (design/37 P1.5): the winner's ≤512B value duplicated into
+// the latest pointer so reads and scans skip the second, data-CF LSM lookup.
+func inlineValue(rec *wavespanv1.StoredRecord) []byte { return storage.InlineValue(rec) }
+
 // Apply writes a versioned record durably: it stores the record, advances the latest pointer
 // under hlc-last-write-wins, and appends a mutation-log entry — all in one atomic batch. It is
 // idempotent: re-applying the same version is a no-op for the winner. Returns the resulting
@@ -150,6 +154,10 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 	// priorKnown/priorTombstone capture the winner's liveness BEFORE this Apply, so the live-key
 	// count can be adjusted by the transition once the write commits.
 	var priorKnown, priorTombstone bool
+	// winnerInline carries the winner's small value into the latest pointer (design/37 P1.5) so
+	// reads and scans skip the data-CF lookup. When the incoming record loses, the old pointer's
+	// inline value is preserved below; when it wins, inlineValue picks it from the record.
+	var winnerInline []byte
 	// Fast path: if the cached winner is older than the incoming version (the monotonic common case),
 	// the incoming record wins outright — skip the storage read + pointer decode; the cached entry is
 	// the prior winner. Otherwise read the authoritative pointer to pick the winner and carry its
@@ -176,11 +184,15 @@ func (s *Store) Apply(rec *wavespanv1.StoredRecord, kind wavespanv1.MutationKind
 					e := lp.GetExpiresAtUnixMs()
 					winnerExpiry = &e
 				}
+				winnerInline = lp.GetInlineValue() // losing write: the standing winner's value stays inlined
 			}
 		}
 	}
+	if winner.Equal(recVer) {
+		winnerInline = inlineValue(rec)
+	}
 
-	lp := &wavespanv1.LatestPointer{Winner: winner.ToProto(), Tombstone: winnerTombstone}
+	lp := &wavespanv1.LatestPointer{Winner: winner.ToProto(), Tombstone: winnerTombstone, InlineValue: winnerInline}
 	if winnerExpiry != nil {
 		lp.ExpiresAtUnixMs = proto.Int64(*winnerExpiry)
 	}
@@ -317,18 +329,26 @@ func (s *Store) ScanRange(namespace string, start, end []byte, limit int, nowMs 
 			hidden = true // best-effort hide-expired on read (design/03 "TTL semantics")
 		}
 		if !hidden {
-			recBytes, found, gerr := s.local.Get(storage.CFKVData, dataKey(namespace, userKey, win))
-			if gerr == nil && found {
+			// Fast path (design/37 P1.5): small values ride the latest pointer — the scan stays a
+			// single ordered meta-CF iteration. Only large/legacy rows pay the data-CF point Get.
+			var value []byte
+			haveValue := false
+			if lp.InlineValue != nil {
+				value, haveValue = lp.GetInlineValue(), true
+			} else if recBytes, found, gerr := s.local.Get(storage.CFKVData, dataKey(namespace, userKey, win)); gerr == nil && found {
 				if rec, rerr := storage.DecodeStoredRecord(recBytes); rerr == nil {
-					row := ScanRow{Key: userKey, Value: rec.GetValue().GetInline(), Version: win}
-					if lp.ExpiresAtUnixMs != nil {
-						e := lp.GetExpiresAtUnixMs()
-						row.ExpiresAtMs = &e
-					}
-					rows = append(rows, row)
-					if limit > 0 && len(rows) >= limit {
-						return rows, nil
-					}
+					value, haveValue = rec.GetValue().GetInline(), true
+				}
+			}
+			if haveValue {
+				row := ScanRow{Key: userKey, Value: value, Version: win}
+				if lp.ExpiresAtUnixMs != nil {
+					e := lp.GetExpiresAtUnixMs()
+					row.ExpiresAtMs = &e
+				}
+				rows = append(rows, row)
+				if limit > 0 && len(rows) >= limit {
+					return rows, nil
 				}
 			}
 		}
@@ -485,7 +505,7 @@ func (s *Store) ApplySiblings(namespace string, key []byte, siblings []*wavespan
 			winner = r
 		}
 	}
-	lp := &wavespanv1.LatestPointer{Winner: winner.GetVersion(), Tombstone: winner.GetTombstone()}
+	lp := &wavespanv1.LatestPointer{Winner: winner.GetVersion(), Tombstone: winner.GetTombstone(), InlineValue: inlineValue(winner)}
 	var ops []storage.StoreOp
 	for _, r := range siblings {
 		rv := version.FromProto(r.GetVersion())
@@ -592,6 +612,12 @@ func (s *Store) Get(namespace string, key []byte) (GetOutcome, error) {
 	}
 	if lp.GetTombstone() {
 		return out, nil // deleted: found=false
+	}
+	if lp.InlineValue != nil {
+		// Small value inlined in the pointer (design/37 P1.5): one LSM lookup instead of two.
+		out.Found = true
+		out.Value = lp.GetInlineValue()
+		return out, nil
 	}
 	recBytes, rfound, err := s.local.Get(storage.CFKVData, dataKey(namespace, key, win))
 	if err != nil || !rfound {

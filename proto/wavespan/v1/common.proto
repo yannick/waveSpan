@@ -116,6 +116,11 @@ message LatestPointer {
   optional int64 expires_at_unix_ms = 3;
   bool tombstone = 4;
   uint64 local_generation = 5;
+  // inline_value duplicates the winner's value when it is small (design/37 P1.5), so point reads
+  // and range scans are served from the meta CF alone instead of paying a second full LSM lookup
+  // per key (scans previously did one random data-CF Get per row — N+1). Absent for large values,
+  // tombstones, and pointers written before this field existed; readers fall back to the data CF.
+  optional bytes inline_value = 6;
 }
 
 // MutationEnvelope is the mutation-log entry appended on every local write and applied

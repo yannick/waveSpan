@@ -808,8 +808,13 @@ type LatestPointer struct {
 	ExpiresAtUnixMs *int64                 `protobuf:"varint,3,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3,oneof" json:"expires_at_unix_ms,omitempty"`
 	Tombstone       bool                   `protobuf:"varint,4,opt,name=tombstone,proto3" json:"tombstone,omitempty"`
 	LocalGeneration uint64                 `protobuf:"varint,5,opt,name=local_generation,json=localGeneration,proto3" json:"local_generation,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// inline_value duplicates the winner's value when it is small (design/37 P1.5), so point reads
+	// and range scans are served from the meta CF alone instead of paying a second full LSM lookup
+	// per key (scans previously did one random data-CF Get per row — N+1). Absent for large values,
+	// tombstones, and pointers written before this field existed; readers fall back to the data CF.
+	InlineValue   []byte `protobuf:"bytes,6,opt,name=inline_value,json=inlineValue,proto3,oneof" json:"inline_value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LatestPointer) Reset() {
@@ -875,6 +880,13 @@ func (x *LatestPointer) GetLocalGeneration() uint64 {
 		return x.LocalGeneration
 	}
 	return 0
+}
+
+func (x *LatestPointer) GetInlineValue() []byte {
+	if x != nil {
+		return x.InlineValue
+	}
+	return nil
 }
 
 // MutationEnvelope is the mutation-log entry appended on every local write and applied
@@ -1060,14 +1072,16 @@ const file_wavespan_v1_common_proto_rawDesc = "" +
 	"\x13local_apply_unix_ms\x18\n" +
 	" \x01(\x03R\x10localApplyUnixMs\x12A\n" +
 	"\x0econflict_state\x18\v \x01(\x0e2\x1a.wavespan.v1.ConflictStateR\rconflictStateB\x15\n" +
-	"\x13_expires_at_unix_ms\"\x90\x02\n" +
+	"\x13_expires_at_unix_ms\"\xc9\x02\n" +
 	"\rLatestPointer\x12,\n" +
 	"\x06winner\x18\x01 \x01(\v2\x14.wavespan.v1.VersionR\x06winner\x12?\n" +
 	"\x10sibling_versions\x18\x02 \x03(\v2\x14.wavespan.v1.VersionR\x0fsiblingVersions\x120\n" +
 	"\x12expires_at_unix_ms\x18\x03 \x01(\x03H\x00R\x0fexpiresAtUnixMs\x88\x01\x01\x12\x1c\n" +
 	"\ttombstone\x18\x04 \x01(\bR\ttombstone\x12)\n" +
-	"\x10local_generation\x18\x05 \x01(\x04R\x0flocalGenerationB\x15\n" +
-	"\x13_expires_at_unix_ms\"\x8c\x04\n" +
+	"\x10local_generation\x18\x05 \x01(\x04R\x0flocalGeneration\x12&\n" +
+	"\finline_value\x18\x06 \x01(\fH\x01R\vinlineValue\x88\x01\x01B\x15\n" +
+	"\x13_expires_at_unix_msB\x0f\n" +
+	"\r_inline_value\"\x8c\x04\n" +
 	"\x10MutationEnvelope\x12\x1f\n" +
 	"\vmutation_id\x18\x01 \x01(\tR\n" +
 	"mutationId\x12-\n" +

@@ -210,8 +210,17 @@ message LatestPointer {
   optional int64 expires_at_unix_ms = 3;
   bool tombstone = 4;
   uint64 local_generation = 5;
+  optional bytes inline_value = 6; // winner's value when ≤512B (design/37 P1.5)
 }
 ```
+
+`inline_value` duplicates the winner's value when it is small (≤ `storage.InlineValueMax`, 512B):
+point reads and range scans of small values are then served from `kv_meta` alone instead of paying
+a second full LSM lookup per key (scans previously did one random data-CF `Get` per row). It is
+absent for large values, tombstones, and pointers written before the field existed — readers fall
+back to the versioned record, which remains the authoritative copy (repair, anti-entropy,
+siblings, and backfill always read full records). The pointer stays derived state: rebuild
+re-inlines from the winning record.
 
 If conflict policy is `siblings`, reads return all siblings unless the client specifies a resolver.
 

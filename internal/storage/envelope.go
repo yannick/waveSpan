@@ -137,11 +137,36 @@ func RebuildLatestPointer(records []*wavespanv1.StoredRecord) *wavespanv1.Latest
 		}
 	}
 	lp := &wavespanv1.LatestPointer{
-		Winner:    winner.GetVersion(),
-		Tombstone: winner.GetTombstone(),
+		Winner:      winner.GetVersion(),
+		Tombstone:   winner.GetTombstone(),
+		InlineValue: InlineValue(winner),
 	}
 	if winner.ExpiresAtUnixMs != nil {
 		lp.ExpiresAtUnixMs = proto.Int64(winner.GetExpiresAtUnixMs())
 	}
 	return lp
+}
+
+// InlineValueMax is the value size (bytes) up to which the winner's value is duplicated into the
+// latest pointer (design/37 P1.5): point reads and range scans of small values are then served
+// from CFKVMeta alone instead of paying a second full LSM lookup. 512 mirrors the
+// klogValueThreshold rationale. The versioned record in CFKVData stays authoritative (repair,
+// anti-entropy, siblings, and backfill always read full records).
+const InlineValueMax = 512
+
+// InlineValue returns rec's value when eligible for pointer inlining: a live record whose
+// ValueBody is inline and ≤ InlineValueMax. An eligible empty value returns a non-nil empty slice
+// (presence means "value known"); ineligible returns nil (readers fall back to CFKVData).
+func InlineValue(rec *wavespanv1.StoredRecord) []byte {
+	if rec.GetTombstone() {
+		return nil
+	}
+	vb, ok := rec.GetValue().GetBody().(*wavespanv1.ValueBody_Inline)
+	if !ok || len(vb.Inline) > InlineValueMax {
+		return nil
+	}
+	if vb.Inline == nil {
+		return []byte{}
+	}
+	return vb.Inline
 }

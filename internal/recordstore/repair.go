@@ -92,7 +92,8 @@ func RepairCutMeta(store storage.LocalStore) error {
 			if !changed {
 				continue // fully verbatim — winner + all siblings present, conflict state intact
 			}
-			nlp := &wavespanv1.LatestPointer{Winner: lp.GetWinner(), Tombstone: lp.GetTombstone(), SiblingVersions: kept}
+			// Winner unchanged: its inline value (if any) stays valid on the rebuilt pointer.
+			nlp := &wavespanv1.LatestPointer{Winner: lp.GetWinner(), Tombstone: lp.GetTombstone(), SiblingVersions: kept, InlineValue: lp.GetInlineValue()}
 			if lp.ExpiresAtUnixMs != nil {
 				nlp.ExpiresAtUnixMs = proto.Int64(lp.GetExpiresAtUnixMs())
 			}
