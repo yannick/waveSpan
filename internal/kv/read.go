@@ -62,25 +62,46 @@ func (r *Reader) WithSubscriber(s subscriber) *Reader {
 // (network fetch-on-miss) does not serialize those round-trips.
 func (r *Reader) MultiGet(ctx context.Context, namespace string, keys [][]byte, hideExpired bool) ([]*wavespanv1.GetResult, error) {
 	results := make([]*wavespanv1.GetResult, len(keys))
+	failSoft := func(i int, res *wavespanv1.GetResult, err error) {
+		if err != nil {
+			// degrade a single-key error to not-found so one bad key never fails the batch.
+			res = &wavespanv1.GetResult{
+				Meta:  &wavespanv1.ResponseMeta{ServedByMemberId: r.self.MemberID, Completeness: wavespanv1.Completeness_PARTIAL},
+				Found: false,
+			}
+		}
+		results[i] = res
+	}
+
+	// Local hits are in-process microsecond reads: do them inline (design/37 P3, Tier C — the old
+	// goroutine-per-key + semaphore cost more than the reads). Only keys that would take the
+	// network fetch-on-miss path get concurrent goroutines, where round-trip overlap pays.
+	var missIdx []int
+	for i, k := range keys {
+		if r.fetcher != nil {
+			if out, err := r.store.Get(namespace, k); err == nil && !out.Found && !out.Tombstone {
+				missIdx = append(missIdx, i) // local miss -> network fetch path, run concurrently
+				continue
+			}
+		}
+		res, err := r.Get(ctx, namespace, k, hideExpired)
+		failSoft(i, res, err)
+	}
+	if len(missIdx) == 0 {
+		return results, nil
+	}
 	const maxConcurrent = 32
 	sem := make(chan struct{}, maxConcurrent)
 	var wg sync.WaitGroup
-	for i, k := range keys {
+	for _, i := range missIdx {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(i int, k []byte) {
+		go func(i int) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			res, err := r.Get(ctx, namespace, k, hideExpired)
-			if err != nil {
-				// degrade a single-key error to not-found so one bad key never fails the batch.
-				res = &wavespanv1.GetResult{
-					Meta:  &wavespanv1.ResponseMeta{ServedByMemberId: r.self.MemberID, Completeness: wavespanv1.Completeness_PARTIAL},
-					Found: false,
-				}
-			}
-			results[i] = res
-		}(i, k)
+			res, err := r.Get(ctx, namespace, keys[i], hideExpired)
+			failSoft(i, res, err)
+		}(i)
 	}
 	wg.Wait()
 	return results, nil

@@ -125,6 +125,22 @@ Additionally, every profile in the repo (`perf-report-*`) predates the gRPC migr
     **RESOLVED 2026-07-02:** new `RangeDigest` RPC (sha-256 over the range's (key, version) tuples incl. HLC logical); each AE tick digests its local cursor batch `[start, next)` and skips per-key `FetchReplica` for every peer whose digest matches — a converged cluster now pays 1 RPC per (peer, tick) instead of `batch × peers`. Mismatch or digest-incapable peer (Unimplemented/old node) falls back to the per-key fetch phase unchanged. Wired via `IntraAntiEntropy.WithDigest(replicator.PeerDigest())`. Pinned by `TestIntraAntiEntropyDigestSkipsConvergedPeers` (zero fetches when converged, fetches on divergence + fallback). Known remaining gap (pre-existing): peer-only keys in a range are still not pulled by AE — missing holders are target-N repair's job.
 
 **P3 — hygiene sweep** — items in Tier C, guided by the fresh profiles from P0.3.
+**STATUS 2026-07-02 (partial):** `MultiGet` now serves local hits inline and spawns goroutines only for network fetch-on-miss keys; the double-Get per read is largely gone via P1.5 inline values. Remaining Tier C backlog (pick by profile): per-op value copies in the engine read path, `time.Now()` in the skiplist TTL check, per-commit `publishMu` map ops, Txn-per-scan snapshot registration, range-bounded compaction.
+
+---
+
+## Roadmap outcome (2026-07-02)
+
+All P0–P2 items resolved (see per-item notes above); P3 partially done. Cumulative e2e on the same 3-node Docker-for-Mac harness as the baseline (`perf-report-grpc-roadmap/`, syncNone comparison mode, pprof on):
+
+| metric | baseline | roadmap build | delta |
+|---|---|---|---|
+| kv-get throughput | 20,263/s | 25,691/s | +27% |
+| kv-get p50 / p99 | 826µs / 3.35ms | 525µs / 1.41ms | −36% / −58% |
+| kv-put throughput | 8,740/s | 11,078/s | +27% |
+| kv-put p99 | 4.82ms | 3.46ms | −28% |
+
+Under the new durable default (`syncMode=full`) this host's fsync dominates put latency (~30ms floor, two sequential group commits); batching makes throughput scale with concurrency and halved p99. **Open item: a Linux/NVMe measurement of syncMode=full before calling the durability default cheap.**
 
 ## Verification
 - Each P1/P2 item: before/after `wavespan-bench` runs + pprof capture on the gRPC build; the bench harness and hdrhistogram plumbing already exist.
