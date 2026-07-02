@@ -121,6 +121,7 @@ Additionally, every profile in the repo (`perf-report-*`) predates the gRPC migr
    **RESOLVED 2026-07-02 (wavesdb `6c89eed`):** `pickSmallest` replaced with a binary min-heap over the input iterators — O(log k) per emitted entry. Correction to the review: values were already streamed one-at-a-time (not accumulated), and per-output-table vlogs make value rewrite inherent to the format, so "non-materializing" doesn't apply without a vlog-lifecycle redesign; the real defect was the O(n·k) scan, now fixed. Pinned by `TestCompactionManyWayOverlappingMerge`.
 10. Incremental manifest. (B4)
 11. Digest-based intra-cluster AE. (B1)
+    **RESOLVED 2026-07-02:** new `RangeDigest` RPC (sha-256 over the range's (key, version) tuples incl. HLC logical); each AE tick digests its local cursor batch `[start, next)` and skips per-key `FetchReplica` for every peer whose digest matches — a converged cluster now pays 1 RPC per (peer, tick) instead of `batch × peers`. Mismatch or digest-incapable peer (Unimplemented/old node) falls back to the per-key fetch phase unchanged. Wired via `IntraAntiEntropy.WithDigest(replicator.PeerDigest())`. Pinned by `TestIntraAntiEntropyDigestSkipsConvergedPeers` (zero fetches when converged, fetches on divergence + fallback). Known remaining gap (pre-existing): peer-only keys in a range are still not pulled by AE — missing holders are target-N repair's job.
 
 **P3 — hygiene sweep** — items in Tier C, guided by the fresh profiles from P0.3.
 

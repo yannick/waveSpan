@@ -99,6 +99,24 @@ func (r *ConnectReplicator) PeerFetch() PeerFetch {
 	}
 }
 
+// PeerDigest returns a PeerDigest closure backed by this replicator's pooled gRPC clients: the
+// digest phase of intra-cluster anti-entropy (design/37 P2.11). ok=false on any transport/RPC
+// error — including Unimplemented from a pre-digest peer — which makes the caller fall back to
+// the per-key fetch path.
+func (r *ConnectReplicator) PeerDigest() PeerDigest {
+	return func(ctx context.Context, dataAddr, namespace string, start, end []byte) (digest []byte, count uint64, ok bool) {
+		c, err := r.client(dataAddr)
+		if err != nil {
+			return nil, 0, false
+		}
+		resp, err := c.RangeDigest(ctx, &wavespanv1.RangeDigestRequest{Namespace: namespace, StartKey: start, EndKey: end})
+		if err != nil {
+			return nil, 0, false
+		}
+		return resp.GetDigest(), resp.GetCount(), true
+	}
+}
+
 // BackfillFetch returns a BackfillFetch closure backed by this replicator's pooled gRPC clients, for
 // the everywhere-namespace bootstrap path. Like PeerFetch it dials the data port over gRPC.
 func (r *ConnectReplicator) BackfillFetch() BackfillFetch {

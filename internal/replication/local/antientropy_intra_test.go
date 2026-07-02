@@ -66,3 +66,66 @@ func TestIntraAntiEntropyAdoptsNewerPeerVersion(t *testing.T) {
 		t.Fatalf("the winner node should not change, reconciled %d", n)
 	}
 }
+
+// TestIntraAntiEntropyDigestSkipsConvergedPeers pins design/37 P2.11: when a peer's range digest
+// matches the local batch, the per-key fetch phase for that peer must be skipped entirely — the
+// old behavior was one FetchReplica per (key, peer) per tick even with zero divergence.
+func TestIntraAntiEntropyDigestSkipsConvergedPeers(t *testing.T) {
+	nodeA := aeStore(t, "A")
+	nodeB := aeStore(t, "B")
+	// Identical content on both nodes (same versions).
+	for _, k := range []string{"k1", "k2", "k3"} {
+		putVer(t, nodeA, k, 100, "A", "v-"+k)
+		putVer(t, nodeB, k, 100, "A", "v-"+k)
+	}
+
+	stores := map[string]*recordstore.Store{"addrA": nodeA, "addrB": nodeB}
+	fetches := 0
+	fetch := PeerFetch(func(_ context.Context, addr, ns string, key []byte) (*wavespanv1.StoredRecord, bool) {
+		fetches++
+		rec, found, _ := stores[addr].GetRecord(ns, key)
+		return rec, found
+	})
+	digest := PeerDigest(func(_ context.Context, addr, ns string, start, end []byte) ([]byte, uint64, bool) {
+		recs, err := stores[addr].ScanRecords(ns, start, end)
+		if err != nil {
+			return nil, 0, false
+		}
+		return DigestRecords(recs), uint64(len(recs)), true
+	})
+	cluster := aeFakeCluster{members: []membership.MemberView{
+		{Member: membership.Member{MemberID: "A", DataAddr: "addrA"}, State: membership.StateAlive},
+		{Member: membership.Member{MemberID: "B", DataAddr: "addrB"}, State: membership.StateAlive},
+	}}
+
+	ae := NewIntraAntiEntropy(nodeB, membership.Member{MemberID: "B"}, cluster, fetch, []string{"default"}).WithDigest(digest)
+	if n := ae.ReconcileOnce(context.Background()); n != 0 {
+		t.Fatalf("converged cluster reconciled %d keys", n)
+	}
+	if fetches != 0 {
+		t.Fatalf("digest match must skip per-key fetches, saw %d", fetches)
+	}
+
+	// Diverge one key on A: digest mismatches -> fetch phase runs -> B adopts the winner.
+	putVer(t, nodeA, "k2", 200, "A", "newer")
+	if n := ae.ReconcileOnce(context.Background()); n != 1 {
+		t.Fatalf("diverged cluster reconciled %d keys, want 1", n)
+	}
+	if fetches == 0 {
+		t.Fatal("digest mismatch must trigger per-key fetches")
+	}
+	if out, _ := nodeB.Get("default", []byte("k2")); string(out.Value) != "newer" {
+		t.Fatalf("nodeB k2 = %q, want newer", out.Value)
+	}
+
+	// A peer that cannot answer digests (old version) falls back to per-key fetches.
+	fetches = 0
+	aeNoDigest := NewIntraAntiEntropy(nodeB, membership.Member{MemberID: "B"}, cluster, fetch, []string{"default"}).
+		WithDigest(func(context.Context, string, string, []byte, []byte) ([]byte, uint64, bool) { return nil, 0, false })
+	if n := aeNoDigest.ReconcileOnce(context.Background()); n != 0 {
+		t.Fatalf("converged cluster reconciled %d keys", n)
+	}
+	if fetches == 0 {
+		t.Fatal("digest-incapable peer must fall back to per-key fetches")
+	}
+}

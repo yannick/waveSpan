@@ -25,6 +25,7 @@ const (
 	ReplicationService_SubscribeKey_FullMethodName      = "/wavespan.v1.ReplicationService/SubscribeKey"
 	ReplicationService_ScanLocal_FullMethodName         = "/wavespan.v1.ReplicationService/ScanLocal"
 	ReplicationService_Backfill_FullMethodName          = "/wavespan.v1.ReplicationService/Backfill"
+	ReplicationService_RangeDigest_FullMethodName       = "/wavespan.v1.ReplicationService/RangeDigest"
 )
 
 // ReplicationServiceClient is the client API for ReplicationService service.
@@ -39,6 +40,7 @@ type ReplicationServiceClient interface {
 	SubscribeKey(ctx context.Context, in *SubscribeKeyRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CacheUpdate], error)
 	ScanLocal(ctx context.Context, in *ScanLocalRequest, opts ...grpc.CallOption) (*ScanLocalResponse, error)
 	Backfill(ctx context.Context, in *BackfillRequest, opts ...grpc.CallOption) (*BackfillResponse, error)
+	RangeDigest(ctx context.Context, in *RangeDigestRequest, opts ...grpc.CallOption) (*RangeDigestResponse, error)
 }
 
 type replicationServiceClient struct {
@@ -118,6 +120,16 @@ func (c *replicationServiceClient) Backfill(ctx context.Context, in *BackfillReq
 	return out, nil
 }
 
+func (c *replicationServiceClient) RangeDigest(ctx context.Context, in *RangeDigestRequest, opts ...grpc.CallOption) (*RangeDigestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RangeDigestResponse)
+	err := c.cc.Invoke(ctx, ReplicationService_RangeDigest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReplicationServiceServer is the server API for ReplicationService service.
 // All implementations must embed UnimplementedReplicationServiceServer
 // for forward compatibility.
@@ -130,6 +142,7 @@ type ReplicationServiceServer interface {
 	SubscribeKey(*SubscribeKeyRequest, grpc.ServerStreamingServer[CacheUpdate]) error
 	ScanLocal(context.Context, *ScanLocalRequest) (*ScanLocalResponse, error)
 	Backfill(context.Context, *BackfillRequest) (*BackfillResponse, error)
+	RangeDigest(context.Context, *RangeDigestRequest) (*RangeDigestResponse, error)
 	mustEmbedUnimplementedReplicationServiceServer()
 }
 
@@ -157,6 +170,9 @@ func (UnimplementedReplicationServiceServer) ScanLocal(context.Context, *ScanLoc
 }
 func (UnimplementedReplicationServiceServer) Backfill(context.Context, *BackfillRequest) (*BackfillResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Backfill not implemented")
+}
+func (UnimplementedReplicationServiceServer) RangeDigest(context.Context, *RangeDigestRequest) (*RangeDigestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RangeDigest not implemented")
 }
 func (UnimplementedReplicationServiceServer) mustEmbedUnimplementedReplicationServiceServer() {}
 func (UnimplementedReplicationServiceServer) testEmbeddedByValue()                            {}
@@ -280,6 +296,24 @@ func _ReplicationService_Backfill_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReplicationService_RangeDigest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RangeDigestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReplicationServiceServer).RangeDigest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReplicationService_RangeDigest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReplicationServiceServer).RangeDigest(ctx, req.(*RangeDigestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ReplicationService_ServiceDesc is the grpc.ServiceDesc for ReplicationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -306,6 +340,10 @@ var ReplicationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Backfill",
 			Handler:    _ReplicationService_Backfill_Handler,
+		},
+		{
+			MethodName: "RangeDigest",
+			Handler:    _ReplicationService_RangeDigest_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

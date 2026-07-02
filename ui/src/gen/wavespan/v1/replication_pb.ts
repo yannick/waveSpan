@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file wavespan/v1/replication.proto.
  */
 export const file_wavespan_v1_replication: GenFile = /*@__PURE__*/
-  fileDesc("Ch13YXZlc3Bhbi92MS9yZXBsaWNhdGlvbi5wcm90bxILd2F2ZXNwYW4udjEixgEKE1N0b3JlUmVwbGljYVJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBIpCgZyZWNvcmQYAyABKAsyGS53YXZlc3Bhbi52MS5TdG9yZWRSZWNvcmQSMAoNcmVwbGljYV9jbGFzcxgEIAEoDjIZLndhdmVzcGFuLnYxLlJlcGxpY2FDbGFzcxIdChVjb29yZGluYXRvcl9tZW1iZXJfaWQYBSABKAkSEwoLbXV0YXRpb25faWQYBiABKAkinQEKFFN0b3JlUmVwbGljYVJlc3BvbnNlEg8KB2R1cmFibGUYASABKAgSEQoJbWVtYmVyX2lkGAIgASgJEi0KD2FwcGxpZWRfdmVyc2lvbhgDIAEoCzIULndhdmVzcGFuLnYxLlZlcnNpb24SMgoOY29uZmxpY3Rfc3RhdGUYBCABKA4yGi53YXZlc3Bhbi52MS5Db25mbGljdFN0YXRlIk4KGFN0b3JlUmVwbGljYUJhdGNoUmVxdWVzdBIyCghyZXF1ZXN0cxgBIAMoCzIgLndhdmVzcGFuLnYxLlN0b3JlUmVwbGljYVJlcXVlc3QiUQoZU3RvcmVSZXBsaWNhQmF0Y2hSZXNwb25zZRI0CglyZXNwb25zZXMYASADKAsyIS53YXZlc3Bhbi52MS5TdG9yZVJlcGxpY2FSZXNwb25zZSJHChFTdWJzY3JpcHRpb25PZmZlchIYChBzb3VyY2VfbWVtYmVyX2lkGAEgASgJEhgKEHNvdXJjZV9kYXRhX2FkZHIYAiABKAkilgEKE0ZldGNoUmVwbGljYVJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBIuCgttaW5fdmVyc2lvbhgDIAEoCzIULndhdmVzcGFuLnYxLlZlcnNpb25IAIgBARIfChd3YW50X3N1YnNjcmlwdGlvbl9vZmZlchgEIAEoCEIOCgxfbWluX3ZlcnNpb24izQEKFEZldGNoUmVwbGljYVJlc3BvbnNlEg0KBWZvdW5kGAEgASgIEikKBnJlY29yZBgCIAEoCzIZLndhdmVzcGFuLnYxLlN0b3JlZFJlY29yZBIjChthbHRlcm5hdGVfaG9sZGVyX21lbWJlcl9pZHMYAyADKAkSPwoSc3Vic2NyaXB0aW9uX29mZmVyGAQgASgLMh4ud2F2ZXNwYW4udjEuU3Vic2NyaXB0aW9uT2ZmZXJIAIgBAUIVChNfc3Vic2NyaXB0aW9uX29mZmVyIpsBChNTdWJzY3JpYmVLZXlSZXF1ZXN0EhEKCW5hbWVzcGFjZRgBIAEoCRILCgNrZXkYAiABKAwSKgoMZnJvbV92ZXJzaW9uGAMgASgLMhQud2F2ZXNwYW4udjEuVmVyc2lvbhIcChRzdWJzY3JpYmVyX21lbWJlcl9pZBgEIAEoCRIaChJyZXF1ZXN0ZWRfbGVhc2VfbXMYBSABKAMipQEKC0NhY2hlVXBkYXRlEhcKD3N1YnNjcmlwdGlvbl9pZBgBIAEoCRIRCgluYW1lc3BhY2UYAiABKAkSCwoDa2V5GAMgASgMEikKBnJlY29yZBgEIAEoCzIZLndhdmVzcGFuLnYxLlN0b3JlZFJlY29yZBIXCg9zdHJlYW1fc2VxdWVuY2UYBSABKAQSGQoRc25hcHNob3RfcmVxdWlyZWQYBiABKAgiWAoQU2NhbkxvY2FsUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSEQoJc3RhcnRfa2V5GAIgASgMEg8KB2VuZF9rZXkYAyABKAwSDQoFbGltaXQYBCABKA0iiQEKDFNjYW5Mb2NhbFJvdxILCgNrZXkYASABKAwSDQoFdmFsdWUYAiABKAwSJQoHdmVyc2lvbhgDIAEoCzIULndhdmVzcGFuLnYxLlZlcnNpb24SHwoSZXhwaXJlc19hdF91bml4X21zGAQgASgDSACIAQFCFQoTX2V4cGlyZXNfYXRfdW5peF9tcyI8ChFTY2FuTG9jYWxSZXNwb25zZRInCgRyb3dzGAEgAygLMhkud2F2ZXNwYW4udjEuU2NhbkxvY2FsUm93IkMKD0JhY2tmaWxsUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSDgoGY3Vyc29yGAIgASgMEg0KBWxpbWl0GAMgASgNIlMKEEJhY2tmaWxsUmVzcG9uc2USKgoHcmVjb3JkcxgBIAMoCzIZLndhdmVzcGFuLnYxLlN0b3JlZFJlY29yZBITCgtuZXh0X2N1cnNvchgCIAEoDCJSChBHbG9iYWxNdXRhdGlvbklkEhIKCmNsdXN0ZXJfaWQYASABKAkSEQoJbWVtYmVyX2lkGAIgASgJEhcKD3dyaXRlcl9zZXF1ZW5jZRgDIAEoBCKZAQoOR2xvYmFsTXV0YXRpb24SKQoCaWQYASABKAsyHS53YXZlc3Bhbi52MS5HbG9iYWxNdXRhdGlvbklkEhEKCW5hbWVzcGFjZRgCIAEoCRILCgNrZXkYAyABKAwSKQoGcmVjb3JkGAQgASgLMhkud2F2ZXNwYW4udjEuU3RvcmVkUmVjb3JkEhEKCXBhcnRpdGlvbhgFIAEoDSJDChFQdXNoR2xvYmFsUmVxdWVzdBIuCgltdXRhdGlvbnMYASADKAsyGy53YXZlc3Bhbi52MS5HbG9iYWxNdXRhdGlvbiImCg1QdXNoR2xvYmFsQWNrEhUKDWFwcGxpZWRfY291bnQYASABKAQiOQoIS2V5UmFuZ2USEQoJbmFtZXNwYWNlGAEgASgJEg0KBXN0YXJ0GAIgASgMEgsKA2VuZBgDIAEoDCI/CglSYW5nZUhhc2gSJAoFcmFuZ2UYASABKAsyFS53YXZlc3Bhbi52MS5LZXlSYW5nZRIMCgRoYXNoGAIgASgMIjwKE1JhbmdlU3VtbWFyeVJlcXVlc3QSJQoGcmFuZ2VzGAEgAygLMhUud2F2ZXNwYW4udjEuS2V5UmFuZ2UiPgoUUmFuZ2VTdW1tYXJ5UmVzcG9uc2USJgoGaGFzaGVzGAEgAygLMhYud2F2ZXNwYW4udjEuUmFuZ2VIYXNoIjkKEUZldGNoUmFuZ2VSZXF1ZXN0EiQKBXJhbmdlGAEgASgLMhUud2F2ZXNwYW4udjEuS2V5UmFuZ2UiSgoRSW5zcGVjdEtleVJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBIVCg1pbmNsdWRlX3ZhbHVlGAMgASgIIo4BChJJbnNwZWN0S2V5UmVzcG9uc2USKwoHaG9sZGVycxgBIAMoCzIaLndhdmVzcGFuLnYxLkluc3BlY3RIb2xkZXISJwoEYmVzdBgCIAEoCzIZLndhdmVzcGFuLnYxLlN0b3JlZFJlY29yZBIQCghjb21wbGV0ZRgDIAEoCBIQCgh3YXJuaW5ncxgEIAMoCSpwCgxSZXBsaWNhQ2xhc3MSHQoZUkVQTElDQV9DTEFTU19VTlNQRUNJRklFRBAAEiAKHFJFUExJQ0FfQ0xBU1NfTkVBUkJZX0RVUkFCTEUQARIfChtSRVBMSUNBX0NMQVNTX0RZTkFNSUNfQ0FDSEUQAjKFBAoSUmVwbGljYXRpb25TZXJ2aWNlElMKDFN0b3JlUmVwbGljYRIgLndhdmVzcGFuLnYxLlN0b3JlUmVwbGljYVJlcXVlc3QaIS53YXZlc3Bhbi52MS5TdG9yZVJlcGxpY2FSZXNwb25zZRJiChFTdG9yZVJlcGxpY2FCYXRjaBIlLndhdmVzcGFuLnYxLlN0b3JlUmVwbGljYUJhdGNoUmVxdWVzdBomLndhdmVzcGFuLnYxLlN0b3JlUmVwbGljYUJhdGNoUmVzcG9uc2USUwoMRmV0Y2hSZXBsaWNhEiAud2F2ZXNwYW4udjEuRmV0Y2hSZXBsaWNhUmVxdWVzdBohLndhdmVzcGFuLnYxLkZldGNoUmVwbGljYVJlc3BvbnNlEkwKDFN1YnNjcmliZUtleRIgLndhdmVzcGFuLnYxLlN1YnNjcmliZUtleVJlcXVlc3QaGC53YXZlc3Bhbi52MS5DYWNoZVVwZGF0ZTABEkoKCVNjYW5Mb2NhbBIdLndhdmVzcGFuLnYxLlNjYW5Mb2NhbFJlcXVlc3QaHi53YXZlc3Bhbi52MS5TY2FuTG9jYWxSZXNwb25zZRJHCghCYWNrZmlsbBIcLndhdmVzcGFuLnYxLkJhY2tmaWxsUmVxdWVzdBodLndhdmVzcGFuLnYxLkJhY2tmaWxsUmVzcG9uc2UyzgIKEUdsb2JhbFJlcGxpY2F0aW9uEkgKClB1c2hHbG9iYWwSHi53YXZlc3Bhbi52MS5QdXNoR2xvYmFsUmVxdWVzdBoaLndhdmVzcGFuLnYxLlB1c2hHbG9iYWxBY2sSUwoMUmFuZ2VTdW1tYXJ5EiAud2F2ZXNwYW4udjEuUmFuZ2VTdW1tYXJ5UmVxdWVzdBohLndhdmVzcGFuLnYxLlJhbmdlU3VtbWFyeVJlc3BvbnNlEksKCkZldGNoUmFuZ2USHi53YXZlc3Bhbi52MS5GZXRjaFJhbmdlUmVxdWVzdBobLndhdmVzcGFuLnYxLkdsb2JhbE11dGF0aW9uMAESTQoKSW5zcGVjdEtleRIeLndhdmVzcGFuLnYxLkluc3BlY3RLZXlSZXF1ZXN0Gh8ud2F2ZXNwYW4udjEuSW5zcGVjdEtleVJlc3BvbnNlQqoBCg9jb20ud2F2ZXNwYW4udjFCEFJlcGxpY2F0aW9uUHJvdG9QAVo4Z2l0aHViLmNvbS95YW5uaWNrL3dhdmVzcGFuL3Byb3RvL3dhdmVzcGFuL3YxO3dhdmVzcGFudjGiAgNXWFiqAgtXYXZlc3Bhbi5WMcoCC1dhdmVzcGFuXFYx4gIXV2F2ZXNwYW5cVjFcR1BCTWV0YWRhdGHqAgxXYXZlc3Bhbjo6VjFiBnByb3RvMw", [file_wavespan_v1_common, file_wavespan_v1_observability]);
+  fileDesc("Ch13YXZlc3Bhbi92MS9yZXBsaWNhdGlvbi5wcm90bxILd2F2ZXNwYW4udjEixgEKE1N0b3JlUmVwbGljYVJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBIpCgZyZWNvcmQYAyABKAsyGS53YXZlc3Bhbi52MS5TdG9yZWRSZWNvcmQSMAoNcmVwbGljYV9jbGFzcxgEIAEoDjIZLndhdmVzcGFuLnYxLlJlcGxpY2FDbGFzcxIdChVjb29yZGluYXRvcl9tZW1iZXJfaWQYBSABKAkSEwoLbXV0YXRpb25faWQYBiABKAkinQEKFFN0b3JlUmVwbGljYVJlc3BvbnNlEg8KB2R1cmFibGUYASABKAgSEQoJbWVtYmVyX2lkGAIgASgJEi0KD2FwcGxpZWRfdmVyc2lvbhgDIAEoCzIULndhdmVzcGFuLnYxLlZlcnNpb24SMgoOY29uZmxpY3Rfc3RhdGUYBCABKA4yGi53YXZlc3Bhbi52MS5Db25mbGljdFN0YXRlIk4KGFN0b3JlUmVwbGljYUJhdGNoUmVxdWVzdBIyCghyZXF1ZXN0cxgBIAMoCzIgLndhdmVzcGFuLnYxLlN0b3JlUmVwbGljYVJlcXVlc3QiUQoZU3RvcmVSZXBsaWNhQmF0Y2hSZXNwb25zZRI0CglyZXNwb25zZXMYASADKAsyIS53YXZlc3Bhbi52MS5TdG9yZVJlcGxpY2FSZXNwb25zZSJHChFTdWJzY3JpcHRpb25PZmZlchIYChBzb3VyY2VfbWVtYmVyX2lkGAEgASgJEhgKEHNvdXJjZV9kYXRhX2FkZHIYAiABKAkilgEKE0ZldGNoUmVwbGljYVJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgsKA2tleRgCIAEoDBIuCgttaW5fdmVyc2lvbhgDIAEoCzIULndhdmVzcGFuLnYxLlZlcnNpb25IAIgBARIfChd3YW50X3N1YnNjcmlwdGlvbl9vZmZlchgEIAEoCEIOCgxfbWluX3ZlcnNpb24izQEKFEZldGNoUmVwbGljYVJlc3BvbnNlEg0KBWZvdW5kGAEgASgIEikKBnJlY29yZBgCIAEoCzIZLndhdmVzcGFuLnYxLlN0b3JlZFJlY29yZBIjChthbHRlcm5hdGVfaG9sZGVyX21lbWJlcl9pZHMYAyADKAkSPwoSc3Vic2NyaXB0aW9uX29mZmVyGAQgASgLMh4ud2F2ZXNwYW4udjEuU3Vic2NyaXB0aW9uT2ZmZXJIAIgBAUIVChNfc3Vic2NyaXB0aW9uX29mZmVyIpsBChNTdWJzY3JpYmVLZXlSZXF1ZXN0EhEKCW5hbWVzcGFjZRgBIAEoCRILCgNrZXkYAiABKAwSKgoMZnJvbV92ZXJzaW9uGAMgASgLMhQud2F2ZXNwYW4udjEuVmVyc2lvbhIcChRzdWJzY3JpYmVyX21lbWJlcl9pZBgEIAEoCRIaChJyZXF1ZXN0ZWRfbGVhc2VfbXMYBSABKAMipQEKC0NhY2hlVXBkYXRlEhcKD3N1YnNjcmlwdGlvbl9pZBgBIAEoCRIRCgluYW1lc3BhY2UYAiABKAkSCwoDa2V5GAMgASgMEikKBnJlY29yZBgEIAEoCzIZLndhdmVzcGFuLnYxLlN0b3JlZFJlY29yZBIXCg9zdHJlYW1fc2VxdWVuY2UYBSABKAQSGQoRc25hcHNob3RfcmVxdWlyZWQYBiABKAgiWAoQU2NhbkxvY2FsUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSEQoJc3RhcnRfa2V5GAIgASgMEg8KB2VuZF9rZXkYAyABKAwSDQoFbGltaXQYBCABKA0iiQEKDFNjYW5Mb2NhbFJvdxILCgNrZXkYASABKAwSDQoFdmFsdWUYAiABKAwSJQoHdmVyc2lvbhgDIAEoCzIULndhdmVzcGFuLnYxLlZlcnNpb24SHwoSZXhwaXJlc19hdF91bml4X21zGAQgASgDSACIAQFCFQoTX2V4cGlyZXNfYXRfdW5peF9tcyI8ChFTY2FuTG9jYWxSZXNwb25zZRInCgRyb3dzGAEgAygLMhkud2F2ZXNwYW4udjEuU2NhbkxvY2FsUm93IkMKD0JhY2tmaWxsUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSDgoGY3Vyc29yGAIgASgMEg0KBWxpbWl0GAMgASgNIlMKEEJhY2tmaWxsUmVzcG9uc2USKgoHcmVjb3JkcxgBIAMoCzIZLndhdmVzcGFuLnYxLlN0b3JlZFJlY29yZBITCgtuZXh0X2N1cnNvchgCIAEoDCJLChJSYW5nZURpZ2VzdFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEhEKCXN0YXJ0X2tleRgCIAEoDBIPCgdlbmRfa2V5GAMgASgMIjQKE1JhbmdlRGlnZXN0UmVzcG9uc2USDgoGZGlnZXN0GAEgASgMEg0KBWNvdW50GAIgASgEIlIKEEdsb2JhbE11dGF0aW9uSWQSEgoKY2x1c3Rlcl9pZBgBIAEoCRIRCgltZW1iZXJfaWQYAiABKAkSFwoPd3JpdGVyX3NlcXVlbmNlGAMgASgEIpkBCg5HbG9iYWxNdXRhdGlvbhIpCgJpZBgBIAEoCzIdLndhdmVzcGFuLnYxLkdsb2JhbE11dGF0aW9uSWQSEQoJbmFtZXNwYWNlGAIgASgJEgsKA2tleRgDIAEoDBIpCgZyZWNvcmQYBCABKAsyGS53YXZlc3Bhbi52MS5TdG9yZWRSZWNvcmQSEQoJcGFydGl0aW9uGAUgASgNIkMKEVB1c2hHbG9iYWxSZXF1ZXN0Ei4KCW11dGF0aW9ucxgBIAMoCzIbLndhdmVzcGFuLnYxLkdsb2JhbE11dGF0aW9uIiYKDVB1c2hHbG9iYWxBY2sSFQoNYXBwbGllZF9jb3VudBgBIAEoBCI5CghLZXlSYW5nZRIRCgluYW1lc3BhY2UYASABKAkSDQoFc3RhcnQYAiABKAwSCwoDZW5kGAMgASgMIj8KCVJhbmdlSGFzaBIkCgVyYW5nZRgBIAEoCzIVLndhdmVzcGFuLnYxLktleVJhbmdlEgwKBGhhc2gYAiABKAwiPAoTUmFuZ2VTdW1tYXJ5UmVxdWVzdBIlCgZyYW5nZXMYASADKAsyFS53YXZlc3Bhbi52MS5LZXlSYW5nZSI+ChRSYW5nZVN1bW1hcnlSZXNwb25zZRImCgZoYXNoZXMYASADKAsyFi53YXZlc3Bhbi52MS5SYW5nZUhhc2giOQoRRmV0Y2hSYW5nZVJlcXVlc3QSJAoFcmFuZ2UYASABKAsyFS53YXZlc3Bhbi52MS5LZXlSYW5nZSJKChFJbnNwZWN0S2V5UmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSCwoDa2V5GAIgASgMEhUKDWluY2x1ZGVfdmFsdWUYAyABKAgijgEKEkluc3BlY3RLZXlSZXNwb25zZRIrCgdob2xkZXJzGAEgAygLMhoud2F2ZXNwYW4udjEuSW5zcGVjdEhvbGRlchInCgRiZXN0GAIgASgLMhkud2F2ZXNwYW4udjEuU3RvcmVkUmVjb3JkEhAKCGNvbXBsZXRlGAMgASgIEhAKCHdhcm5pbmdzGAQgAygJKnAKDFJlcGxpY2FDbGFzcxIdChlSRVBMSUNBX0NMQVNTX1VOU1BFQ0lGSUVEEAASIAocUkVQTElDQV9DTEFTU19ORUFSQllfRFVSQUJMRRABEh8KG1JFUExJQ0FfQ0xBU1NfRFlOQU1JQ19DQUNIRRACMtcEChJSZXBsaWNhdGlvblNlcnZpY2USUwoMU3RvcmVSZXBsaWNhEiAud2F2ZXNwYW4udjEuU3RvcmVSZXBsaWNhUmVxdWVzdBohLndhdmVzcGFuLnYxLlN0b3JlUmVwbGljYVJlc3BvbnNlEmIKEVN0b3JlUmVwbGljYUJhdGNoEiUud2F2ZXNwYW4udjEuU3RvcmVSZXBsaWNhQmF0Y2hSZXF1ZXN0GiYud2F2ZXNwYW4udjEuU3RvcmVSZXBsaWNhQmF0Y2hSZXNwb25zZRJTCgxGZXRjaFJlcGxpY2ESIC53YXZlc3Bhbi52MS5GZXRjaFJlcGxpY2FSZXF1ZXN0GiEud2F2ZXNwYW4udjEuRmV0Y2hSZXBsaWNhUmVzcG9uc2USTAoMU3Vic2NyaWJlS2V5EiAud2F2ZXNwYW4udjEuU3Vic2NyaWJlS2V5UmVxdWVzdBoYLndhdmVzcGFuLnYxLkNhY2hlVXBkYXRlMAESSgoJU2NhbkxvY2FsEh0ud2F2ZXNwYW4udjEuU2NhbkxvY2FsUmVxdWVzdBoeLndhdmVzcGFuLnYxLlNjYW5Mb2NhbFJlc3BvbnNlEkcKCEJhY2tmaWxsEhwud2F2ZXNwYW4udjEuQmFja2ZpbGxSZXF1ZXN0Gh0ud2F2ZXNwYW4udjEuQmFja2ZpbGxSZXNwb25zZRJQCgtSYW5nZURpZ2VzdBIfLndhdmVzcGFuLnYxLlJhbmdlRGlnZXN0UmVxdWVzdBogLndhdmVzcGFuLnYxLlJhbmdlRGlnZXN0UmVzcG9uc2UyzgIKEUdsb2JhbFJlcGxpY2F0aW9uEkgKClB1c2hHbG9iYWwSHi53YXZlc3Bhbi52MS5QdXNoR2xvYmFsUmVxdWVzdBoaLndhdmVzcGFuLnYxLlB1c2hHbG9iYWxBY2sSUwoMUmFuZ2VTdW1tYXJ5EiAud2F2ZXNwYW4udjEuUmFuZ2VTdW1tYXJ5UmVxdWVzdBohLndhdmVzcGFuLnYxLlJhbmdlU3VtbWFyeVJlc3BvbnNlEksKCkZldGNoUmFuZ2USHi53YXZlc3Bhbi52MS5GZXRjaFJhbmdlUmVxdWVzdBobLndhdmVzcGFuLnYxLkdsb2JhbE11dGF0aW9uMAESTQoKSW5zcGVjdEtleRIeLndhdmVzcGFuLnYxLkluc3BlY3RLZXlSZXF1ZXN0Gh8ud2F2ZXNwYW4udjEuSW5zcGVjdEtleVJlc3BvbnNlQqoBCg9jb20ud2F2ZXNwYW4udjFCEFJlcGxpY2F0aW9uUHJvdG9QAVo4Z2l0aHViLmNvbS95YW5uaWNrL3dhdmVzcGFuL3Byb3RvL3dhdmVzcGFuL3YxO3dhdmVzcGFudjGiAgNXWFiqAgtXYXZlc3Bhbi5WMcoCC1dhdmVzcGFuXFYx4gIXV2F2ZXNwYW5cVjFcR1BCTWV0YWRhdGHqAgxXYXZlc3Bhbjo6VjFiBnByb3RvMw", [file_wavespan_v1_common, file_wavespan_v1_observability]);
 
 /**
  * StoreReplicaRequest carries a versioned record to a nearby peer for durable replication
@@ -444,6 +444,68 @@ export const BackfillResponseSchema: GenMessage<BackfillResponse> = /*@__PURE__*
   messageDesc(file_wavespan_v1_replication, 13);
 
 /**
+ * RangeDigestRequest asks a peer for a content hash of its winning (key, version) tuples in
+ * [start_key, end_key) of a namespace (design/37 P2.11). The intra-cluster anti-entropy pass
+ * compares digests first and pays per-key FetchReplica traffic only for ranges that actually
+ * diverge — instead of O(keys × peers) full-record fetches per tick.
+ *
+ * @generated from message wavespan.v1.RangeDigestRequest
+ */
+export type RangeDigestRequest = Message<"wavespan.v1.RangeDigestRequest"> & {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * empty = namespace start
+   *
+   * @generated from field: bytes start_key = 2;
+   */
+  startKey: Uint8Array;
+
+  /**
+   * empty = namespace end (exclusive otherwise)
+   *
+   * @generated from field: bytes end_key = 3;
+   */
+  endKey: Uint8Array;
+};
+
+/**
+ * Describes the message wavespan.v1.RangeDigestRequest.
+ * Use `create(RangeDigestRequestSchema)` to create a new message.
+ */
+export const RangeDigestRequestSchema: GenMessage<RangeDigestRequest> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_replication, 14);
+
+/**
+ * @generated from message wavespan.v1.RangeDigestResponse
+ */
+export type RangeDigestResponse = Message<"wavespan.v1.RangeDigestResponse"> & {
+  /**
+   * sha-256 over the range's (key, version) tuples in key order
+   *
+   * @generated from field: bytes digest = 1;
+   */
+  digest: Uint8Array;
+
+  /**
+   * number of records digested
+   *
+   * @generated from field: uint64 count = 2;
+   */
+  count: bigint;
+};
+
+/**
+ * Describes the message wavespan.v1.RangeDigestResponse.
+ * Use `create(RangeDigestResponseSchema)` to create a new message.
+ */
+export const RangeDigestResponseSchema: GenMessage<RangeDigestResponse> = /*@__PURE__*/
+  messageDesc(file_wavespan_v1_replication, 15);
+
+/**
  * GlobalMutationId is the stable, idempotent identity of an originated mutation across clusters:
  * receivers ignore an id they have already applied (replay protection).
  *
@@ -471,7 +533,7 @@ export type GlobalMutationId = Message<"wavespan.v1.GlobalMutationId"> & {
  * Use `create(GlobalMutationIdSchema)` to create a new message.
  */
 export const GlobalMutationIdSchema: GenMessage<GlobalMutationId> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 14);
+  messageDesc(file_wavespan_v1_replication, 16);
 
 /**
  * GlobalMutation is one mutation shipped to a peer cluster. The StoredRecord envelope carries the
@@ -511,7 +573,7 @@ export type GlobalMutation = Message<"wavespan.v1.GlobalMutation"> & {
  * Use `create(GlobalMutationSchema)` to create a new message.
  */
 export const GlobalMutationSchema: GenMessage<GlobalMutation> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 15);
+  messageDesc(file_wavespan_v1_replication, 17);
 
 /**
  * PushGlobalRequest batches mutations to a peer (unary; works over HTTP/1.1, unlike a bidi stream).
@@ -530,7 +592,7 @@ export type PushGlobalRequest = Message<"wavespan.v1.PushGlobalRequest"> & {
  * Use `create(PushGlobalRequestSchema)` to create a new message.
  */
 export const PushGlobalRequestSchema: GenMessage<PushGlobalRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 16);
+  messageDesc(file_wavespan_v1_replication, 18);
 
 /**
  * @generated from message wavespan.v1.PushGlobalAck
@@ -547,7 +609,7 @@ export type PushGlobalAck = Message<"wavespan.v1.PushGlobalAck"> & {
  * Use `create(PushGlobalAckSchema)` to create a new message.
  */
 export const PushGlobalAckSchema: GenMessage<PushGlobalAck> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 17);
+  messageDesc(file_wavespan_v1_replication, 19);
 
 /**
  * @generated from message wavespan.v1.KeyRange
@@ -574,7 +636,7 @@ export type KeyRange = Message<"wavespan.v1.KeyRange"> & {
  * Use `create(KeyRangeSchema)` to create a new message.
  */
 export const KeyRangeSchema: GenMessage<KeyRange> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 18);
+  messageDesc(file_wavespan_v1_replication, 20);
 
 /**
  * @generated from message wavespan.v1.RangeHash
@@ -596,7 +658,7 @@ export type RangeHash = Message<"wavespan.v1.RangeHash"> & {
  * Use `create(RangeHashSchema)` to create a new message.
  */
 export const RangeHashSchema: GenMessage<RangeHash> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 19);
+  messageDesc(file_wavespan_v1_replication, 21);
 
 /**
  * @generated from message wavespan.v1.RangeSummaryRequest
@@ -613,7 +675,7 @@ export type RangeSummaryRequest = Message<"wavespan.v1.RangeSummaryRequest"> & {
  * Use `create(RangeSummaryRequestSchema)` to create a new message.
  */
 export const RangeSummaryRequestSchema: GenMessage<RangeSummaryRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 20);
+  messageDesc(file_wavespan_v1_replication, 22);
 
 /**
  * @generated from message wavespan.v1.RangeSummaryResponse
@@ -630,7 +692,7 @@ export type RangeSummaryResponse = Message<"wavespan.v1.RangeSummaryResponse"> &
  * Use `create(RangeSummaryResponseSchema)` to create a new message.
  */
 export const RangeSummaryResponseSchema: GenMessage<RangeSummaryResponse> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 21);
+  messageDesc(file_wavespan_v1_replication, 23);
 
 /**
  * @generated from message wavespan.v1.FetchRangeRequest
@@ -647,7 +709,7 @@ export type FetchRangeRequest = Message<"wavespan.v1.FetchRangeRequest"> & {
  * Use `create(FetchRangeRequestSchema)` to create a new message.
  */
 export const FetchRangeRequestSchema: GenMessage<FetchRangeRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 22);
+  messageDesc(file_wavespan_v1_replication, 24);
 
 /**
  * InspectKey asks a peer cluster "which of your nodes hold this key, at what version?" for the
@@ -679,7 +741,7 @@ export type InspectKeyRequest = Message<"wavespan.v1.InspectKeyRequest"> & {
  * Use `create(InspectKeyRequestSchema)` to create a new message.
  */
 export const InspectKeyRequestSchema: GenMessage<InspectKeyRequest> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 23);
+  messageDesc(file_wavespan_v1_replication, 25);
 
 /**
  * @generated from message wavespan.v1.InspectKeyResponse
@@ -717,7 +779,7 @@ export type InspectKeyResponse = Message<"wavespan.v1.InspectKeyResponse"> & {
  * Use `create(InspectKeyResponseSchema)` to create a new message.
  */
 export const InspectKeyResponseSchema: GenMessage<InspectKeyResponse> = /*@__PURE__*/
-  messageDesc(file_wavespan_v1_replication, 24);
+  messageDesc(file_wavespan_v1_replication, 26);
 
 /**
  * ReplicaClass distinguishes durable replicas (counted for write durability) from disposable
@@ -801,6 +863,14 @@ export const ReplicationService: GenService<{
     methodKind: "unary";
     input: typeof BackfillRequestSchema;
     output: typeof BackfillResponseSchema;
+  },
+  /**
+   * @generated from rpc wavespan.v1.ReplicationService.RangeDigest
+   */
+  rangeDigest: {
+    methodKind: "unary";
+    input: typeof RangeDigestRequestSchema;
+    output: typeof RangeDigestResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_wavespan_v1_replication, 0);

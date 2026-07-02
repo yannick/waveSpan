@@ -116,6 +116,21 @@ message BackfillResponse {
   bytes next_cursor = 2; // empty => the end of the namespace was reached
 }
 
+// RangeDigestRequest asks a peer for a content hash of its winning (key, version) tuples in
+// [start_key, end_key) of a namespace (design/37 P2.11). The intra-cluster anti-entropy pass
+// compares digests first and pays per-key FetchReplica traffic only for ranges that actually
+// diverge — instead of O(keys × peers) full-record fetches per tick.
+message RangeDigestRequest {
+  string namespace = 1;
+  bytes start_key = 2; // empty = namespace start
+  bytes end_key = 3;   // empty = namespace end (exclusive otherwise)
+}
+
+message RangeDigestResponse {
+  bytes digest = 1; // sha-256 over the range's (key, version) tuples in key order
+  uint64 count = 2; // number of records digested
+}
+
 // ReplicationService is the internal replica-write + cache API (mTLS-only in production, design/15).
 service ReplicationService {
   rpc StoreReplica(StoreReplicaRequest) returns (StoreReplicaResponse);
@@ -124,6 +139,7 @@ service ReplicationService {
   rpc SubscribeKey(SubscribeKeyRequest) returns (stream CacheUpdate);
   rpc ScanLocal(ScanLocalRequest) returns (ScanLocalResponse);
   rpc Backfill(BackfillRequest) returns (BackfillResponse);
+  rpc RangeDigest(RangeDigestRequest) returns (RangeDigestResponse);
 }
 
 // --- Global active-active replication (M7, design/06) ---

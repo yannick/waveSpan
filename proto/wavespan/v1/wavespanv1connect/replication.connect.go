@@ -53,6 +53,9 @@ const (
 	// ReplicationServiceBackfillProcedure is the fully-qualified name of the ReplicationService's
 	// Backfill RPC.
 	ReplicationServiceBackfillProcedure = "/wavespan.v1.ReplicationService/Backfill"
+	// ReplicationServiceRangeDigestProcedure is the fully-qualified name of the ReplicationService's
+	// RangeDigest RPC.
+	ReplicationServiceRangeDigestProcedure = "/wavespan.v1.ReplicationService/RangeDigest"
 	// GlobalReplicationPushGlobalProcedure is the fully-qualified name of the GlobalReplication's
 	// PushGlobal RPC.
 	GlobalReplicationPushGlobalProcedure = "/wavespan.v1.GlobalReplication/PushGlobal"
@@ -75,6 +78,7 @@ type ReplicationServiceClient interface {
 	SubscribeKey(context.Context, *connect.Request[v1.SubscribeKeyRequest]) (*connect.ServerStreamForClient[v1.CacheUpdate], error)
 	ScanLocal(context.Context, *connect.Request[v1.ScanLocalRequest]) (*connect.Response[v1.ScanLocalResponse], error)
 	Backfill(context.Context, *connect.Request[v1.BackfillRequest]) (*connect.Response[v1.BackfillResponse], error)
+	RangeDigest(context.Context, *connect.Request[v1.RangeDigestRequest]) (*connect.Response[v1.RangeDigestResponse], error)
 }
 
 // NewReplicationServiceClient constructs a client for the wavespan.v1.ReplicationService service.
@@ -124,6 +128,12 @@ func NewReplicationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(replicationServiceMethods.ByName("Backfill")),
 			connect.WithClientOptions(opts...),
 		),
+		rangeDigest: connect.NewClient[v1.RangeDigestRequest, v1.RangeDigestResponse](
+			httpClient,
+			baseURL+ReplicationServiceRangeDigestProcedure,
+			connect.WithSchema(replicationServiceMethods.ByName("RangeDigest")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -135,6 +145,7 @@ type replicationServiceClient struct {
 	subscribeKey      *connect.Client[v1.SubscribeKeyRequest, v1.CacheUpdate]
 	scanLocal         *connect.Client[v1.ScanLocalRequest, v1.ScanLocalResponse]
 	backfill          *connect.Client[v1.BackfillRequest, v1.BackfillResponse]
+	rangeDigest       *connect.Client[v1.RangeDigestRequest, v1.RangeDigestResponse]
 }
 
 // StoreReplica calls wavespan.v1.ReplicationService.StoreReplica.
@@ -167,6 +178,11 @@ func (c *replicationServiceClient) Backfill(ctx context.Context, req *connect.Re
 	return c.backfill.CallUnary(ctx, req)
 }
 
+// RangeDigest calls wavespan.v1.ReplicationService.RangeDigest.
+func (c *replicationServiceClient) RangeDigest(ctx context.Context, req *connect.Request[v1.RangeDigestRequest]) (*connect.Response[v1.RangeDigestResponse], error) {
+	return c.rangeDigest.CallUnary(ctx, req)
+}
+
 // ReplicationServiceHandler is an implementation of the wavespan.v1.ReplicationService service.
 type ReplicationServiceHandler interface {
 	StoreReplica(context.Context, *connect.Request[v1.StoreReplicaRequest]) (*connect.Response[v1.StoreReplicaResponse], error)
@@ -175,6 +191,7 @@ type ReplicationServiceHandler interface {
 	SubscribeKey(context.Context, *connect.Request[v1.SubscribeKeyRequest], *connect.ServerStream[v1.CacheUpdate]) error
 	ScanLocal(context.Context, *connect.Request[v1.ScanLocalRequest]) (*connect.Response[v1.ScanLocalResponse], error)
 	Backfill(context.Context, *connect.Request[v1.BackfillRequest]) (*connect.Response[v1.BackfillResponse], error)
+	RangeDigest(context.Context, *connect.Request[v1.RangeDigestRequest]) (*connect.Response[v1.RangeDigestResponse], error)
 }
 
 // NewReplicationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -220,6 +237,12 @@ func NewReplicationServiceHandler(svc ReplicationServiceHandler, opts ...connect
 		connect.WithSchema(replicationServiceMethods.ByName("Backfill")),
 		connect.WithHandlerOptions(opts...),
 	)
+	replicationServiceRangeDigestHandler := connect.NewUnaryHandler(
+		ReplicationServiceRangeDigestProcedure,
+		svc.RangeDigest,
+		connect.WithSchema(replicationServiceMethods.ByName("RangeDigest")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wavespan.v1.ReplicationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ReplicationServiceStoreReplicaProcedure:
@@ -234,6 +257,8 @@ func NewReplicationServiceHandler(svc ReplicationServiceHandler, opts ...connect
 			replicationServiceScanLocalHandler.ServeHTTP(w, r)
 		case ReplicationServiceBackfillProcedure:
 			replicationServiceBackfillHandler.ServeHTTP(w, r)
+		case ReplicationServiceRangeDigestProcedure:
+			replicationServiceRangeDigestHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -265,6 +290,10 @@ func (UnimplementedReplicationServiceHandler) ScanLocal(context.Context, *connec
 
 func (UnimplementedReplicationServiceHandler) Backfill(context.Context, *connect.Request[v1.BackfillRequest]) (*connect.Response[v1.BackfillResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ReplicationService.Backfill is not implemented"))
+}
+
+func (UnimplementedReplicationServiceHandler) RangeDigest(context.Context, *connect.Request[v1.RangeDigestRequest]) (*connect.Response[v1.RangeDigestResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ReplicationService.RangeDigest is not implemented"))
 }
 
 // GlobalReplicationClient is a client for the wavespan.v1.GlobalReplication service.

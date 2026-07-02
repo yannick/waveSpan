@@ -21,6 +21,9 @@ type RecordReader interface {
 	ScanRange(namespace string, start, end []byte, limit int, nowMs int64) ([]recordstore.ScanRow, error)
 	// ScanRecordsFrom pages the full winning records of a namespace from a cursor (for backfill).
 	ScanRecordsFrom(namespace string, start []byte, limit int) ([]*wavespanv1.StoredRecord, []byte, error)
+	// ScanRecords returns the full winning records in [start, end) — the RangeDigest input
+	// (design/37 P2.11); nil start/end mean namespace start/end.
+	ScanRecords(namespace string, start, end []byte) ([]*wavespanv1.StoredRecord, error)
 }
 
 // RepairConfig tunes the repair engine (design/23_repair_engine.md).

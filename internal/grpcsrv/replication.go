@@ -88,6 +88,17 @@ func (s *Replication) FetchReplica(_ context.Context, m *wavespanv1.FetchReplica
 	return resp, nil
 }
 
+// RangeDigest returns the content hash of this holder's winning (key, version) tuples in
+// [start_key, end_key) — the cheap first phase of digest-based intra-cluster anti-entropy
+// (design/37 P2.11): matching digests spare the per-key FetchReplica traffic entirely.
+func (s *Replication) RangeDigest(_ context.Context, m *wavespanv1.RangeDigestRequest) (*wavespanv1.RangeDigestResponse, error) {
+	recs, err := s.reader.ScanRecords(m.GetNamespace(), m.GetStartKey(), m.GetEndKey())
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &wavespanv1.RangeDigestResponse{Digest: local.DigestRecords(recs), Count: uint64(len(recs))}, nil
+}
+
 // Backfill streams this holder's full records for a namespace, paginated, so a joining node can
 // bootstrap an "everywhere"-replicated namespace.
 func (s *Replication) Backfill(_ context.Context, m *wavespanv1.BackfillRequest) (*wavespanv1.BackfillResponse, error) {

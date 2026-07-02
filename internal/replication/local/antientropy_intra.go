@@ -1,6 +1,7 @@
 package local
 
 import (
+	"bytes"
 	"context"
 	"time"
 
@@ -13,6 +14,11 @@ import (
 // PeerFetch fetches a peer's record for a key (FetchReplica). found is false when the peer has no
 // record.
 type PeerFetch func(ctx context.Context, dataAddr, namespace string, key []byte) (*wavespanv1.StoredRecord, bool)
+
+// PeerDigest fetches a peer's content hash for a key range (RangeDigest, design/37 P2.11).
+// ok=false means the peer can't answer (old version, transport error) — fall back to per-key
+// fetches for that peer.
+type PeerDigest func(ctx context.Context, dataAddr, namespace string, start, end []byte) (digest []byte, count uint64, ok bool)
 
 // AECluster exposes the live roster to the intra-cluster anti-entropy worker.
 type AECluster interface {
@@ -30,6 +36,7 @@ type IntraAntiEntropy struct {
 	self       membership.Member
 	cluster    AECluster
 	fetch      PeerFetch
+	digest     PeerDigest // optional: digest-gate the per-key fetches (design/37 P2.11)
 	namespaces []string
 	batch      int
 	cursor     map[string][]byte // per-namespace resume point for the incremental sweep
@@ -43,6 +50,13 @@ func NewIntraAntiEntropy(store *recordstore.Store, self membership.Member, clust
 	return &IntraAntiEntropy{store: store, self: self, cluster: cluster, fetch: fetch, namespaces: namespaces, batch: 256, cursor: map[string][]byte{}}
 }
 
+// WithDigest enables the digest phase: before per-key fetching a batch from a peer, compare a
+// range digest and skip the peer entirely when it matches (one RPC instead of batch-many).
+func (a *IntraAntiEntropy) WithDigest(d PeerDigest) *IntraAntiEntropy {
+	a.digest = d
+	return a
+}
+
 // ReconcileOnce runs ONE bounded, incremental pass: it scans at most `batch` keys per namespace from
 // a rolling cursor (not the whole keyspace), reconciles them against peers, and advances the cursor
 // so successive passes sweep the namespace over time. This caps per-tick work + allocation at
@@ -54,15 +68,36 @@ func (a *IntraAntiEntropy) ReconcileOnce(ctx context.Context) int {
 	}
 	updated := 0
 	for _, ns := range a.namespaces {
-		recs, next, err := a.store.ScanRecordsFrom(ns, a.cursor[ns], a.batch)
+		start := a.cursor[ns]
+		recs, next, err := a.store.ScanRecordsFrom(ns, start, a.batch)
 		if err != nil {
 			continue
 		}
 		a.cursor[ns] = next // nil => start over from the top of the namespace next sweep
+
+		// Digest phase (design/37 P2.11): the local batch covers exactly [start, next), so a peer
+		// whose RangeDigest over that range matches ours holds identical (key, version) content —
+		// skip its per-key fetches entirely. A peer that can't answer (old node, transport error)
+		// falls back to the fetch phase. Without a digest fn every peer is fetched (old behavior).
+		fetchPeers := peers
+		if a.digest != nil && len(recs) > 0 {
+			localDigest := DigestRecords(recs)
+			fetchPeers = fetchPeers[:0:0]
+			for _, addr := range peers {
+				if pd, _, ok := a.digest(ctx, addr, ns, start, next); ok && bytes.Equal(pd, localDigest) {
+					continue // converged with this peer for this range
+				}
+				fetchPeers = append(fetchPeers, addr)
+			}
+		}
+		if len(fetchPeers) == 0 {
+			continue
+		}
+
 		for _, rec := range recs {
 			best := rec
 			bestVer := version.FromProto(rec.GetVersion())
-			for _, addr := range peers {
+			for _, addr := range fetchPeers {
 				pr, found := a.fetch(ctx, addr, ns, rec.GetLogicalKey())
 				if !found || pr == nil {
 					continue
@@ -84,6 +119,7 @@ func (a *IntraAntiEntropy) ReconcileOnce(ctx context.Context) int {
 	}
 	return updated
 }
+
 
 // Run reconciles on the given interval until ctx is done.
 func (a *IntraAntiEntropy) Run(ctx context.Context, interval time.Duration) {
