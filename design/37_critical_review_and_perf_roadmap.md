@@ -98,6 +98,7 @@ Additionally, every profile in the repo (`perf-report-*`) predates the gRPC migr
 
 **P0 — correctness-adjacent (do before more throughput work)**
 1. Decide the durability contract explicitly: either default `SyncMode` to group-commit fsync (`SyncFull` — the WAL is already built for it) and measure the real cost, or document the 128ms window in design/00/13 and the ack response. (A1.1)
+   **RESOLVED 2026-07-02:** production default is now `full` (tunables registry; offline paths — restore, snapshot CLI, tests — keep `none`). Measured on the ReadCommitted txn path (`wavesdb/sync_bench_test.go`, M2 Max, macOS F_FULLFSYNC = worst case): none 3.7µs/op, interval ~free, full 1.62ms/op serial but 48µs/op (~21k ops/s) at 32 committers — group commit amortizes; Linux fdatasync will be far cheaper. ADR-0002, design/02, design/13 updated; defaults pinned by `TestSyncModeDefaultIsFull` + `TestSyncModePlumbing`.
 2. Bound scans: push limits into `scan.go` local+remote paths. (A3)
 3. Re-profile on the live gRPC transport; retire/regenerate `perf-report-*`. Every subsequent decision depends on this.
 

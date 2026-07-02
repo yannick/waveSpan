@@ -168,7 +168,10 @@ func OpenWavesdbWith(path string, opts EngineOptions) (*WavesdbStore, error) {
 }
 
 // defaultEngineOptions mirrors wavesdb's DefaultColumnFamilyOptions so OpenWavesdb (no tunables)
-// behaves exactly as before.
+// behaves exactly as before. Note it keeps SyncMode "none": OpenWavesdb serves offline, re-runnable
+// paths (backup restore, wavespan-snapshot) and tests, where per-commit fsync buys nothing. The
+// serving node opens via OpenWavesdbWith from the tunables registry, whose syncMode default is
+// "full" so the origin+1 ack contract means fsynced-durable (design/37 P0.1).
 func defaultEngineOptions() EngineOptions {
 	d := wavesdb.DefaultColumnFamilyOptions()
 	return EngineOptions{

@@ -98,10 +98,14 @@ tunables:
       blockIndexPrefixLen: 16
 
       # [string, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_SYNC_MODE
-      # WAL durability: none (OS flush) | full (fsync per commit) | interval (periodic fsync).
-      # why: none favours throughput on the eventually-consistent, origin+1-replicated write
-      # path; a second durable replica is the real safety net, not local fsync.
-      syncMode: none
+      # WAL durability: none (OS flush) | full (fsync per group commit) | interval (periodic
+      # fsync).
+      # why: full makes the origin+1 ack contract (ADR-0002 "durable") mean
+      # fsynced-on-two-nodes rather than in-two-page-caches; WAL group commit amortizes the
+      # fsync across concurrent committers. Drop to interval (bounded loss window) or none
+      # only for cache-tier deployments that accept losing acked writes on correlated crashes
+      # (design/37 P0.1).
+      syncMode: full
 
       # [duration, static] env: WAVESPAN_TUNABLE_STORAGE_ENGINE_SYNC_INTERVAL
       # Flush period when syncMode = interval.

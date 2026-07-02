@@ -17,6 +17,19 @@ func TestDefaultRegisters(t *testing.T) {
 	}
 }
 
+// TestSyncModeDefaultIsFull pins the durability contract: the serving node's WAL sync default
+// must stay "full" so the origin+1 ack (ADR-0002 "durable") means fsynced-on-two-nodes. Lowering
+// it is a per-deployment decision, never a code default (design/37 P0.1).
+func TestSyncModeDefaultIsFull(t *testing.T) {
+	p := Default().Get("storage.engine.syncMode")
+	if p == nil {
+		t.Fatal("storage.engine.syncMode not registered")
+	}
+	if got := p.Default(); got != "full" {
+		t.Fatalf("storage.engine.syncMode default = %q, want \"full\" (ADR-0002 durability contract)", got)
+	}
+}
+
 // TestEnvNamesUnique guards against two keys colliding on the same WAVESPAN_TUNABLE_* name.
 func TestEnvNamesUnique(t *testing.T) {
 	seen := map[string]string{}

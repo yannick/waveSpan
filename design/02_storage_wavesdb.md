@@ -330,7 +330,7 @@ Because data and mutation-log writes commit in the same `wavesdb` transaction, r
 
 ## Required local invariants
 
-1. A local write is not considered durable until `wavesdb` confirms the commit.
+1. A local write is not considered durable until `wavesdb` confirms the commit. What "confirms" means is governed by the `storage.engine.syncMode` tunable: the production default is `full` — the WAL group-commit leader fsyncs once per commit group before any committer in the group is acknowledged, so a confirmed commit survives kernel panic and power loss, not just process death. `interval` bounds loss-on-crash to `syncInterval` (128ms default); `none` leaves flushing to the OS with no bound. Deployments choosing `interval`/`none` accept that the origin+1 ack (ADR-0002) degrades from "fsynced on two nodes" to "in two page caches" (design/37 P0.1).
 2. A mutation is not globally streamable until its mutation-log entry is durable — guaranteed by committing it in the same transaction as the data write.
 3. Latest pointers must be derivable from versioned records and mutation logs.
 4. Vector indexes and graph secondary indexes are derived and rebuildable.

@@ -22,6 +22,8 @@ one nearby durable replica on a different node
 
 The target nearby replica count `N` is filled asynchronously after acknowledgement.
 
+"Durable" means the write's WAL commit is fsynced before acknowledgement (`storage.engine.syncMode: full`, the production default since design/37 P0.1). Deployments that lower `syncMode` to `interval` or `none` weaken this ADR's contract: the ack then attests only that the write reached two OS page caches, and a correlated crash of both holders within the fsync window loses acknowledged writes (design/13).
+
 ## Consequences
 
 Positive:

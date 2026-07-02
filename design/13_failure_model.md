@@ -18,6 +18,7 @@ The system is designed for:
 ## Not guaranteed in v1
 
 - no data loss after both origin and the first acknowledged nearby replica are lost before target-N repair completes;
+- with `storage.engine.syncMode` lowered from the default `full`: no data loss on correlated kernel-panic/power-loss of origin and the acknowledged replica within the fsync window (bounded by `syncInterval` for `interval`, unbounded for `none`) — see design/02 "Required local invariants";
 - no stale reads;
 - no conflict-free active-active writes;
 - no globally complete scan during partition;

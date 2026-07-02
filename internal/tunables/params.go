@@ -79,9 +79,9 @@ func registerStorageEngine(r *Registry) {
 	reg(r, g+".blockIndexPrefixLen", g, KindInt, Static, "16",
 		"Key-prefix length (bytes) stored per block-index entry.",
 		"16 bytes disambiguates typical keys while keeping the index compact.")
-	reg(r, g+".syncMode", g, KindString, Static, "none",
-		"WAL durability: none (OS flush) | full (fsync per commit) | interval (periodic fsync).",
-		"none favours throughput on the eventually-consistent, origin+1-replicated write path; a second durable replica is the real safety net, not local fsync.")
+	reg(r, g+".syncMode", g, KindString, Static, "full",
+		"WAL durability: none (OS flush) | full (fsync per group commit) | interval (periodic fsync).",
+		"full makes the origin+1 ack contract (ADR-0002 \"durable\") mean fsynced-on-two-nodes rather than in-two-page-caches; WAL group commit amortizes the fsync across concurrent committers. Drop to interval (bounded loss window) or none only for cache-tier deployments that accept losing acked writes on correlated crashes (design/37 P0.1).")
 	reg(r, g+".syncInterval", g, KindDuration, Static, "128ms",
 		"Flush period when syncMode = interval.",
 		"128ms bounds data-loss-on-crash to a fraction of a second while amortizing fsync cost.")
