@@ -42,8 +42,10 @@ var valuePreference = map[string][]string{
 // value column. When focus is non-empty, only samples whose stack contains a matching frame are
 // counted — used for block/mutex to isolate REQUEST-path blocking from long-lived idle background
 // loops (repair/anti-entropy/evictor tickers), which otherwise dominate a block profile while doing
-// no actual work.
-func Analyze(kind string, raw []byte, focus []string) (*Analysis, error) {
+// no actual work. Samples whose stack contains an exclude frame are dropped even when focused —
+// used to drop the pprof capture handlers' own blocking (they sleep the whole capture window
+// inside ServeHTTP).
+func Analyze(kind string, raw []byte, focus, exclude []string) (*Analysis, error) {
 	p, err := profile.Parse(bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("parse %s profile: %w", kind, err)
@@ -69,6 +71,9 @@ func Analyze(kind string, raw []byte, focus []string) (*Analysis, error) {
 			continue
 		}
 		if len(focus) > 0 && !sampleHasFrame(s, focus) {
+			continue
+		}
+		if len(exclude) > 0 && sampleHasFrame(s, exclude) {
 			continue
 		}
 		total += v

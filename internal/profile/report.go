@@ -39,10 +39,22 @@ var sectionOrder = []sectionSpec{
 }
 
 // focusByKind isolates request-path blocking/contention from idle background loops by keeping only
-// samples whose stack passes through a request handler.
+// samples whose stack passes through a request handler. The data plane is grpc-go (design/37
+// P0.3 found the old ServeHTTP-only filter blind on gRPC builds — it matched nothing but the
+// admin pprof handler's own capture sleep): (*Server).handleStream covers every gRPC service,
+// grpcsrv. covers the data-port interceptors, ServeHTTP keeps the remaining net/http surfaces
+// (gateway, admin UI).
 var focusByKind = map[string][]string{
-	"block": {"ServeHTTP"},
-	"mutex": {"ServeHTTP"},
+	"block": {"(*Server).handleStream", "grpcsrv.", "ServeHTTP"},
+	"mutex": {"(*Server).handleStream", "grpcsrv.", "ServeHTTP"},
+}
+
+// excludeByKind drops samples whose stack passes through the profile-capture machinery itself:
+// net/http/pprof's block/mutex handlers sleep for the whole capture window inside ServeHTTP and
+// would otherwise dominate the section they are measuring.
+var excludeByKind = map[string][]string{
+	"block": {"net/http/pprof", "runtime/pprof"},
+	"mutex": {"net/http/pprof", "runtime/pprof"},
 }
 
 // BuildReport analyzes the captured profiles and aggregates them across nodes.
@@ -60,7 +72,7 @@ func BuildReport(benchDesc string, nodes []string, cpuSeconds int, cpuRaw map[st
 			if len(raw) == 0 {
 				continue
 			}
-			if a, err := Analyze(spec.kind, raw, focusByKind[spec.kind]); err == nil {
+			if a, err := Analyze(spec.kind, raw, focusByKind[spec.kind], excludeByKind[spec.kind]); err == nil {
 				perNode[node] = a
 			}
 		}

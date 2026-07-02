@@ -33,7 +33,7 @@ func buildCPU(t *testing.T) []byte {
 }
 
 func TestAnalyzeFlatVsCum(t *testing.T) {
-	a, err := Analyze("cpu", buildCPU(t), nil)
+	a, err := Analyze("cpu", buildCPU(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
