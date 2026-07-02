@@ -19,11 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ReplicationService_StoreReplica_FullMethodName = "/wavespan.v1.ReplicationService/StoreReplica"
-	ReplicationService_FetchReplica_FullMethodName = "/wavespan.v1.ReplicationService/FetchReplica"
-	ReplicationService_SubscribeKey_FullMethodName = "/wavespan.v1.ReplicationService/SubscribeKey"
-	ReplicationService_ScanLocal_FullMethodName    = "/wavespan.v1.ReplicationService/ScanLocal"
-	ReplicationService_Backfill_FullMethodName     = "/wavespan.v1.ReplicationService/Backfill"
+	ReplicationService_StoreReplica_FullMethodName      = "/wavespan.v1.ReplicationService/StoreReplica"
+	ReplicationService_StoreReplicaBatch_FullMethodName = "/wavespan.v1.ReplicationService/StoreReplicaBatch"
+	ReplicationService_FetchReplica_FullMethodName      = "/wavespan.v1.ReplicationService/FetchReplica"
+	ReplicationService_SubscribeKey_FullMethodName      = "/wavespan.v1.ReplicationService/SubscribeKey"
+	ReplicationService_ScanLocal_FullMethodName         = "/wavespan.v1.ReplicationService/ScanLocal"
+	ReplicationService_Backfill_FullMethodName          = "/wavespan.v1.ReplicationService/Backfill"
+	ReplicationService_RangeDigest_FullMethodName       = "/wavespan.v1.ReplicationService/RangeDigest"
 )
 
 // ReplicationServiceClient is the client API for ReplicationService service.
@@ -33,10 +35,12 @@ const (
 // ReplicationService is the internal replica-write + cache API (mTLS-only in production, design/15).
 type ReplicationServiceClient interface {
 	StoreReplica(ctx context.Context, in *StoreReplicaRequest, opts ...grpc.CallOption) (*StoreReplicaResponse, error)
+	StoreReplicaBatch(ctx context.Context, in *StoreReplicaBatchRequest, opts ...grpc.CallOption) (*StoreReplicaBatchResponse, error)
 	FetchReplica(ctx context.Context, in *FetchReplicaRequest, opts ...grpc.CallOption) (*FetchReplicaResponse, error)
 	SubscribeKey(ctx context.Context, in *SubscribeKeyRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CacheUpdate], error)
 	ScanLocal(ctx context.Context, in *ScanLocalRequest, opts ...grpc.CallOption) (*ScanLocalResponse, error)
 	Backfill(ctx context.Context, in *BackfillRequest, opts ...grpc.CallOption) (*BackfillResponse, error)
+	RangeDigest(ctx context.Context, in *RangeDigestRequest, opts ...grpc.CallOption) (*RangeDigestResponse, error)
 }
 
 type replicationServiceClient struct {
@@ -51,6 +55,16 @@ func (c *replicationServiceClient) StoreReplica(ctx context.Context, in *StoreRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StoreReplicaResponse)
 	err := c.cc.Invoke(ctx, ReplicationService_StoreReplica_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *replicationServiceClient) StoreReplicaBatch(ctx context.Context, in *StoreReplicaBatchRequest, opts ...grpc.CallOption) (*StoreReplicaBatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StoreReplicaBatchResponse)
+	err := c.cc.Invoke(ctx, ReplicationService_StoreReplicaBatch_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -106,6 +120,16 @@ func (c *replicationServiceClient) Backfill(ctx context.Context, in *BackfillReq
 	return out, nil
 }
 
+func (c *replicationServiceClient) RangeDigest(ctx context.Context, in *RangeDigestRequest, opts ...grpc.CallOption) (*RangeDigestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RangeDigestResponse)
+	err := c.cc.Invoke(ctx, ReplicationService_RangeDigest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReplicationServiceServer is the server API for ReplicationService service.
 // All implementations must embed UnimplementedReplicationServiceServer
 // for forward compatibility.
@@ -113,10 +137,12 @@ func (c *replicationServiceClient) Backfill(ctx context.Context, in *BackfillReq
 // ReplicationService is the internal replica-write + cache API (mTLS-only in production, design/15).
 type ReplicationServiceServer interface {
 	StoreReplica(context.Context, *StoreReplicaRequest) (*StoreReplicaResponse, error)
+	StoreReplicaBatch(context.Context, *StoreReplicaBatchRequest) (*StoreReplicaBatchResponse, error)
 	FetchReplica(context.Context, *FetchReplicaRequest) (*FetchReplicaResponse, error)
 	SubscribeKey(*SubscribeKeyRequest, grpc.ServerStreamingServer[CacheUpdate]) error
 	ScanLocal(context.Context, *ScanLocalRequest) (*ScanLocalResponse, error)
 	Backfill(context.Context, *BackfillRequest) (*BackfillResponse, error)
+	RangeDigest(context.Context, *RangeDigestRequest) (*RangeDigestResponse, error)
 	mustEmbedUnimplementedReplicationServiceServer()
 }
 
@@ -130,6 +156,9 @@ type UnimplementedReplicationServiceServer struct{}
 func (UnimplementedReplicationServiceServer) StoreReplica(context.Context, *StoreReplicaRequest) (*StoreReplicaResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StoreReplica not implemented")
 }
+func (UnimplementedReplicationServiceServer) StoreReplicaBatch(context.Context, *StoreReplicaBatchRequest) (*StoreReplicaBatchResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StoreReplicaBatch not implemented")
+}
 func (UnimplementedReplicationServiceServer) FetchReplica(context.Context, *FetchReplicaRequest) (*FetchReplicaResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method FetchReplica not implemented")
 }
@@ -141,6 +170,9 @@ func (UnimplementedReplicationServiceServer) ScanLocal(context.Context, *ScanLoc
 }
 func (UnimplementedReplicationServiceServer) Backfill(context.Context, *BackfillRequest) (*BackfillResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Backfill not implemented")
+}
+func (UnimplementedReplicationServiceServer) RangeDigest(context.Context, *RangeDigestRequest) (*RangeDigestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RangeDigest not implemented")
 }
 func (UnimplementedReplicationServiceServer) mustEmbedUnimplementedReplicationServiceServer() {}
 func (UnimplementedReplicationServiceServer) testEmbeddedByValue()                            {}
@@ -177,6 +209,24 @@ func _ReplicationService_StoreReplica_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ReplicationServiceServer).StoreReplica(ctx, req.(*StoreReplicaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ReplicationService_StoreReplicaBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StoreReplicaBatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReplicationServiceServer).StoreReplicaBatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReplicationService_StoreReplicaBatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReplicationServiceServer).StoreReplicaBatch(ctx, req.(*StoreReplicaBatchRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -246,6 +296,24 @@ func _ReplicationService_Backfill_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReplicationService_RangeDigest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RangeDigestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReplicationServiceServer).RangeDigest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReplicationService_RangeDigest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReplicationServiceServer).RangeDigest(ctx, req.(*RangeDigestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ReplicationService_ServiceDesc is the grpc.ServiceDesc for ReplicationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -258,6 +326,10 @@ var ReplicationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ReplicationService_StoreReplica_Handler,
 		},
 		{
+			MethodName: "StoreReplicaBatch",
+			Handler:    _ReplicationService_StoreReplicaBatch_Handler,
+		},
+		{
 			MethodName: "FetchReplica",
 			Handler:    _ReplicationService_FetchReplica_Handler,
 		},
@@ -268,6 +340,10 @@ var ReplicationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Backfill",
 			Handler:    _ReplicationService_Backfill_Handler,
+		},
+		{
+			MethodName: "RangeDigest",
+			Handler:    _ReplicationService_RangeDigest_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
