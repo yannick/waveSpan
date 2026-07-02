@@ -1,5 +1,15 @@
 # 27. Transport performance: cheap mTLS
 
+> **gRPC-era status (2026-07-02, design/37 P1.6).** This document was written for the Connect/h2c
+> stack; the pooled `http.Client` it describes was removed in the gRPC migration (`6917b85`). What
+> is live today: servers get mTLS from `security.TLSConfig.ServerTLS()` as described; the pooled
+> **gRPC** client (`internal/rpcopts.GRPCConn`) now presents the node client cert via
+> `rpcopts.ConfigureDialTLS(tlsCfg.ClientTLS())` — same TLS 1.3 + fast-curves + per-identity
+> session-resumption cache — and carries datacenter link tuning (1MiB/16MiB HTTP/2 windows, 20s/5s
+> client keepalive, 64MiB recv cap), mirrored server-side in `internal/grpcsrv`. The
+> `security.NewHTTPClient` sections below survive only for the remaining net/http surfaces
+> (admin/UI); read them with that scope.
+
 ## Goal
 
 Keep the mTLS that design/15 mandates on all machine link classes, while making it **as cheap as

@@ -250,6 +250,17 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("admin tls: %w", err)
 	}
+	// Client side of the machine links (design/37 P1.6): when the servers run mTLS, every pooled
+	// gRPC client conn (replication, AE, forwarding, gossip — rpcopts.GRPCConn) must present the
+	// node cert too; previously only the Raft transport did, and the data plane dialed plaintext,
+	// which cannot even connect to an mTLS server. Must run before anything dials.
+	if serverMTLS != nil {
+		clientTLS, cerr := tlsCfg.ClientTLS()
+		if cerr != nil {
+			return fmt.Errorf("client mTLS: %w", cerr)
+		}
+		rpcopts.ConfigureDialTLS(clientTLS)
+	}
 
 	// Membership service (M2).
 	self := membership.MemberFromConfig(cfg, storageUUID)

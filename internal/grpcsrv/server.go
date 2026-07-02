@@ -6,10 +6,12 @@ import (
 	"context"
 	"crypto/tls"
 	"sync/atomic"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 
 	"github.com/yannick/wavespan/internal/rpcopts"
@@ -73,6 +75,22 @@ func New(opts Options) *grpc.Server {
 	}
 	serverOpts := []grpc.ServerOption{
 		grpc.MaxConcurrentStreams(maxStreams),
+		// Mirror the client-side link tuning (rpcopts.GRPCConn, design/37 P1.6): explicit HTTP/2
+		// windows sized for datacenter links (the 64KiB defaults cap throughput at window/RTT), a
+		// receive cap that admits batched replication / backup chunks, and keepalive that detects
+		// dead peers instead of waiting on TCP timeouts. The EnforcementPolicy MinTime must stay ≤
+		// the client's DialKeepaliveTime or the server GOAWAYs its own fleet for pinging too often.
+		grpc.InitialWindowSize(rpcopts.DialStreamWindow),
+		grpc.InitialConnWindowSize(rpcopts.DialConnWindow),
+		grpc.MaxRecvMsgSize(rpcopts.DialMaxRecvMsgSize),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    2 * time.Minute, // probe idle clients eventually
+			Timeout: 20 * time.Second,
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             rpcopts.DialKeepaliveTime / 2,
+			PermitWithoutStream: true,
+		}),
 		grpc.ChainUnaryInterceptor(
 			inflightLimitInterceptor(maxInflight),
 			opts.Identity.GRPCUnaryInterceptor(),
