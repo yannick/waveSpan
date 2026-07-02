@@ -38,6 +38,9 @@ const (
 	// ReplicationServiceStoreReplicaProcedure is the fully-qualified name of the ReplicationService's
 	// StoreReplica RPC.
 	ReplicationServiceStoreReplicaProcedure = "/wavespan.v1.ReplicationService/StoreReplica"
+	// ReplicationServiceStoreReplicaBatchProcedure is the fully-qualified name of the
+	// ReplicationService's StoreReplicaBatch RPC.
+	ReplicationServiceStoreReplicaBatchProcedure = "/wavespan.v1.ReplicationService/StoreReplicaBatch"
 	// ReplicationServiceFetchReplicaProcedure is the fully-qualified name of the ReplicationService's
 	// FetchReplica RPC.
 	ReplicationServiceFetchReplicaProcedure = "/wavespan.v1.ReplicationService/FetchReplica"
@@ -67,6 +70,7 @@ const (
 // ReplicationServiceClient is a client for the wavespan.v1.ReplicationService service.
 type ReplicationServiceClient interface {
 	StoreReplica(context.Context, *connect.Request[v1.StoreReplicaRequest]) (*connect.Response[v1.StoreReplicaResponse], error)
+	StoreReplicaBatch(context.Context, *connect.Request[v1.StoreReplicaBatchRequest]) (*connect.Response[v1.StoreReplicaBatchResponse], error)
 	FetchReplica(context.Context, *connect.Request[v1.FetchReplicaRequest]) (*connect.Response[v1.FetchReplicaResponse], error)
 	SubscribeKey(context.Context, *connect.Request[v1.SubscribeKeyRequest]) (*connect.ServerStreamForClient[v1.CacheUpdate], error)
 	ScanLocal(context.Context, *connect.Request[v1.ScanLocalRequest]) (*connect.Response[v1.ScanLocalResponse], error)
@@ -88,6 +92,12 @@ func NewReplicationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			httpClient,
 			baseURL+ReplicationServiceStoreReplicaProcedure,
 			connect.WithSchema(replicationServiceMethods.ByName("StoreReplica")),
+			connect.WithClientOptions(opts...),
+		),
+		storeReplicaBatch: connect.NewClient[v1.StoreReplicaBatchRequest, v1.StoreReplicaBatchResponse](
+			httpClient,
+			baseURL+ReplicationServiceStoreReplicaBatchProcedure,
+			connect.WithSchema(replicationServiceMethods.ByName("StoreReplicaBatch")),
 			connect.WithClientOptions(opts...),
 		),
 		fetchReplica: connect.NewClient[v1.FetchReplicaRequest, v1.FetchReplicaResponse](
@@ -119,16 +129,22 @@ func NewReplicationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 
 // replicationServiceClient implements ReplicationServiceClient.
 type replicationServiceClient struct {
-	storeReplica *connect.Client[v1.StoreReplicaRequest, v1.StoreReplicaResponse]
-	fetchReplica *connect.Client[v1.FetchReplicaRequest, v1.FetchReplicaResponse]
-	subscribeKey *connect.Client[v1.SubscribeKeyRequest, v1.CacheUpdate]
-	scanLocal    *connect.Client[v1.ScanLocalRequest, v1.ScanLocalResponse]
-	backfill     *connect.Client[v1.BackfillRequest, v1.BackfillResponse]
+	storeReplica      *connect.Client[v1.StoreReplicaRequest, v1.StoreReplicaResponse]
+	storeReplicaBatch *connect.Client[v1.StoreReplicaBatchRequest, v1.StoreReplicaBatchResponse]
+	fetchReplica      *connect.Client[v1.FetchReplicaRequest, v1.FetchReplicaResponse]
+	subscribeKey      *connect.Client[v1.SubscribeKeyRequest, v1.CacheUpdate]
+	scanLocal         *connect.Client[v1.ScanLocalRequest, v1.ScanLocalResponse]
+	backfill          *connect.Client[v1.BackfillRequest, v1.BackfillResponse]
 }
 
 // StoreReplica calls wavespan.v1.ReplicationService.StoreReplica.
 func (c *replicationServiceClient) StoreReplica(ctx context.Context, req *connect.Request[v1.StoreReplicaRequest]) (*connect.Response[v1.StoreReplicaResponse], error) {
 	return c.storeReplica.CallUnary(ctx, req)
+}
+
+// StoreReplicaBatch calls wavespan.v1.ReplicationService.StoreReplicaBatch.
+func (c *replicationServiceClient) StoreReplicaBatch(ctx context.Context, req *connect.Request[v1.StoreReplicaBatchRequest]) (*connect.Response[v1.StoreReplicaBatchResponse], error) {
+	return c.storeReplicaBatch.CallUnary(ctx, req)
 }
 
 // FetchReplica calls wavespan.v1.ReplicationService.FetchReplica.
@@ -154,6 +170,7 @@ func (c *replicationServiceClient) Backfill(ctx context.Context, req *connect.Re
 // ReplicationServiceHandler is an implementation of the wavespan.v1.ReplicationService service.
 type ReplicationServiceHandler interface {
 	StoreReplica(context.Context, *connect.Request[v1.StoreReplicaRequest]) (*connect.Response[v1.StoreReplicaResponse], error)
+	StoreReplicaBatch(context.Context, *connect.Request[v1.StoreReplicaBatchRequest]) (*connect.Response[v1.StoreReplicaBatchResponse], error)
 	FetchReplica(context.Context, *connect.Request[v1.FetchReplicaRequest]) (*connect.Response[v1.FetchReplicaResponse], error)
 	SubscribeKey(context.Context, *connect.Request[v1.SubscribeKeyRequest], *connect.ServerStream[v1.CacheUpdate]) error
 	ScanLocal(context.Context, *connect.Request[v1.ScanLocalRequest]) (*connect.Response[v1.ScanLocalResponse], error)
@@ -171,6 +188,12 @@ func NewReplicationServiceHandler(svc ReplicationServiceHandler, opts ...connect
 		ReplicationServiceStoreReplicaProcedure,
 		svc.StoreReplica,
 		connect.WithSchema(replicationServiceMethods.ByName("StoreReplica")),
+		connect.WithHandlerOptions(opts...),
+	)
+	replicationServiceStoreReplicaBatchHandler := connect.NewUnaryHandler(
+		ReplicationServiceStoreReplicaBatchProcedure,
+		svc.StoreReplicaBatch,
+		connect.WithSchema(replicationServiceMethods.ByName("StoreReplicaBatch")),
 		connect.WithHandlerOptions(opts...),
 	)
 	replicationServiceFetchReplicaHandler := connect.NewUnaryHandler(
@@ -201,6 +224,8 @@ func NewReplicationServiceHandler(svc ReplicationServiceHandler, opts ...connect
 		switch r.URL.Path {
 		case ReplicationServiceStoreReplicaProcedure:
 			replicationServiceStoreReplicaHandler.ServeHTTP(w, r)
+		case ReplicationServiceStoreReplicaBatchProcedure:
+			replicationServiceStoreReplicaBatchHandler.ServeHTTP(w, r)
 		case ReplicationServiceFetchReplicaProcedure:
 			replicationServiceFetchReplicaHandler.ServeHTTP(w, r)
 		case ReplicationServiceSubscribeKeyProcedure:
@@ -220,6 +245,10 @@ type UnimplementedReplicationServiceHandler struct{}
 
 func (UnimplementedReplicationServiceHandler) StoreReplica(context.Context, *connect.Request[v1.StoreReplicaRequest]) (*connect.Response[v1.StoreReplicaResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ReplicationService.StoreReplica is not implemented"))
+}
+
+func (UnimplementedReplicationServiceHandler) StoreReplicaBatch(context.Context, *connect.Request[v1.StoreReplicaBatchRequest]) (*connect.Response[v1.StoreReplicaBatchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wavespan.v1.ReplicationService.StoreReplicaBatch is not implemented"))
 }
 
 func (UnimplementedReplicationServiceHandler) FetchReplica(context.Context, *connect.Request[v1.FetchReplicaRequest]) (*connect.Response[v1.FetchReplicaResponse], error) {

@@ -197,23 +197,59 @@ func (c *Coordinator) write(ctx context.Context, namespace string, key, value []
 	return PutOutcome{Version: v, AckedNearbyReplicas: acked, GeoSpillover: spill}, nil
 }
 
-// replicateMinAck replicates to candidates in order until minAck durable acknowledgements are
-// collected. The background fanout worker fills the remaining target-N holders (M4).
+// replicateMinAck replicates to candidates until minAck durable acknowledgements are collected.
+// The background fanout worker fills the remaining target-N holders (M4).
+//
+// The first minAck candidates are tried CONCURRENTLY (design/37 P1.4): the old serial loop made a
+// write's ack latency the SUM of candidate round-trips whenever minAck > 1, and stacked a full
+// writeTimeout (2s) ahead of the fallback candidate when the preferred one was down. Placement
+// order is preserved — candidate i+minAck is only tried after an earlier attempt fails.
 func (c *Coordinator) replicateMinAck(ctx context.Context, cands []placement.Candidate, namespace string, key []byte, rec *wavespanv1.StoredRecord, v version.Version) (acked int, spill bool) {
 	req := local.BuildRequest(namespace, key, rec, c.self.MemberID)
-	for _, cand := range cands {
-		callCtx, cancel := context.WithTimeout(ctx, c.writeTimeout)
-		resp, err := c.replicator.StoreReplica(callCtx, cand.Member, req)
-		cancel()
-		if err == nil && resp.GetDurable() {
+	need := c.policy.MinAckNearbyReplicas
+	if need <= 0 {
+		return 0, false
+	}
+	type result struct {
+		ok    bool
+		spill bool
+	}
+	// Buffered to len(cands): a goroutine finishing after an early return must never block.
+	resCh := make(chan result, len(cands))
+	next, inflight := 0, 0
+	launch := func() {
+		cand := cands[next]
+		next++
+		inflight++
+		go func() {
+			callCtx, cancel := context.WithTimeout(ctx, c.writeTimeout)
+			resp, err := c.replicator.StoreReplica(callCtx, cand.Member, req)
+			cancel()
+			ok := err == nil && resp.GetDurable()
+			if ok {
+				// Recorded in the RPC goroutine so a straggler landing after we already reached
+				// minAck still registers as a real holder (it durably has the record).
+				c.recordHolder(namespace, key, cand.Member.MemberID, v)
+			}
+			resCh <- result{ok: ok, spill: ok && cand.GeoSpillover}
+		}()
+	}
+	for inflight < need && next < len(cands) {
+		launch()
+	}
+	for inflight > 0 {
+		r := <-resCh
+		inflight--
+		if r.ok {
 			acked++
-			c.recordHolder(namespace, key, cand.Member.MemberID, v)
-			if cand.GeoSpillover {
+			if r.spill {
 				spill = true
 			}
-			if acked >= c.policy.MinAckNearbyReplicas {
+			if acked >= need {
 				return acked, spill
 			}
+		} else if next < len(cands) {
+			launch()
 		}
 	}
 	return acked, spill

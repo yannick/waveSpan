@@ -13,14 +13,18 @@ import (
 // The name is retained for call-site compatibility; the transport is now grpc-go over the pooled
 // connections in rpcopts.
 type ConnectReplicator struct {
-	mu      sync.Mutex
-	clients map[string]wavespanv1.ReplicationServiceClient
+	mu       sync.Mutex
+	clients  map[string]wavespanv1.ReplicationServiceClient
+	batchers map[string]*destBatcher
 }
 
 // NewConnectReplicator builds a replicator. Peers are dialled over gRPC via the rpcopts pooled
 // connections.
 func NewConnectReplicator() *ConnectReplicator {
-	return &ConnectReplicator{clients: map[string]wavespanv1.ReplicationServiceClient{}}
+	return &ConnectReplicator{
+		clients:  map[string]wavespanv1.ReplicationServiceClient{},
+		batchers: map[string]*destBatcher{},
+	}
 }
 
 func (r *ConnectReplicator) client(addr string) (wavespanv1.ReplicationServiceClient, error) {
@@ -39,12 +43,32 @@ func (r *ConnectReplicator) client(addr string) (wavespanv1.ReplicationServiceCl
 }
 
 // StoreReplica sends the request to the target's data address (implements Replicator).
+//
+// Transparent coalescing (design/37 P1.4): concurrent StoreReplica calls to the same peer —
+// coordinator min-ack writes, fanout target-N fills, repair pushes all land here — are batched by
+// a per-destination destBatcher into one StoreReplicaBatch RPC per ~batchWindow. Callers keep
+// exactly the one-request/one-response semantics of the unary call.
 func (r *ConnectReplicator) StoreReplica(ctx context.Context, target membership.Member, req *wavespanv1.StoreReplicaRequest) (*wavespanv1.StoreReplicaResponse, error) {
 	c, err := r.client(target.DataAddr)
 	if err != nil {
 		return nil, err
 	}
-	return c.StoreReplica(ctx, req)
+	r.mu.Lock()
+	b, ok := r.batchers[target.DataAddr]
+	if !ok {
+		b = &destBatcher{}
+		r.batchers[target.DataAddr] = b
+	}
+	r.mu.Unlock()
+	return b.enqueue(ctx, req,
+		func(ctx context.Context, reqs []*wavespanv1.StoreReplicaRequest) ([]*wavespanv1.StoreReplicaResponse, error) {
+			resp, err := c.StoreReplicaBatch(ctx, &wavespanv1.StoreReplicaBatchRequest{Requests: reqs})
+			return resp.GetResponses(), err
+		},
+		func(ctx context.Context, req *wavespanv1.StoreReplicaRequest) (*wavespanv1.StoreReplicaResponse, error) {
+			return c.StoreReplica(ctx, req)
+		},
+	)
 }
 
 // FetchReplica asks a holder for its local winning record of a single key (design/05). Used by

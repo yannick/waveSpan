@@ -31,6 +31,19 @@ message StoreReplicaResponse {
   ConflictState conflict_state = 4;
 }
 
+// StoreReplicaBatchRequest coalesces concurrent replica writes to the same peer into one RPC
+// (design/37 P1.4): one round-trip and one receiver-side WAL commit group instead of a unary call
+// per record. Entries are independent — a failed entry is reported per-response, never batch-fatal.
+message StoreReplicaBatchRequest {
+  repeated StoreReplicaRequest requests = 1;
+}
+
+message StoreReplicaBatchResponse {
+  // Positional: responses[i] answers requests[i]. A nil/absent applied_version with durable=false
+  // means that entry failed on the receiver.
+  repeated StoreReplicaResponse responses = 1;
+}
+
 // --- Dynamic cache (M5, design/05 "Dynamic cache read path" / "Subscription protocol") ---
 
 message SubscriptionOffer {
@@ -106,6 +119,7 @@ message BackfillResponse {
 // ReplicationService is the internal replica-write + cache API (mTLS-only in production, design/15).
 service ReplicationService {
   rpc StoreReplica(StoreReplicaRequest) returns (StoreReplicaResponse);
+  rpc StoreReplicaBatch(StoreReplicaBatchRequest) returns (StoreReplicaBatchResponse);
   rpc FetchReplica(FetchReplicaRequest) returns (FetchReplicaResponse);
   rpc SubscribeKey(SubscribeKeyRequest) returns (stream CacheUpdate);
   rpc ScanLocal(ScanLocalRequest) returns (ScanLocalResponse);

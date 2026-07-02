@@ -2,6 +2,7 @@ package grpcsrv
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -41,6 +42,37 @@ func (s *Replication) StoreReplica(_ context.Context, m *wavespanv1.StoreReplica
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return resp, nil
+}
+
+// storeBatchApplyWorkers bounds concurrent applies for one inbound batch. Entries are applied
+// CONCURRENTLY on purpose: the recordstore serializes per key (striped locks) and the WAL group
+// commit merges concurrent committers into one fsync — a sequential loop would pay one commit
+// group (and under syncMode=full, one fsync) per entry, forfeiting the point of batching.
+const storeBatchApplyWorkers = 16
+
+// StoreReplicaBatch applies a coalesced batch of replica writes (design/37 P1.4). Entries are
+// independent: a failed entry yields durable=false in its positional response and never fails the
+// batch RPC.
+func (s *Replication) StoreReplicaBatch(_ context.Context, m *wavespanv1.StoreReplicaBatchRequest) (*wavespanv1.StoreReplicaBatchResponse, error) {
+	reqs := m.GetRequests()
+	resps := make([]*wavespanv1.StoreReplicaResponse, len(reqs))
+	sem := make(chan struct{}, storeBatchApplyWorkers)
+	var wg sync.WaitGroup
+	for i, r := range reqs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, r *wavespanv1.StoreReplicaRequest) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			resp, err := s.recv.Apply(r)
+			if err != nil {
+				resp = &wavespanv1.StoreReplicaResponse{Durable: false, MemberId: s.self}
+			}
+			resps[i] = resp
+		}(i, r)
+	}
+	wg.Wait()
+	return &wavespanv1.StoreReplicaBatchResponse{Responses: resps}, nil
 }
 
 // FetchReplica returns the local winning record for a key.
