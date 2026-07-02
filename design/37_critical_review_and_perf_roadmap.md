@@ -116,7 +116,9 @@ Additionally, every profile in the repo (`perf-report-*`) predates the gRPC migr
 
 **P2 — engine-level**
 8. Sharded conflict check to remove global `writeMu`-across-I/O. (A4)
+   **RESOLVED 2026-07-02 (wavesdb `30a3240`):** global `writeMu` replaced with 256 commit stripes keyed by hash(cf, key); a txn locks its conflict set (writes + Serializable read set) in ascending stripe order through applyCommit — per-key check-then-apply atomicity preserved, disjoint-key SI commits now parallel. Bonus: `-race` runs surfaced a pre-existing `RenameColumnFamily` vs background-reader data race on `cf.name` (failed on the untouched tree) — fixed with a dedicated `nameMu`. Pinned by `TestSnapshotCommitsParallelDisjoint` (64 concurrent committers) + existing conflict tests; both repos' suites race-clean.
 9. Heap-based, non-materializing compaction merge. (B3)
+   **RESOLVED 2026-07-02 (wavesdb `6c89eed`):** `pickSmallest` replaced with a binary min-heap over the input iterators — O(log k) per emitted entry. Correction to the review: values were already streamed one-at-a-time (not accumulated), and per-output-table vlogs make value rewrite inherent to the format, so "non-materializing" doesn't apply without a vlog-lifecycle redesign; the real defect was the O(n·k) scan, now fixed. Pinned by `TestCompactionManyWayOverlappingMerge`.
 10. Incremental manifest. (B4)
 11. Digest-based intra-cluster AE. (B1)
 
