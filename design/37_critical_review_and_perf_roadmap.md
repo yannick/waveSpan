@@ -164,6 +164,22 @@ Context: design/33's recorded staging numbers (syncMode=none era, fast clock via
 
 Found & fixed while measuring: `benchengine.Run.Summary()` computed elapsed at *fetch* time, silently deflating reported Tput for late readers (now uses the run's actual end time; per-node `total/duration` was used for the numbers above).
 
+### ovh-stag rerun with the wavesdb perf batch — 2026-07-02, image `main-f9f9efd`
+
+wavesdb landed 11 engine perf commits (`d93a154..2caf20e`: committer-side WAL encode, splice-hint batch memtable insert with slab-allocated nodes, memoized in-block binary search, pinned SST file handles, adaptive scan readahead, COW read views, tombstone-density compaction trigger, concatenating level iterator). waveSpan `f9f9efd` (P3 alloc diet) + wavesdb `2caf20e` deployed via Flux; same harness, matrix, and durable `syncMode=full` default as the `main-2a2e93e` baseline above:
+
+| run | main-2a2e93e | main-f9f9efd + new wavesdb | delta |
+|---|---|---|---|
+| KV 90/10, 1 driver, conc 32 | 15,431/s, p50 1.09ms, p95 7.9ms, p99 13.8ms | 23,639/s, p50 0.99ms, p95 3.5ms, p99 7.9ms | **+53%**, p95 −56% |
+| KV 90/10, 1 driver, conc 128 | 17,123/s, p50 5.4ms, p99 38.9ms | 27,745/s, p50 3.7ms, p99 17.4ms | **+62%**, p99 −55% |
+| KV 50/50, 1 driver, conc 32 | 4,330/s, p50 5.9ms, p99 27.6ms | 5,137/s, p50 4.0ms, p99 25.6ms | +19% (fsync-bound) |
+| KV 90/10, 4 drivers × conc 64 (aggregate) | 60,515/s, 0 errs | 65,033/s, 0 errs | +7.5% (cluster CPU-bound) |
+| set (consensus) 50/50, 1 driver, conc 128 | 12,194/s, p50 7.9ms, p99 55ms, 0.02% shed | 14,779/s, p50 4.9ms, p99 47.1ms, **0 errs** | +21% |
+
+Single-driver KV is where the engine work shows (+53–62%, tail latency roughly halved); the 4-driver aggregate is limited by node CPU, and the 50/50 write path by the per-write fsync, as expected.
+
+**Found while measuring (ops gotcha, not a code defect):** after the Flux rolling restart, the consensus tier served ~25% ErrBusy on collection writes at *every* concurrency — core-2's dragonboat transport breaker to core-0's raft port stayed stuck open long after the network path healed (verified reachable from core-2's netns via an ephemeral debug container), so core-0 saw no leader for the shards core-2 led and dropped every proposal routed to it. The constant error *ratio* across concurrencies (structural, not load-shaped) is the fingerprint that distinguishes this from genuine load shedding. Remediation: delete the pod holding the stuck *sender* transport (core-2 here) — recycling the blind receiver would not reset the breaker; leaders converged in seconds and the rerun was error-free.
+
 ## Verification
 - Each P1/P2 item: before/after `wavespan-bench` runs + pprof capture on the gRPC build; the bench harness and hdrhistogram plumbing already exist.
 - P0.1: crash-durability test — kill -9 origin+replica inside the sync window, assert acked writes survive (extend the correctness harness; it already asserts acked-op semantics).
