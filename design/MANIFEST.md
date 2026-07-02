@@ -35,6 +35,8 @@
 - `31_cluster_data_deletion.md`
 - `32_consensus_tier_throughput.md`
 - `33_consensus_throughput_results_and_hardening.md`
+- `34_vires_redis_migration.md`
+- `35_leased_budget_datatype.md`
 - `36_disk_pressure_admission.md`
 - `37_critical_review_and_perf_roadmap.md`
 - `README.md`
