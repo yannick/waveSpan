@@ -51,7 +51,7 @@ func (sc *Scanner) Scan(ctx context.Context, req *wavespanv1.ScanRequest, send f
 
 	switch mode {
 	case wavespanv1.ScanMode_ROUTED_EVENTUAL:
-		rows = sc.routed(ctx, ns, start, end, now)
+		rows = sc.routed(ctx, ns, start, end, limit, now)
 		completeness = wavespanv1.Completeness_PARTIAL // merged holders, but not certified complete
 	case wavespanv1.ScanMode_CACHE_COMPLETE:
 		rows = sc.local(ns, start, end, limit, now)
@@ -104,9 +104,20 @@ func (sc *Scanner) local(ns string, start, end []byte, limit int, now int64) []s
 
 // routed asks every alive member (including self) for the subrange and merges (latest wins). The
 // caller applies the row limit after the merge.
-func (sc *Scanner) routed(ctx context.Context, ns string, start, end []byte, now int64) []scanRow {
+//
+// The caller's limit is pushed into every holder scan rather than merging whole namespaces in
+// memory (design/37 P0.2): scans are key-ordered, so any key among the global first `limit` merged
+// rows is within each holder's local first `limit` visible rows. Holders are asked for 2× limit as
+// slack for rows that are visible locally but superseded (tombstoned/older) after the merge —
+// beyond that slack a stale row can take a limit slot, which the PARTIAL contract already permits.
+// limit 0 (scan-all) stays unbounded by contract.
+func (sc *Scanner) routed(ctx context.Context, ns string, start, end []byte, limit int, now int64) []scanRow {
+	fetch := 0
+	if limit > 0 {
+		fetch = limit * 2
+	}
 	m := newRowMerge()
-	for _, r := range sc.local(ns, start, end, 0, now) {
+	for _, r := range sc.local(ns, start, end, fetch, now) {
 		m.add(r)
 	}
 	if sc.holderScan != nil {
@@ -114,7 +125,7 @@ func (sc *Scanner) routed(ctx context.Context, ns string, start, end []byte, now
 			if mv.State != membership.StateAlive || mv.Member.MemberID == sc.self.MemberID {
 				continue
 			}
-			rows, err := sc.holderScan.ScanLocal(ctx, mv.Member, ns, start, end, 0)
+			rows, err := sc.holderScan.ScanLocal(ctx, mv.Member, ns, start, end, fetch)
 			if err != nil {
 				continue // a missing holder just reduces completeness (already PARTIAL)
 			}

@@ -93,11 +93,50 @@ func TestScanCacheCompleteRequiresValidCertificate(t *testing.T) {
 }
 
 type fakeHolderScanner struct {
-	rows map[string][]*wavespanv1.ScanLocalRow
+	rows      map[string][]*wavespanv1.ScanLocalRow
+	gotLimits []int
 }
 
-func (f *fakeHolderScanner) ScanLocal(_ context.Context, target membership.Member, _ string, _, _ []byte, _ int) ([]*wavespanv1.ScanLocalRow, error) {
-	return f.rows[target.MemberID], nil
+func (f *fakeHolderScanner) ScanLocal(_ context.Context, target membership.Member, _ string, _, _ []byte, limit int) ([]*wavespanv1.ScanLocalRow, error) {
+	f.gotLimits = append(f.gotLimits, limit)
+	rows := f.rows[target.MemberID]
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
+	}
+	return rows, nil
+}
+
+// TestScanRoutedPushesLimitToHolders pins design/37 P0.2: a limited routed scan must ask each
+// holder for a bounded row count (2× the caller limit as merge slack), not the whole namespace,
+// and still return the correct first-limit merged rows.
+func TestScanRoutedPushesLimitToHolders(t *testing.T) {
+	store := scanStore(t, "a", "e") // self holds a, e
+	v := version.Version{HLCPhysicalMs: 1, WriterClusterID: "dev", WriterMemberID: "node2", WriterSequence: 1}
+	holder := &fakeHolderScanner{rows: map[string][]*wavespanv1.ScanLocalRow{
+		"node2": {
+			{Key: []byte("b"), Value: []byte("Vb"), Version: v.ToProto()},
+			{Key: []byte("c"), Value: []byte("Vc"), Version: v.ToProto()},
+			{Key: []byte("d"), Value: []byte("Vd"), Version: v.ToProto()},
+			{Key: []byte("f"), Value: []byte("Vf"), Version: v.ToProto()},
+		},
+	}}
+	sc := NewScanner(store, member("node1"), staticCluster{aliveView("node1"), aliveView("node2")}, holder, nil)
+	_, keys := runScan(t, sc, &wavespanv1.ScanRequest{Namespace: "default", Mode: wavespanv1.ScanMode_ROUTED_EVENTUAL, Limit: 2})
+	if !eqStrs(keys, []string{"a", "b"}) {
+		t.Fatalf("routed limited keys = %v, want a,b", keys)
+	}
+	if len(holder.gotLimits) != 1 || holder.gotLimits[0] != 4 {
+		t.Fatalf("holder scan limits = %v, want one call with limit 4 (2x caller limit)", holder.gotLimits)
+	}
+	// limit 0 (scan-all) stays unbounded by contract.
+	holder.gotLimits = nil
+	_, keys = runScan(t, sc, &wavespanv1.ScanRequest{Namespace: "default", Mode: wavespanv1.ScanMode_ROUTED_EVENTUAL})
+	if !eqStrs(keys, []string{"a", "b", "c", "d", "e", "f"}) {
+		t.Fatalf("routed unlimited keys = %v", keys)
+	}
+	if len(holder.gotLimits) != 1 || holder.gotLimits[0] != 0 {
+		t.Fatalf("holder scan limits = %v, want one call with limit 0", holder.gotLimits)
+	}
 }
 
 func TestScanRoutedMergesHoldersSorted(t *testing.T) {
