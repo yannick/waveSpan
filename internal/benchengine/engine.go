@@ -115,6 +115,7 @@ type Run struct {
 
 	wg        sync.WaitGroup // workers + sampler
 	startTime time.Time
+	endTime   time.Time // set when the run reaches a terminal state; zero while running
 	doneCh    chan struct{}
 	stopOnce  sync.Once
 }
@@ -346,6 +347,7 @@ func (r *Run) finish(target State) {
 		r.mu.Lock()
 		wasPaused := r.state == StatePaused
 		r.state = target
+		r.endTime = time.Now()
 		r.cancel()
 		if wasPaused {
 			r.gate.resume()
@@ -360,9 +362,14 @@ func (r *Run) finish(target State) {
 func (r *Run) Summary() Summary {
 	perWL := make(map[string]WindowStat, len(r.collectors))
 	r.mu.Lock()
-	start := r.startTime
+	start, end := r.startTime, r.endTime
 	r.mu.Unlock()
-	elapsed := time.Since(start).Seconds()
+	// Use the run's actual span: computing elapsed at FETCH time silently deflated Tput for
+	// anyone reading results after the run finished (found benchmarking ovh-stag, design/37).
+	if end.IsZero() {
+		end = time.Now()
+	}
+	elapsed := end.Sub(start).Seconds()
 	for _, c := range r.collectors {
 		c.mu.Lock()
 		var tput float64

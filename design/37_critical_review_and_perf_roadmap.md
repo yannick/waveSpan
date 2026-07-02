@@ -140,7 +140,23 @@ All P0–P2 items resolved (see per-item notes above); P3 partially done. Cumula
 | kv-put throughput | 8,740/s | 11,078/s | +27% |
 | kv-put p99 | 4.82ms | 3.46ms | −28% |
 
-Under the new durable default (`syncMode=full`) this host's fsync dominates put latency (~30ms floor, two sequential group commits); batching makes throughput scale with concurrency and halved p99. **Open item: a Linux/NVMe measurement of syncMode=full before calling the durability default cheap.**
+Under the new durable default (`syncMode=full`) this host's fsync dominates put latency (~30ms floor, two sequential group commits); batching makes throughput scale with concurrency and halved p99. ~~Open item: a Linux/NVMe measurement of syncMode=full before calling the durability default cheap.~~ **Measured — see below.**
+
+### ovh-stag (real Linux/NVMe) results — 2026-07-02, image `main-2a2e93e`
+
+Roadmap build deployed via Flux to the cwire ovh-stag cluster (4 caching nodes b3-16, 3-voter core, N=4 shards; **no syncMode override → the new `full` durable default is live**). Driven by the co-located benchui per node (`wavespan-local`, zero-hop), 30s runs:
+
+| run | result |
+|---|---|
+| KV 90/10, 1 driver, conc 32 | 15,431 ops/s, p50 1.09ms, p95 7.9ms, p99 13.8ms, 0 errs |
+| KV 90/10, 1 driver, conc 128 | 17,123 ops/s, p50 5.4ms, p99 38.9ms, 0 errs |
+| KV 50/50, 1 driver, conc 32 | 4,330 ops/s, p50 5.9ms, p99 27.6ms, 0 errs — durable writes ≈ 2.2k/s/node/driver |
+| **KV 90/10, 4 drivers × conc 64 (aggregate)** | **60,515 ops/s cluster-wide, 0 errs**, per-node p50 2.0–2.4ms, p99 12.8–51ms |
+| set (consensus) 50/50, 1 driver, conc 128 | 12,194 ops/s, p50 7.9ms, p99 55ms, 89 errs (0.02%, ErrBusy shed) |
+
+Context: design/33's recorded staging numbers (syncMode=none era, fast clock via env) were ~47k/s aggregate KV 90/10 and 3–9k/s mixed consensus. The roadmap build does **+29% on KV aggregate and tops the consensus mixed range — while adding per-write fsync durability** — and the P1.7 clock now applies without env overrides (staging's core sets no `RTT_MS`). Verdict on P0.1: on real NVMe the durable default is affordable; the write-latency cost vs `none` is ~1ms-class p50, not the 30ms Docker-for-Mac artifact.
+
+Found & fixed while measuring: `benchengine.Run.Summary()` computed elapsed at *fetch* time, silently deflating reported Tput for late readers (now uses the run's actual end time; per-node `total/duration` was used for the numbers above).
 
 ## Verification
 - Each P1/P2 item: before/after `wavespan-bench` runs + pprof capture on the gRPC build; the bench harness and hdrhistogram plumbing already exist.
